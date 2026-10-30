@@ -669,10 +669,44 @@ body.mz-open .popup { z-index: 9500 !important; }
 
 .mz-toast { position: relative; padding-left: 18px; }
 
+/* each kind carries its own weather, the way ST's toasts do - but mixed
+   from the theme's own inks, so a tinted card still feels like ours.
+   ok/warn/bad are theme tokens; success follows the accent, info stays
+   the quiet one. */
+.mz-toast::before { background: var(--mz-accent); }
+
+.mz-toast.is-success {
+    border-color: color-mix(in srgb, var(--mz-accent) 38%, transparent);
+    background: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--mz-accent) 13%, rgba(15, 18, 22, .92)),
+        color-mix(in srgb, var(--mz-accent) 17%, rgba(11, 13, 16, .96))
+    );
+}
 .mz-toast.is-success::before { background: var(--mz-accent); }
+
+.mz-toast.is-info { border-color: var(--mz-line); }
 .mz-toast.is-info::before { background: var(--mz-text-dim); }
-.mz-toast.is-warning::before { background: var(--mz-accent-line); }
-.mz-toast.is-error::before { background: var(--mz-text); }
+
+.mz-toast.is-warning {
+    border-color: color-mix(in srgb, var(--mz-warn) 42%, transparent);
+    background: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--mz-warn) 12%, rgba(15, 18, 22, .92)),
+        color-mix(in srgb, var(--mz-warn) 16%, rgba(11, 13, 16, .96))
+    );
+}
+.mz-toast.is-warning::before { background: var(--mz-warn); }
+
+.mz-toast.is-error {
+    border-color: color-mix(in srgb, var(--mz-bad) 42%, transparent);
+    background: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--mz-bad) 12%, rgba(15, 18, 22, .92)),
+        color-mix(in srgb, var(--mz-bad) 16%, rgba(11, 13, 16, .96))
+    );
+}
+.mz-toast.is-error::before { background: var(--mz-bad); }
 
 #mz-root[data-mz-motion="reduced"] .mz-toast {
     transition: none;

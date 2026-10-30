@@ -9,7 +9,7 @@
  */
 
 const KINDS = new Set(['success', 'info', 'warning', 'error']);
-const LINGER = 3200;
+const LINGER = 5000;
 
 let stack = null;
 let timer = 0;
