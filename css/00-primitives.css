@@ -1,0 +1,92 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:ital,wght@0,300;0,400;0,500;1,300;1,400&display=swap");
+
+/* ==========================================================================
+   Meziverse — primitives
+   Raw values only. No component reads these directly; semantics map them.
+   Everything is scoped to #mz-root so nothing leaks into SillyTavern.
+   ========================================================================== */
+
+#mz-root {
+    --mz-ink-1000: #08090b;
+    --mz-ink-950: #0c0e11;
+    --mz-ink-900: #111419;
+    --mz-ink-800: #171b21;
+    --mz-ink-700: #0f1216;
+
+    --mz-bone-100: #e9e7e2;
+    --mz-bone-200: #c9ccd1;
+
+    --mz-slate-400: #8d9199;
+    --mz-slate-500: #6b7078;
+    --mz-slate-600: #4e535b;
+
+    --mz-jade-500: #77c2aa;
+    --mz-amber-500: #cfaa72;
+    --mz-rose-500: #c8929c;
+    --mz-clay-400: #c09a86;
+
+    --mz-green-500: #86c295;
+    --mz-gold-500: #d6a966;
+    --mz-red-500: #cf7d76;
+
+    /* type */
+    --mz-font-ui: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mz-font-prose: "Newsreader", "Source Serif 4", Georgia, "Times New Roman", serif;
+    --mz-font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+
+    /* raw type scale. every text token is derived from --mz-ui-scale */
+    --mz-ui-scale: 1;
+    --mz-raw-2xs: 9.5px;
+    --mz-raw-xs: 10.5px;
+    --mz-raw-sm: 12px;
+    --mz-raw-md: 13.5px;
+    --mz-raw-lg: 16px;
+    --mz-raw-xl: 19px;
+    --mz-raw-2xl: 24px;
+
+    --mz-narr-size: 18.5px;
+    --mz-narr-leading: 1.6;
+
+    /* layout: 34 + 48 is the whole top chrome */
+    --mz-header-h: 34px;
+    --mz-chatbar-h: 48px;
+    --mz-gutter: 16px;
+
+    --mz-rail-w: 268px;
+    --mz-rail-w-wide: 330px;
+    --mz-dlg-gap: 20px;
+
+    --mz-pane-h: 300px;
+    --mz-pane-h-min: 220px;
+    --mz-port-min-h: 180px;
+    --mz-port-max-h: 500px;
+    --mz-port-min-h-mobile: 120px;
+    --mz-port-max-h-mobile: 200px;
+
+    /* shape */
+    --mz-r-xs: 4px;
+    --mz-r-sm: 6px;
+    --mz-r: 10px;
+    --mz-r-lg: 14px;
+    --mz-r-xl: 18px;
+    --mz-r-pill: 999px;
+    --mz-shadow: 0 22px 60px -18px rgba(0, 0, 0, .85);
+    --mz-shadow-sm: 0 8px 24px -12px rgba(0, 0, 0, .7);
+    --mz-blur: saturate(140%) blur(16px);
+
+    /* motion */
+    --mz-dur-fast: 120ms;
+    --mz-dur: 180ms;
+    --mz-dur-mark: 300ms;
+    --mz-ease: cubic-bezier(.22, .68, .28, 1);
+
+    /* layers, inside the root only */
+    --mz-z-bg: 0;
+    --mz-z-cast: 2;
+    --mz-z-rail: 4;
+    --mz-z-pane: 6;
+    --mz-z-scrim: 14;
+    --mz-z-chatbar: 9;
+    --mz-z-header: 10;
+    --mz-z-sheet: 20;
+}

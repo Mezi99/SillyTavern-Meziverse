@@ -1,0 +1,10 @@
+# local only: the design spec and the mockups that led to this extension
+LocalHelpFiles/
+mockups/
+
+# editors and OS noise
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store
