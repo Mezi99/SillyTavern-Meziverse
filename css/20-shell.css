@@ -995,28 +995,7 @@
     .mz-prose { font-size: calc(var(--mz-narr-size) * .9); }
 
     .mz-sheet { width: calc(100% - 24px); max-height: calc(100% - 44px); padding: 18px 16px 16px; }
-
-    /* narrow screens read the log as a bottom sheet: it rises from the foot
-       of the scene instead of sweeping across the reading pane. */
-    .mz-log {
-        top: auto;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        width: 100%;
-        max-width: none;
-        height: 70dvh;
-        border-left: none;
-        border-top: 1px solid var(--mz-line-strong);
-        /* the side drawer's downward drop would bleed off the foot of the
-           screen; flip it so the shadow reads upward over the scene */
-        box-shadow: 0 -22px 60px -18px rgba(0, 0, 0, .85);
-        transform: translateY(100%);
-    }
-
-    /* the side edge has nothing to drag now; the sheet's height is fixed */
-    .mz-log-grip { display: none; }
-
+    .mz-log { width: 100%; max-width: none; }
     .mz-set-row { grid-template-columns: 1fr; gap: 8px; }
     .mz-set-control { justify-content: flex-start; }
     .mz-select { max-width: none; width: 100%; }
