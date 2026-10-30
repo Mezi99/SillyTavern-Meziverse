@@ -9,6 +9,7 @@
 import { currentChatId, on } from './st.js';
 import { settings, saveSettings } from './settings.js';
 import { injectSprite } from './icons.js';
+import { createTranscript } from './transcript.js';
 
 const VERSION = '0.1.0';
 const PANE_DEFAULT = 300;
@@ -51,7 +52,7 @@ const FRAME_HTML = `
             <span class="mz-chip" data-mz="weather" hidden></span>
         </div>
         <div class="mz-chatbar-tools">
-            <button class="mz-ibtn" type="button" title="Chat log" aria-label="Chat log" data-mz-action="log">${svg('list')}</button>
+            <button class="mz-ibtn" type="button" title="Chat log" aria-label="Chat log" aria-expanded="false" data-mz-action="log">${svg('list')}</button>
         </div>
     </header>
 
@@ -130,11 +131,20 @@ const FRAME_HTML = `
             <span>Meziverse ${VERSION}</span>
         </footer>
     </section>
+
+    <aside class="mz-log" aria-hidden="true" aria-label="Chat log">
+        <header class="mz-log-head">
+            <h2>Chat log</h2>
+            <button class="mz-ibtn" type="button" title="Close log" aria-label="Close log" data-mz-action="close-log">${svg('close')}</button>
+        </header>
+        <ol class="mz-log-list" data-mz="log-list"></ol>
+    </aside>
 </div>`;
 
 let root = null;
 let frame = null;
 let els = {};
+let transcript = null;
 let lastFocus = null;
 let previousOverflow = null;
 let desiredPane = PANE_DEFAULT;
@@ -166,7 +176,23 @@ export function mount() {
         motion: root.querySelector('[data-mz-action="motion"]'),
         uiValue: root.querySelector('[data-mz="ui-value"]'),
         narrValue: root.querySelector('[data-mz="narr-value"]'),
+        logPanel: root.querySelector('.mz-log'),
+        logList: root.querySelector('[data-mz="log-list"]'),
+        logButton: root.querySelector('[data-mz-action="log"]'),
+        logClose: root.querySelector('[data-mz-action="close-log"]'),
     };
+
+    transcript = createTranscript({
+        frame,
+        isOpen,
+        speaker: els.speaker,
+        meta: els.meta,
+        prose: els.prose,
+        logPanel: els.logPanel,
+        logList: els.logList,
+        logButton: els.logButton,
+        logClose: els.logClose,
+    });
 
     desiredPane = Number(settings().paneHeight) || PANE_DEFAULT;
 
@@ -201,12 +227,14 @@ export function open() {
 
     root.classList.add('is-open');
     root.setAttribute('aria-hidden', 'false');
-    frame.classList.remove('is-settings-open');
+    frame.classList.remove('is-settings-open', 'is-log-open', 'is-dragging');
     els.sheet.setAttribute('aria-hidden', 'true');
-    frame.classList.remove('is-dragging');
+    els.logPanel.setAttribute('aria-hidden', 'true');
+    els.logButton.setAttribute('aria-expanded', 'false');
 
     refreshChatName();
     applyBackground();
+    transcript.refresh({ followLatest: true });
     desiredPane = Number(settings().paneHeight) || PANE_DEFAULT;
     applyPaneHeight(desiredPane);
 
@@ -222,7 +250,9 @@ export function close() {
     root.classList.remove('is-open', 'is-settings-open');
     root.setAttribute('aria-hidden', 'true');
     els.sheet.setAttribute('aria-hidden', 'true');
-    frame.classList.remove('is-dragging');
+    frame.classList.remove('is-dragging', 'is-log-open');
+    els.logPanel.setAttribute('aria-hidden', 'true');
+    els.logButton.setAttribute('aria-expanded', 'false');
 
     document.body.style.overflow = previousOverflow ?? '';
 
@@ -397,6 +427,7 @@ function wirePane() {
 /* ---------- actions ---------- */
 
 function openSettings() {
+    transcript.closeLog(false);
     frame.classList.add('is-settings-open');
     els.sheet.setAttribute('aria-hidden', 'false');
     applyBackground();
@@ -461,8 +492,16 @@ function wireActions() {
             case 'close-settings':
                 closeSettings();
                 break;
+            case 'log':
+                if (frame.classList.contains('is-settings-open')) closeSettings();
+                transcript.openLog();
+                break;
+            case 'close-log':
+                transcript.closeLog();
+                break;
             case 'dismiss':
-                closeSettings();
+                if (transcript.isLogOpen()) transcript.closeLog();
+                else closeSettings();
                 break;
             case 'motion':
                 settings().reducedMotion = !settings().reducedMotion;
@@ -505,7 +544,8 @@ function wireKeys() {
         if (event.key === 'Escape') {
             event.preventDefault();
             event.stopPropagation();
-            if (frame.classList.contains('is-settings-open')) closeSettings();
+            if (transcript?.isLogOpen()) transcript.closeLog();
+            else if (frame.classList.contains('is-settings-open')) closeSettings();
             else close();
             return;
         }

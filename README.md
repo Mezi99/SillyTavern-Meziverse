@@ -6,14 +6,15 @@ Meziverse is an extension, not a fork. It sits on top of SillyTavern and treats 
 
 ## Status
 
-Early. This repository currently holds the shell:
+Early. This repository currently holds the shell and the transcript:
 
 - the fullscreen frame, the Meziverse header and the chat header
-- the reading pane with its drag-to-resize handle
+- the reading pane, showing the newest message as plain prose, with a log drawer for earlier ones
+- a drag handle that resizes the pane, remembered across chats
 - a settings sheet: theme, background, interface scale, narration size, reduced motion
 - the wand-menu entry and the Extensions-panel block
 
-The transcript, the phone and the trackers are on their way. Nothing is written to disk beyond a few appearance settings.
+The composer is a textbox that does not reach the chat yet. The phone and the trackers are on their way. Nothing is written to disk beyond a few appearance settings.
 
 ## Install
 
