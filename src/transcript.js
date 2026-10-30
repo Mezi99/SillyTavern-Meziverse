@@ -106,7 +106,7 @@ export function createTranscript({
             togglePromptButton.title = hidden
                 ? 'Include message in prompts' : 'Exclude message from prompts';
             togglePromptButton.setAttribute('aria-label', togglePromptButton.title);
-            togglePromptButton.innerHTML = icon(hidden ? 'mz-i-eye-off' : 'mz-i-eye');
+            togglePromptButton.replaceChildren(icon(hidden ? 'mz-i-eye-off' : 'mz-i-eye'));
         }
     }
 
