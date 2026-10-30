@@ -252,28 +252,6 @@ export async function setPromptHidden(index, hidden) {
 }
 
 /**
- * Checkpoints the chat at a message, through SillyTavern's own
- * /checkpoint-create. The chat stays open; the checkpoint is linked to the
- * message and its name is returned.
- *
- * @param {number} mesId index in the chat of the turn to checkpoint
- * @returns {Promise<string|null>} the checkpoint's name, or null on failure
- */
-export async function checkpointChat(mesId) {
-    const context = ctx();
-    if (typeof context?.executeSlashCommandsWithOptions !== 'function') return null;
-
-    try {
-        const result = await context.executeSlashCommandsWithOptions(`/checkpoint-create mesId=${Number(mesId)}`);
-        const name = typeof result === 'string' ? result : result?.pipe;
-        return typeof name === 'string' && name ? name : null;
-    } catch (error) {
-        console.warn('[Meziverse] could not create a checkpoint', error);
-        return null;
-    }
-}
-
-/**
  * Branches the chat at a message, through SillyTavern's own /branch-create.
  * The copy holds every message up to and including the pinned turn, and
  * SillyTavern opens it at once — CHAT_CHANGED carries the rest.

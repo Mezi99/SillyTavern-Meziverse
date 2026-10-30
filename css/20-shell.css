@@ -429,10 +429,19 @@
     min-height: 22px;
 }
 
-/* our turn-stepping sits around the counter: speaker ◀ 3/3 ▶ ⤓ */
-.mz-dlg-nav { flex: 0 0 auto; }
-.mz-dlg-nav + .mz-dlg-meta,
-.mz-dlg-meta + .mz-dlg-nav { margin-left: 2px; }
+/* our turn-stepping, centred in the header so long speaker names cannot
+   push it around: the speaker and the actions flex, the cluster does not */
+.mz-speaker {
+    flex: 1 1 0;
+    min-width: 0;
+}
+.mz-dlg-actions { flex: 1 1 0; justify-content: flex-end; min-width: 0; }
+.mz-dlg-nav {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: 0 0 auto;
+}
 
 /* SillyTavern's message actions, its own glyphs, our hand */
 .mz-dlg-actions {

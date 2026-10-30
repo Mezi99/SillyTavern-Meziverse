@@ -8,7 +8,7 @@
  * switches are correct the moment SillyTavern reports them.
  */
 
-import { branchChat, chatMessages, checkpointChat, copyMessage, ctx, currentChatId, on, setPromptHidden, swipeMessage, swipeSupported, swipingAllowed } from './st.js';
+import { branchChat, chatMessages, copyMessage, ctx, currentChatId, on, setPromptHidden, swipeMessage, swipeSupported, swipingAllowed } from './st.js';
 import { renderInto, toHtml } from './prose.js';
 import { icon } from './icons.js';
 
@@ -40,7 +40,6 @@ function speakerOf(message) {
  * @param {HTMLButtonElement} [parts.latestButton]
  * @param {HTMLButtonElement} [parts.branchButton] any turn, the latest one included
  * @param {HTMLButtonElement} [parts.copyButton] copies the shown turn
- * @param {HTMLButtonElement} [parts.checkpointButton] checkpoints the chat at the shown turn
  * @param {HTMLButtonElement} [parts.togglePromptButton] excludes the shown turn from prompts, or includes it again
  * @param {HTMLElement} [parts.swipeBar] the swipe footer, the chat's last character turn only
  * @param {HTMLButtonElement} [parts.swipePrev]
@@ -50,7 +49,7 @@ function speakerOf(message) {
 export function createTranscript({
     frame, isOpen, speaker, meta, prose, logPanel, logList, logButton, logClose,
     prevButton, nextButton, latestButton, branchButton,
-    copyButton, checkpointButton, togglePromptButton,
+    copyButton, togglePromptButton,
     swipeBar, swipePrev, swipeNext, swipeCount,
 }) {
     // null follows the newest message; a number pins that index in the chat.
@@ -355,16 +354,6 @@ export function createTranscript({
     }
 
     /**
-     * Checkpoints the chat at the shown turn. The chat stays open; the
-     * checkpoint is linked to the message.
-     */
-    function checkpointShownTurn() {
-        const entry = currentEntry();
-        if (!entry || frame.classList.contains('is-generating')) return Promise.resolve(null);
-        return checkpointChat(entry.index);
-    }
-
-    /**
      * Excludes the shown turn from the prompts, or includes it again,
      * through SillyTavern's own handler. SillyTavern reports no event for
      * this, so the pane is refreshed here: the turn dims or clears, the eye
@@ -430,5 +419,5 @@ export function createTranscript({
         if (isOpen()) queueRefresh();
     });
 
-    return { refresh, openLog, closeLog, isLogOpen, step, latest, show, branchHere, swipeShownTurn, copyShownTurn, checkpointShownTurn, togglePromptHidden };
+    return { refresh, openLog, closeLog, isLogOpen, step, latest, show, branchHere, swipeShownTurn, copyShownTurn, togglePromptHidden };
 }
