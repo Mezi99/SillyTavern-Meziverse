@@ -82,3 +82,87 @@ export function chatMessages() {
     const messages = ctx()?.chat;
     return Array.isArray(messages) ? messages : [];
 }
+
+/**
+ * A message rendered the way SillyTavern renders it.
+ *
+ * This is the whole point of borrowing ST's formatter: regex scripts, Markdown,
+ * quotes, rules, lists, colour spans and any other display extension behave
+ * exactly as they do in the native chat. The result is already sanitised by ST.
+ *
+ * @param {object} message
+ * @param {number} index its index in the chat, used by regex scripts
+ * @returns {string} HTML, or '' when SillyTavern cannot format it
+ */
+export function formatMessage(message, index) {
+    const context = ctx();
+    const text = typeof message?.mes === 'string' ? message.mes : '';
+    if (!context || !text) return '';
+
+    const name = message.name || '';
+    const isSystem = !!message.is_system;
+    const isUser = !!message.is_user;
+
+    try {
+        if (typeof context.messageFormatting === 'function') {
+            return String(context.messageFormatting(text, name, isSystem, isUser, index) ?? '');
+        }
+        if (typeof context.messageFormatter?.format === 'function') {
+            return String(context.messageFormatter.format({
+                mes: text,
+                ch_name: name,
+                isSystem,
+                isUser,
+                messageId: index,
+            }) ?? '');
+        }
+    } catch (error) {
+        console.warn('[Meziverse] could not format a message', error);
+    }
+
+    return '';
+}
+
+/**
+ * Sends a line through SillyTavern's own composer, so generation, streaming,
+ * extensions and regex all run exactly as in the native chat.
+ *
+ * @param {string} text
+ * @returns {boolean} whether the composer was found and clicked
+ */
+export function sendUserMessage(text) {
+    const input = document.getElementById('send_textarea');
+    const button = document.getElementById('send_but');
+    if (!(input instanceof HTMLTextAreaElement) || !button) return false;
+
+    input.value = text;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    button.click();
+    return true;
+}
+
+/** Stops the generation SillyTavern is running. */
+export function stopGeneration() {
+    const context = ctx();
+    if (typeof context?.stopGeneration !== 'function') return false;
+    try {
+        context.stopGeneration();
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+/** Regenerates the last reply, through ST's own button when it is there. */
+export function regenerate() {
+    const button = document.getElementById('option_regenerate');
+    if (button) {
+        button.click();
+        return true;
+    }
+
+    const context = ctx();
+    if (typeof context?.generate !== 'function') return false;
+    context.generate('regenerate').catch?.(() => {});
+    return true;
+}

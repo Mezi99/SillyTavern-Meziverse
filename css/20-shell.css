@@ -28,39 +28,42 @@
 #mz-root *::before,
 #mz-root *::after { box-sizing: border-box; }
 
-#mz-root :where(h1, h2, h3, h4, p, figure) { margin: 0; }
-#mz-root :where(ul, ol) { margin: 0; padding: 0; list-style: none; }
+/* ---------- resets ----------
+   `:where()` keeps these at zero specificity so every component rule below
+   wins on its own; the id only scopes them to the overlay. */
+:where(#mz-root) :where(h1, h2, h3, h4, p, figure) { margin: 0; }
+:where(#mz-root) :where(ul, ol) { margin: 0; padding: 0; list-style: none; }
 
-#mz-root :where(button, input, textarea, select) {
+:where(#mz-root) :where(button, input, textarea, select) {
     font: inherit;
     color: inherit;
     letter-spacing: inherit;
 }
 
-#mz-root :where(button) {
+:where(#mz-root) :where(button) {
     padding: 0;
     border: 0;
     background: none;
     cursor: pointer;
 }
 
-#mz-root :where(input, textarea) {
+:where(#mz-root) :where(input, textarea) {
     padding: 0;
     border: 0;
     background: none;
     outline: none;
 }
 
-#mz-root :where(input, textarea)::placeholder { color: var(--mz-text-dim); }
+:where(#mz-root) :where(input, textarea)::placeholder { color: var(--mz-text-dim); }
 
-#mz-root :focus-visible {
+:where(#mz-root) :focus-visible {
     outline: 1px solid var(--mz-accent);
     outline-offset: 2px;
 }
 
-#mz-root .mz-sprite { display: none; }
+:where(#mz-root) .mz-sprite { display: none; }
 
-#mz-root .ico {
+:where(#mz-root) .ico {
     width: 16px;
     height: 16px;
     flex: none;
@@ -367,12 +370,10 @@
 .mz-dlg {
     position: absolute;
     z-index: var(--mz-z-pane);
-    right: var(--mz-gutter);
+    right: var(--mz-pane-right);
     bottom: var(--mz-gutter);
-    left: var(--mz-gutter);
+    left: var(--mz-pane-left);
     height: var(--mz-pane-h);
-    max-width: var(--mz-dlg-max);
-    margin-inline: auto;
     display: grid;
     grid-template-rows: auto 1fr auto;
     gap: 9px;
@@ -385,11 +386,8 @@
     transition: height var(--mz-dur) var(--mz-ease);
 }
 
-/* once the trackers land the pane sits between the rails */
-.mz-frame.is-rails .mz-dlg {
-    left: calc(var(--mz-rail-w) + var(--mz-gutter) + var(--mz-dlg-gap));
-    right: calc(var(--mz-rail-w) + var(--mz-gutter) + var(--mz-dlg-gap));
-}
+/* the expanded rail layout, once the trackers land */
+.mz-frame.is-rails { --mz-rail-w: var(--mz-rail-w-wide); }
 
 .mz-frame.is-dragging .mz-dlg,
 .mz-frame.is-dragging .mz-port { transition: none; }
@@ -447,17 +445,24 @@
 .mz-dlg-tools {
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: 1px;
     margin-left: auto;
     opacity: .42;
     transition: opacity var(--mz-dur-fast) var(--mz-ease);
 }
 .mz-dlg:hover .mz-dlg-tools { opacity: 1; }
+.mz-dlg-tools .mz-ibtn { width: 22px; height: 22px; }
+.mz-dlg-tools .mz-ibtn .ico { width: 13px; height: 13px; }
+
+.mz-ibtn:disabled {
+    opacity: .3;
+    color: var(--mz-text-dim);
+    background: none;
+    cursor: default;
+}
 
 .mz-prose {
-    display: grid;
-    gap: 8px;
-    align-content: start;
+    display: block;
     overflow: auto;
     padding-right: 4px;
     font-family: var(--mz-font-prose);
@@ -466,18 +471,52 @@
     line-height: var(--mz-narr-leading);
     letter-spacing: .002em;
     color: var(--mz-text);
+    overflow-wrap: break-word;
     scrollbar-width: thin;
 }
 
-.mz-prose p {
-    /* one newline is a line break, two are a paragraph break */
-    white-space: pre-wrap;
-    overflow-wrap: break-word;
+/* SillyTavern's own formatter draws the message: <p> paragraphs, <br> line
+   breaks, <em>/<strong>, <q> speech, <hr> rules, lists, links, colour spans. */
+.mz-prose > * + * { margin-top: .72em; }
+
+.mz-prose q {
+    /* ST keeps the quote marks inside <q>, so the browser must not add more */
+    quotes: none;
+    color: var(--mz-text);
 }
 
-.mz-prose q { quotes: "\201C" "\201D" "\2018" "\2019"; }
 .mz-prose em { font-style: italic; }
-.mz-prose .mz-prose-narr { color: var(--mz-text-muted); }
+.mz-prose strong { font-weight: 500; }
+
+.mz-prose hr {
+    margin: .9em 0;
+    border: 0;
+    border-top: 1px solid var(--mz-line-strong);
+}
+
+.mz-prose blockquote {
+    margin: 0;
+    padding-left: 12px;
+    border-left: 2px solid var(--mz-accent-line);
+    color: var(--mz-text-muted);
+}
+
+.mz-prose ul,
+.mz-prose ol { padding-left: 1.25em; list-style: revert; }
+.mz-prose li + li { margin-top: .3em; }
+
+.mz-prose a {
+    color: var(--mz-accent);
+    text-decoration: none;
+    border-bottom: 1px solid var(--mz-accent-line);
+}
+
+.mz-prose img { max-width: 100%; height: auto; border-radius: var(--mz-r-sm); }
+
+.mz-prose code {
+    font-family: var(--mz-font-mono);
+    font-size: .88em;
+}
 
 .mz-prose-empty {
     align-self: center;
@@ -488,6 +527,12 @@
     letter-spacing: .04em;
     color: var(--mz-text-dim);
     text-align: center;
+}
+
+/* the reply is on its way but the first token has not landed */
+.mz-prose-wait {
+    color: var(--mz-text-dim);
+    letter-spacing: .3em;
 }
 
 .mz-composer {
@@ -506,6 +551,8 @@
     color: var(--mz-text);
 }
 
+.mz-input[readonly] { color: var(--mz-text-dim); cursor: default; }
+
 .mz-send {
     display: grid;
     place-items: center;
@@ -516,11 +563,19 @@
     color: var(--mz-accent-ink);
     transition:
         filter var(--mz-dur-fast),
+        background var(--mz-dur-fast),
+        color var(--mz-dur-fast),
         transform var(--mz-dur-fast) var(--mz-ease);
 }
 .mz-send:hover { filter: brightness(1.08); }
 .mz-send:active { transform: scale(.94); }
 .mz-send .ico { width: 14px; height: 14px; }
+
+/* while SillyTavern generates, the send button stops the stream */
+.mz-frame.is-generating .mz-send {
+    background: var(--mz-bad);
+    color: var(--mz-bg);
+}
 
 /* ---------- veil ---------- */
 .mz-veil {
@@ -545,7 +600,8 @@
     bottom: 0;
     display: grid;
     grid-template-rows: auto 1fr;
-    width: min(400px, 100%);
+    width: var(--mz-log-w);
+    max-width: 78vw;
     border-left: 1px solid var(--mz-line-strong);
     background: var(--mz-surface-solid);
     box-shadow: var(--mz-shadow);
@@ -560,6 +616,42 @@
     visibility: visible;
     transform: none;
 }
+
+.mz-frame.is-log-resizing > .mz-log { transition: none; }
+
+/* the left edge drags the log wider; the width is remembered */
+.mz-log-grip {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -7px;
+    z-index: 1;
+    width: 14px;
+    cursor: col-resize;
+    touch-action: none;
+}
+
+.mz-log-grip::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 6px;
+    width: 3px;
+    height: 46px;
+    margin-top: -23px;
+    border-radius: 2px;
+    background: var(--mz-line-strong);
+    opacity: 0;
+    transition: opacity var(--mz-dur-fast) var(--mz-ease);
+}
+
+.mz-log:hover .mz-log-grip::before,
+.mz-log-grip:focus-visible::before,
+.mz-frame.is-log-resizing .mz-log-grip::before {
+    opacity: 1;
+    background: var(--mz-accent);
+}
+.mz-log-grip:focus-visible { outline: none; }
 
 .mz-log-head {
     display: flex;
@@ -578,29 +670,29 @@
 }
 
 .mz-log-list {
-    display: grid;
-    align-content: start;
     overflow: auto;
     padding-bottom: 12px;
     scrollbar-width: thin;
 }
 
-.mz-log-item {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 3px 10px;
-    width: 100%;
-    padding: 9px 18px 10px;
+.mz-log-entry {
+    padding: 12px 18px 14px;
     border-bottom: 1px solid var(--mz-line);
-    text-align: left;
     transition: background var(--mz-dur-fast) var(--mz-ease);
 }
 
-.mz-log-item:hover { background: var(--mz-surface-2); }
+.mz-log-entry:hover { background: var(--mz-surface-2); }
 
-.mz-log-item.is-on {
+.mz-log-entry.is-on {
     background: var(--mz-surface-2);
     box-shadow: inset 2px 0 0 var(--mz-accent);
+}
+
+.mz-log-meta {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 7px;
 }
 
 .mz-log-who {
@@ -614,7 +706,7 @@
     color: var(--mz-text-muted);
 }
 
-.mz-log-item.is-on .mz-log-who { color: var(--mz-accent); }
+.mz-log-entry.is-on .mz-log-who { color: var(--mz-accent); }
 
 .mz-log-turn {
     font-size: var(--mz-text-2xs);
@@ -622,16 +714,40 @@
     font-variant-numeric: tabular-nums;
 }
 
-.mz-log-what {
-    display: -webkit-box;
-    grid-column: 1 / -1;
-    overflow: hidden;
-    font-family: var(--mz-font-prose);
-    font-size: var(--mz-text-md);
-    line-height: 1.45;
+.mz-log-read {
+    margin-left: auto;
+    padding: 2px 9px;
+    border: 1px solid var(--mz-line-strong);
+    border-radius: var(--mz-r-pill);
+    font-size: var(--mz-text-2xs);
+    letter-spacing: .06em;
     color: var(--mz-text-muted);
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
+    transition:
+        color var(--mz-dur-fast),
+        border-color var(--mz-dur-fast);
+}
+
+.mz-log-read:hover {
+    color: var(--mz-accent);
+    border-color: var(--mz-accent-line);
+}
+
+/* the log is the whole story so far: every message in full, as prose */
+.mz-log-prose {
+    overflow: visible;
+    padding-right: 0;
+    font-size: calc(var(--mz-narr-size) * .84);
+    line-height: 1.55;
+    color: var(--mz-text-muted);
+}
+
+.mz-log-entry.is-on .mz-log-prose { color: var(--mz-text); }
+
+.mz-log-prose .mz-prose-empty {
+    justify-self: start;
+    align-self: start;
+    padding: 0;
+    text-align: left;
 }
 
 .mz-log-empty {
@@ -763,6 +879,22 @@
     font-variant-numeric: tabular-nums;
 }
 
+.mz-select {
+    max-width: 220px;
+    height: 28px;
+    padding: 0 8px;
+    border: 1px solid var(--mz-line);
+    border-radius: var(--mz-r-sm);
+    background: var(--mz-surface-2);
+    color: var(--mz-text);
+    font-size: var(--mz-text-xs);
+}
+
+.mz-select option {
+    background: var(--mz-surface-solid);
+    color: var(--mz-text);
+}
+
 .mz-switch {
     display: flex;
     align-items: center;
@@ -835,7 +967,7 @@
 .mz-btn-ghost:hover { border-color: var(--mz-accent-line); color: var(--mz-accent); }
 
 /* ---------- small screens ---------- */
-@media (max-width: 760px) {
+@media (max-width: 759px) {
     #mz-root {
         --mz-header-h: 30px;
         --mz-chatbar-h: 44px;
@@ -863,9 +995,10 @@
     .mz-prose { font-size: calc(var(--mz-narr-size) * .9); }
 
     .mz-sheet { width: calc(100% - 24px); max-height: calc(100% - 44px); padding: 18px 16px 16px; }
-    .mz-log { width: 100%; }
+    .mz-log { width: 100%; max-width: none; }
     .mz-set-row { grid-template-columns: 1fr; gap: 8px; }
     .mz-set-control { justify-content: flex-start; }
+    .mz-select { max-width: none; width: 100%; }
 }
 
 /* ---------- reduced motion ---------- */

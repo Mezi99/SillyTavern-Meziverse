@@ -6,13 +6,14 @@
  * only owns the chrome around it.
  */
 
-import { currentChatId, on } from './st.js';
+import { currentChatId, on, regenerate, sendUserMessage, stopGeneration } from './st.js';
 import { settings, saveSettings } from './settings.js';
 import { injectSprite } from './icons.js';
 import { createTranscript } from './transcript.js';
 
-const VERSION = '0.1.0';
+const VERSION = '0.2.0';
 const PANE_DEFAULT = 300;
+const LOG_DEFAULT = 400;
 const UI_STEPS = [0.9, 0.95, 1, 1.05, 1.1, 1.2];
 const NARR_STEPS = [16, 17, 18, 18.5, 19, 20, 21, 22, 24];
 
@@ -21,6 +22,17 @@ const THEMES = [
     { id: 'ink-amber', name: 'Amber', swatch: 'linear-gradient(90deg, #0e0d0b 0 56%, #cfaa72 56%)' },
     { id: 'ink-rose', name: 'Rose', swatch: 'linear-gradient(90deg, #0d0c10 0 56%, #c8929c 56%)' },
 ];
+
+/* "theme" leaves the face the theme chose; the rest override it. */
+const NARR_FONTS = {
+    theme: null,
+    newsreader: '"Newsreader", Georgia, "Times New Roman", serif',
+    spectral: '"Spectral", "Newsreader", Georgia, serif',
+    lora: '"Lora", "Newsreader", Georgia, serif',
+    'source-serif': '"Source Serif 4", Georgia, "Times New Roman", serif',
+    inter: '"Inter", system-ui, -apple-system, "Segoe UI", sans-serif',
+    system: 'Georgia, "Times New Roman", serif',
+};
 
 const svg = name => `<svg class="ico" aria-hidden="true"><use href="#mz-i-${name}"/></svg>`;
 
@@ -33,6 +45,7 @@ const FRAME_HTML = `
         <div class="mz-brand"><b>Meziverse</b></div>
         <div class="mz-chatname" data-mz="chatname"><b class="is-empty">No chat open</b></div>
         <div class="mz-header-tools">
+            <button class="mz-ibtn" type="button" title="Full screen" aria-label="Full screen" data-mz-action="fullscreen">${svg('expand')}</button>
             <button class="mz-ibtn" type="button" title="Settings" aria-label="Settings" data-mz-action="settings">${svg('gear')}</button>
             <button class="mz-ibtn mz-ibtn--exit" type="button" title="Back to SillyTavern" aria-label="Back to SillyTavern" data-mz-action="exit">${svg('door')}</button>
         </div>
@@ -63,6 +76,12 @@ const FRAME_HTML = `
         <header class="mz-dlg-head">
             <span class="mz-speaker" data-mz="speaker"></span>
             <span class="mz-dlg-meta" data-mz="meta"></span>
+            <span class="mz-dlg-tools">
+                <button class="mz-ibtn" type="button" title="Previous turn" aria-label="Previous turn" data-mz-action="prev">${svg('prev')}</button>
+                <button class="mz-ibtn" type="button" title="Next turn" aria-label="Next turn" data-mz-action="next">${svg('next')}</button>
+                <button class="mz-ibtn" type="button" title="Latest turn" aria-label="Latest turn" data-mz-action="latest">${svg('latest')}</button>
+                <button class="mz-ibtn" type="button" title="Regenerate" aria-label="Regenerate" data-mz-action="regen">${svg('regen')}</button>
+            </span>
         </header>
         <div class="mz-prose" data-mz="prose">
             <p class="mz-prose-empty">The scene begins when you write.</p>
@@ -116,6 +135,18 @@ const FRAME_HTML = `
                     <button type="button" data-mz-step="narr" data-dir="1" aria-label="Larger narration">+</button>
                 </div>
             </div>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Narration font</b><small>The face the story is set in.</small></span>
+                <select class="mz-select" data-mz="font" aria-label="Narration font">
+                    <option value="theme">Theme default</option>
+                    <option value="newsreader">Newsreader</option>
+                    <option value="spectral">Spectral</option>
+                    <option value="lora">Lora</option>
+                    <option value="source-serif">Source Serif 4</option>
+                    <option value="inter">Inter</option>
+                    <option value="system">System serif</option>
+                </select>
+            </div>
         </div>
 
         <div class="mz-set-group">
@@ -133,6 +164,7 @@ const FRAME_HTML = `
     </section>
 
     <aside class="mz-log" aria-hidden="true" aria-label="Chat log">
+        <div class="mz-log-grip" role="separator" aria-orientation="vertical" aria-label="Resize chat log" tabindex="0"></div>
         <header class="mz-log-head">
             <h2>Chat log</h2>
             <button class="mz-ibtn" type="button" title="Close log" aria-label="Close log" data-mz-action="close-log">${svg('close')}</button>
@@ -171,12 +203,19 @@ export function mount() {
         speaker: root.querySelector('[data-mz="speaker"]'),
         meta: root.querySelector('[data-mz="meta"]'),
         input: root.querySelector('[data-mz="input"]'),
+        sendButton: root.querySelector('[data-mz-action="send"]'),
         grip: root.querySelector('.mz-grip'),
         sheet: root.querySelector('.mz-sheet'),
         motion: root.querySelector('[data-mz-action="motion"]'),
         uiValue: root.querySelector('[data-mz="ui-value"]'),
         narrValue: root.querySelector('[data-mz="narr-value"]'),
+        fontSelect: root.querySelector('[data-mz="font"]'),
+        fullscreenButton: root.querySelector('[data-mz-action="fullscreen"]'),
+        prevButton: root.querySelector('[data-mz-action="prev"]'),
+        nextButton: root.querySelector('[data-mz-action="next"]'),
+        latestButton: root.querySelector('[data-mz-action="latest"]'),
         logPanel: root.querySelector('.mz-log'),
+        logGrip: root.querySelector('.mz-log-grip'),
         logList: root.querySelector('[data-mz="log-list"]'),
         logButton: root.querySelector('[data-mz-action="log"]'),
         logClose: root.querySelector('[data-mz-action="close-log"]'),
@@ -192,6 +231,9 @@ export function mount() {
         logList: els.logList,
         logButton: els.logButton,
         logClose: els.logClose,
+        prevButton: els.prevButton,
+        nextButton: els.nextButton,
+        latestButton: els.latestButton,
     });
 
     desiredPane = Number(settings().paneHeight) || PANE_DEFAULT;
@@ -200,9 +242,13 @@ export function mount() {
     applyMotion();
     applyScale();
     applyNarration();
+    applyNarrationFont();
+    applyLogWidth(Number(settings().logWidth) || LOG_DEFAULT);
 
     wireActions();
     wirePane();
+    wireLog();
+    wireFullscreen();
     wireKeys();
     wireEvents();
 
@@ -212,6 +258,7 @@ export function mount() {
         requestAnimationFrame(() => {
             resizeQueued = false;
             applyPaneHeight(desiredPane);
+            applyLogWidth(Number(settings().logWidth) || LOG_DEFAULT);
         });
     });
 }
@@ -234,6 +281,9 @@ export function open() {
 
     refreshChatName();
     applyBackground();
+    applyLogWidth(Number(settings().logWidth) || LOG_DEFAULT);
+    setGenerating(stGenerating());
+    enterFullscreen();
     transcript.refresh({ followLatest: true });
     desiredPane = Number(settings().paneHeight) || PANE_DEFAULT;
     applyPaneHeight(desiredPane);
@@ -246,6 +296,8 @@ export function close() {
     if (!isOpen()) return;
 
     if (frame.contains(document.activeElement)) document.activeElement.blur();
+
+    leaveFullscreen();
 
     root.classList.remove('is-open', 'is-settings-open');
     root.setAttribute('aria-hidden', 'true');
@@ -296,6 +348,18 @@ function applyNarration() {
     els.narrValue.textContent = `${size} px`;
 }
 
+function applyNarrationFont() {
+    const stored = settings().narrFont;
+    const key = Object.prototype.hasOwnProperty.call(NARR_FONTS, stored) ? stored : 'theme';
+    const stack = NARR_FONTS[key];
+
+    // No inline value means the theme's own face, from 10-semantics.css.
+    if (stack) root.style.setProperty('--mz-font-prose', stack);
+    else root.style.removeProperty('--mz-font-prose');
+
+    if (els.fontSelect) els.fontSelect.value = key;
+}
+
 function stepValue(steps, current, dir) {
     const index = steps.reduce((best, value, at) =>
         Math.abs(value - current) < Math.abs(steps[best] - current) ? at : best, 0);
@@ -326,6 +390,38 @@ function applyBackground() {
     } else {
         frame.style.removeProperty('--mz-st-bg');
     }
+}
+
+/* ---------- full screen ---------- */
+
+function enterFullscreen() {
+    if (document.fullscreenElement || typeof root.requestFullscreen !== 'function') return;
+
+    // The browser needs a gesture; opening the overlay from a click is one.
+    try {
+        root.requestFullscreen({ navigationUI: 'hide' })?.catch?.(() => {});
+    } catch {
+        // Refused: the overlay still fills the window, just with browser chrome.
+    }
+}
+
+function leaveFullscreen() {
+    if (document.fullscreenElement !== root || typeof document.exitFullscreen !== 'function') return;
+    document.exitFullscreen()?.catch?.(() => {});
+}
+
+function syncFullscreen() {
+    const on = document.fullscreenElement === root;
+
+    els.fullscreenButton.innerHTML = svg(on ? 'collapse' : 'expand');
+    const label = on ? 'Leave full screen' : 'Full screen';
+    els.fullscreenButton.title = label;
+    els.fullscreenButton.setAttribute('aria-label', label);
+}
+
+function wireFullscreen() {
+    document.addEventListener('fullscreenchange', syncFullscreen);
+    syncFullscreen();
 }
 
 /* ---------- chat name ---------- */
@@ -424,6 +520,89 @@ function wirePane() {
     });
 }
 
+/* ---------- sending ---------- */
+
+/** ST shows its stop button only while it generates; that is the source of truth. */
+function stGenerating() {
+    const stop = document.getElementById('mes_stop');
+    return !!stop && getComputedStyle(stop).display !== 'none';
+}
+
+function setGenerating(on) {
+    const busy = !!on;
+
+    frame.classList.toggle('is-generating', busy);
+    els.sendButton.innerHTML = svg(busy ? 'stop' : 'send');
+
+    const label = busy ? 'Stop generating' : 'Send';
+    els.sendButton.title = label;
+    els.sendButton.setAttribute('aria-label', label);
+
+    els.input.readOnly = busy;
+    els.input.placeholder = busy ? 'Generating\u2026' : 'Write your line\u2026';
+}
+
+/* ---------- log width ---------- */
+
+function applyLogWidth(width, persist = false) {
+    if (!frame.clientWidth) return;
+
+    const min = cssPx('--mz-log-w-min', 320);
+    const max = Math.max(min, Math.min(frame.clientWidth - 200, Math.round(frame.clientWidth * 0.78)));
+    const clamped = Math.round(Math.min(max, Math.max(min, Number(width) || LOG_DEFAULT)));
+
+    frame.style.setProperty('--mz-log-w', `${clamped}px`);
+    els.logGrip.setAttribute('aria-valuemin', String(Math.round(min)));
+    els.logGrip.setAttribute('aria-valuemax', String(Math.round(max)));
+    els.logGrip.setAttribute('aria-valuenow', String(clamped));
+
+    if (persist) {
+        settings().logWidth = clamped;
+        saveSettings();
+    }
+}
+
+function wireLog() {
+    let start = null;
+
+    els.logGrip.addEventListener('pointerdown', event => {
+        if (event.button !== 0 && event.pointerType === 'mouse') return;
+        event.preventDefault();
+        start = { x: event.clientX, width: els.logPanel.offsetWidth };
+        frame.classList.add('is-log-resizing');
+        try { els.logGrip.setPointerCapture(event.pointerId); } catch { /* synthetic event */ }
+    });
+
+    els.logGrip.addEventListener('pointermove', event => {
+        if (!start) return;
+        applyLogWidth(start.width + (start.x - event.clientX));
+    });
+
+    const endDrag = event => {
+        if (!start) return;
+        start = null;
+        frame.classList.remove('is-log-resizing');
+        try { els.logGrip.releasePointerCapture(event.pointerId); } catch { /* already released */ }
+        applyLogWidth(els.logPanel.offsetWidth, true);
+    };
+
+    els.logGrip.addEventListener('pointerup', endDrag);
+    els.logGrip.addEventListener('pointercancel', endDrag);
+
+    els.logGrip.addEventListener('keydown', event => {
+        if (event.key === 'ArrowLeft') {
+            event.preventDefault();
+            applyLogWidth(els.logPanel.offsetWidth + 24, true);
+        } else if (event.key === 'ArrowRight') {
+            event.preventDefault();
+            applyLogWidth(els.logPanel.offsetWidth - 24, true);
+        } else if (event.key === 'Home') {
+            event.preventDefault();
+            applyLogWidth(LOG_DEFAULT, true);
+        }
+    });
+}
+
 /* ---------- actions ---------- */
 
 function openSettings() {
@@ -441,15 +620,24 @@ function closeSettings() {
 }
 
 function submitLine() {
+    if (frame.classList.contains('is-generating')) {
+        stopGeneration();
+        return;
+    }
+
     const text = els.input.value.trim();
     if (!text) {
         els.input.focus();
         return;
     }
 
-    // The transcript owns sending; until it exists this is a no-op that keeps
-    // the line in the box instead of losing it.
-    frame.dispatchEvent(new CustomEvent('mz-send', { detail: { text }, bubbles: true }));
+    // ST's own composer does the sending, so the native pipeline runs.
+    if (!sendUserMessage(text)) {
+        els.input.focus();
+        return;
+    }
+
+    els.input.value = '';
 }
 
 function wireActions() {
@@ -499,6 +687,22 @@ function wireActions() {
             case 'close-log':
                 transcript.closeLog();
                 break;
+            case 'prev':
+                transcript.step(-1);
+                break;
+            case 'next':
+                transcript.step(1);
+                break;
+            case 'latest':
+                transcript.latest();
+                break;
+            case 'regen':
+                regenerate();
+                break;
+            case 'fullscreen':
+                if (document.fullscreenElement === root) leaveFullscreen();
+                else enterFullscreen();
+                break;
             case 'dismiss':
                 if (transcript.isLogOpen()) transcript.closeLog();
                 else closeSettings();
@@ -525,8 +729,14 @@ function wireActions() {
     els.input.addEventListener('keydown', event => {
         if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
             event.preventDefault();
-            submitLine();
+            if (!frame.classList.contains('is-generating')) submitLine();
         }
+    });
+
+    els.fontSelect?.addEventListener('change', () => {
+        settings().narrFont = els.fontSelect.value;
+        applyNarrationFont();
+        saveSettings();
     });
 }
 
@@ -542,6 +752,9 @@ function wireKeys() {
         if (!isOpen()) return;
 
         if (event.key === 'Escape') {
+            // In full screen the first Esc belongs to the browser.
+            if (document.fullscreenElement) return;
+
             event.preventDefault();
             event.stopPropagation();
             if (transcript?.isLogOpen()) transcript.closeLog();
@@ -586,4 +799,8 @@ function wireEvents() {
     on('FORCE_SET_BACKGROUND', () => {
         if (isOpen()) applyBackground();
     });
+
+    on('GENERATION_STARTED', () => setGenerating(true));
+    on('GENERATION_ENDED', () => setGenerating(false));
+    on('GENERATION_STOPPED', () => setGenerating(false));
 }

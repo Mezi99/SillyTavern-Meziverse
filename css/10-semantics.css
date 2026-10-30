@@ -40,6 +40,9 @@
     --mz-scene-cool: rgba(150, 196, 208, .18);
     --mz-scene-warm: rgba(255, 190, 118, .20);
     --mz-scene-wet: rgba(120, 170, 185, .10);
+
+    /* narration face for this theme; settings can override it */
+    --mz-font-prose: "Newsreader", "Source Serif 4", Georgia, "Times New Roman", serif;
 }
 
 /* ---------- ink · amber ---------- */
@@ -68,6 +71,8 @@
     --mz-scene-cool: rgba(212, 176, 122, .14);
     --mz-scene-warm: rgba(255, 196, 120, .26);
     --mz-scene-wet: rgba(190, 150, 100, .10);
+
+    --mz-font-prose: "Spectral", "Newsreader", Georgia, "Times New Roman", serif;
 }
 
 /* ---------- ink · rose ---------- */
@@ -96,4 +101,6 @@
     --mz-scene-cool: rgba(200, 150, 165, .18);
     --mz-scene-warm: rgba(240, 170, 150, .18);
     --mz-scene-wet: rgba(160, 130, 150, .10);
+
+    --mz-font-prose: "Lora", "Newsreader", Georgia, "Times New Roman", serif;
 }

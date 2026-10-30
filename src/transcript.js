@@ -2,13 +2,14 @@
  * The reading pane and the log drawer.
  *
  * The pane shows one message at a time: the latest by default, or whichever
- * message was picked from the log. Everything is read from SillyTavern's chat
- * on demand; nothing is copied or stored, so swipes, edits, deletes and chat
+ * message was picked from the log, and it can step back and forward through the
+ * chat one answer at a time. Everything is read from SillyTavern's chat on
+ * demand; nothing is copied or stored, so swipes, edits, deletes and chat
  * switches are correct the moment SillyTavern reports them.
  */
 
 import { chatMessages, ctx, currentChatId, on } from './st.js';
-import { toParagraphs, toSnippet } from './prose.js';
+import { renderInto, toHtml } from './prose.js';
 
 const FOLLOW = null;
 
@@ -33,35 +34,80 @@ function speakerOf(message) {
  * @param {HTMLElement} parts.logList
  * @param {HTMLElement} parts.logButton
  * @param {HTMLElement} parts.logClose
+ * @param {HTMLButtonElement} [parts.prevButton]
+ * @param {HTMLButtonElement} [parts.nextButton]
+ * @param {HTMLButtonElement} [parts.latestButton]
  */
-export function createTranscript({ frame, isOpen, speaker, meta, prose, logPanel, logList, logButton, logClose }) {
+export function createTranscript({
+    frame, isOpen, speaker, meta, prose, logPanel, logList, logButton, logClose,
+    prevButton, nextButton, latestButton,
+}) {
     // null follows the newest message; a number pins that index in the chat.
     let selected = FOLLOW;
     let shown = [];
     let chatId = currentChatId();
     let logDirty = true;
+    let queued = false;
 
-    function fillProse(paragraphs, message) {
-        prose.replaceChildren();
+    function currentEntry() {
+        if (!shown.length) return null;
+        if (selected === FOLLOW) return shown[shown.length - 1];
+        return shown.find(entry => entry.index === selected) ?? shown[shown.length - 1];
+    }
 
-        if (!paragraphs.length) {
-            const empty = document.createElement('p');
-            empty.className = 'mz-prose-empty';
-            empty.textContent = message ? 'This message has no text.' : 'The scene begins when you write.';
-            prose.append(empty);
+    function position() {
+        const entry = currentEntry();
+        return entry ? shown.indexOf(entry) : -1;
+    }
+
+    function fillProse(element, message, index, { waiting = false } = {}) {
+        const html = toHtml(message, index);
+        if (html) {
+            renderInto(element, html);
             return;
         }
 
-        for (const text of paragraphs) {
-            const p = document.createElement('p');
-            p.textContent = text;
-            prose.append(p);
-        }
-
-        prose.scrollTop = 0;
+        const empty = document.createElement('p');
+        empty.className = waiting ? 'mz-prose-wait' : 'mz-prose-empty';
+        empty.textContent = waiting
+            ? '\u2026'
+            : (message ? 'This message has no text.' : 'The scene begins when you write.');
+        element.replaceChildren(empty);
     }
 
-    /** Rebuilds the log list and marks the message being read. */
+    /** A reply that has not started streaming yet is not an empty message. */
+    function isWaitingForFirstToken(entry) {
+        if (!entry || entry !== shown[shown.length - 1]) return false;
+        if (typeof entry.message.mes === 'string' && entry.message.mes.trim()) return false;
+        return frame.classList.contains('is-generating');
+    }
+
+    function updateControls() {
+        const at = position();
+        const last = shown.length - 1;
+        if (prevButton) prevButton.disabled = at <= 0;
+        if (nextButton) nextButton.disabled = at < 0 || at >= last;
+        if (latestButton) latestButton.disabled = selected === FOLLOW || at < 0;
+    }
+
+    function drawPane({ stick = false } = {}) {
+        const entry = currentEntry();
+
+        if (!entry) {
+            speaker.textContent = '';
+            meta.textContent = '';
+            fillProse(prose, null, -1);
+        } else {
+            speaker.textContent = speakerOf(entry.message);
+            meta.textContent = `turn ${position() + 1} of ${shown.length}`;
+            fillProse(prose, entry.message, entry.index, { waiting: isWaitingForFirstToken(entry) });
+        }
+
+        prose.scrollTop = stick ? prose.scrollHeight : 0;
+        updateControls();
+    }
+
+    /** Rebuilds the log list, every message in full, and marks the one being read. */
     function renderLog() {
         const scroll = logList.scrollTop;
         logDirty = false;
@@ -75,15 +121,16 @@ export function createTranscript({ frame, isOpen, speaker, meta, prose, logPanel
             return;
         }
 
+        const active = currentEntry();
         const fragment = document.createDocumentFragment();
 
-        for (const { index, message } of shown) {
+        shown.forEach(({ index, message }, at) => {
             const item = document.createElement('li');
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = 'mz-log-item';
-            button.dataset.mzLog = String(index);
-            button.setAttribute('aria-label', `${speakerOf(message)}, turn ${index + 1}`);
+            item.className = 'mz-log-entry';
+            item.dataset.mzLog = String(index);
+
+            const head = document.createElement('header');
+            head.className = 'mz-log-meta';
 
             const who = document.createElement('span');
             who.className = 'mz-log-who';
@@ -91,30 +138,37 @@ export function createTranscript({ frame, isOpen, speaker, meta, prose, logPanel
 
             const turn = document.createElement('span');
             turn.className = 'mz-log-turn';
-            turn.textContent = String(index + 1);
+            turn.textContent = `turn ${at + 1}`;
 
-            const what = document.createElement('span');
-            what.className = 'mz-log-what';
-            what.textContent = toSnippet(message.mes, 160) || '\u2014';
+            const read = document.createElement('button');
+            read.type = 'button';
+            read.className = 'mz-log-read';
+            read.dataset.mzLog = String(index);
+            read.textContent = 'Read';
+            read.setAttribute('aria-label', `Read ${speakerOf(message)}, turn ${at + 1}`);
 
-            button.append(who, turn, what);
+            head.append(who, turn, read);
 
-            const isOn = selected === index || (selected === FOLLOW && index === shown[shown.length - 1].index);
-            if (isOn) {
-                button.classList.add('is-on');
-                button.setAttribute('aria-current', 'true');
+            const body = document.createElement('div');
+            body.className = 'mz-prose mz-log-prose';
+            fillProse(body, message, index);
+
+            item.append(head, body);
+
+            if (active && active.index === index) {
+                item.classList.add('is-on');
+                read.setAttribute('aria-current', 'true');
             }
 
-            item.append(button);
             fragment.append(item);
-        }
+        });
 
         logList.append(fragment);
         logList.scrollTop = scroll;
     }
 
     /** Reads the chat and draws whichever message is being shown. */
-    function refresh({ followLatest = false } = {}) {
+    function refresh({ followLatest = false, stick = false } = {}) {
         const nextChat = currentChatId();
         if (nextChat !== chatId || followLatest) {
             chatId = nextChat;
@@ -129,22 +183,41 @@ export function createTranscript({ frame, isOpen, speaker, meta, prose, logPanel
             selected = FOLLOW;
         }
 
-        const entry = selected === FOLLOW
-            ? shown[shown.length - 1]
-            : shown.find(item => item.index === selected);
-
-        if (!entry) {
-            speaker.textContent = '';
-            meta.textContent = '';
-            fillProse([], null);
-        } else {
-            speaker.textContent = speakerOf(entry.message);
-            meta.textContent = `turn ${entry.index + 1}`;
-            fillProse(toParagraphs(entry.message.mes), entry.message);
-        }
+        drawPane({ stick });
 
         logDirty = true;
         if (isLogOpen()) renderLog();
+    }
+
+    /** Streaming sends a token per frame; redraw once per frame, not per token. */
+    function queueRefresh() {
+        if (queued) return;
+        queued = true;
+        requestAnimationFrame(() => {
+            queued = false;
+            if (isOpen()) refresh({ stick: true });
+        });
+    }
+
+    /* ---------- moving through the scene ---------- */
+
+    function goTo(at) {
+        if (!shown.length) return;
+        const last = shown.length - 1;
+        const clamped = Math.max(0, Math.min(last, at));
+        selected = clamped === last ? FOLLOW : shown[clamped].index;
+        refresh();
+    }
+
+    function step(direction) {
+        const at = position();
+        if (at < 0) return;
+        goTo(at + direction);
+    }
+
+    function latest() {
+        selected = FOLLOW;
+        refresh();
     }
 
     /* ---------- the log drawer ---------- */
@@ -159,7 +232,7 @@ export function createTranscript({ frame, isOpen, speaker, meta, prose, logPanel
         logPanel.setAttribute('aria-hidden', 'false');
         logButton.setAttribute('aria-expanded', 'true');
 
-        logList.querySelector('.mz-log-item.is-on')?.scrollIntoView({ block: 'nearest' });
+        logList.querySelector('.mz-log-entry.is-on')?.scrollIntoView({ block: 'nearest' });
         logClose.focus({ preventScroll: true });
     }
 
@@ -170,28 +243,30 @@ export function createTranscript({ frame, isOpen, speaker, meta, prose, logPanel
         if (focus) logButton.focus({ preventScroll: true });
     }
 
+    /** Jumps to a turn picked in the log, then gets the log out of the way. */
     function show(index) {
-        if (index === shown[shown.length - 1]?.index) {
-            selected = FOLLOW;
-        } else {
-            selected = index;
-        }
-        refresh();
+        const at = shown.findIndex(entry => entry.index === index);
+        if (at >= 0) goTo(at);
+        else latest();
         closeLog();
     }
 
     /* ---------- wiring ---------- */
 
     logList.addEventListener('click', event => {
-        const button = event.target.closest('[data-mz-log]');
-        if (!button) return;
-        show(Number(button.dataset.mzLog));
+        // a link in the prose is a link, not a jump
+        if (event.target.closest('a')) return;
+
+        const target = event.target.closest('[data-mz-log]');
+        if (!target) return;
+        show(Number(target.dataset.mzLog));
     });
 
     const events = [
         'CHAT_CHANGED', 'CHAT_LOADED', 'CHAT_CREATED', 'CHAT_DELETED', 'CHAT_RENAMED',
         'MESSAGE_SENT', 'MESSAGE_RECEIVED', 'MESSAGE_SWIPED', 'MESSAGE_SWIPE_DELETED',
         'MESSAGE_EDITED', 'MESSAGE_DELETED', 'MESSAGE_UPDATED', 'MORE_MESSAGES_LOADED',
+        'GENERATION_ENDED', 'GENERATION_STOPPED',
     ];
 
     for (const name of events) {
@@ -200,5 +275,9 @@ export function createTranscript({ frame, isOpen, speaker, meta, prose, logPanel
         });
     }
 
-    return { refresh, openLog, closeLog, isLogOpen };
+    on('STREAM_TOKEN_RECEIVED', () => {
+        if (isOpen()) queueRefresh();
+    });
+
+    return { refresh, openLog, closeLog, isLogOpen, step, latest, show };
 }

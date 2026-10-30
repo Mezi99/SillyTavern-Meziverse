@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:ital,wght@0,300;0,400;0,500;1,300;1,400&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Lora:ital,wght@0,400;0,500;1,400&family=Newsreader:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;1,8..60,300;1,8..60,400&family=Spectral:ital,wght@0,300;0,400;0,500;1,300;1,400&display=swap");
 
 /* ==========================================================================
    Meziverse — primitives
@@ -56,8 +56,13 @@
     --mz-rail-w-wide: 330px;
     --mz-dlg-gap: 20px;
 
-    /* the reading column, whatever the window or the rails leave it */
-    --mz-dlg-max: 680px;
+    /* the pane is inset by whatever rails the window can afford */
+    --mz-pane-left: var(--mz-gutter);
+    --mz-pane-right: var(--mz-gutter);
+
+    /* the log's width is dragged and remembered */
+    --mz-log-w: 400px;
+    --mz-log-w-min: 320px;
 
     --mz-pane-h: 300px;
     --mz-pane-h-min: 220px;
@@ -93,3 +98,14 @@
     --mz-z-header: 10;
     --mz-z-sheet: 20;
 }
+
+/* Tablet keeps the right rail (threads, plans) because the chat header already
+   carries the scene. Both rails need room to read; below that the pane wins. */
+@media (min-width: 760px) {
+    #mz-root { --mz-pane-right: calc(var(--mz-rail-w) + var(--mz-gutter) + var(--mz-dlg-gap)); }
+}
+
+@media (min-width: 1180px) {
+    #mz-root { --mz-pane-left: calc(var(--mz-rail-w) + var(--mz-gutter) + var(--mz-dlg-gap)); }
+}
+
