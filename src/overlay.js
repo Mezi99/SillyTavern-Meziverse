@@ -282,7 +282,8 @@ export function open() {
     refreshChatName();
     applyBackground();
     applyLogWidth(Number(settings().logWidth) || LOG_DEFAULT);
-    setGenerating(stGenerating());
+    setGenerating(stGenerating(), { force: true });
+    if (stGenerating()) startWatch();
     enterFullscreen();
     transcript.refresh({ followLatest: true });
     desiredPane = Number(settings().paneHeight) || PANE_DEFAULT;
@@ -522,14 +523,31 @@ function wirePane() {
 
 /* ---------- sending ---------- */
 
-/** ST shows its stop button only while it generates; that is the source of truth. */
+/**
+ * SillyTavern's own generating state: it shows the stop button only for real
+ * generations. Dry runs (another extension assembling a prompt) and finished
+ * runs never show it, so this is the truth our UI must agree with.
+ */
 function stGenerating() {
     const stop = document.getElementById('mes_stop');
     return !!stop && getComputedStyle(stop).display !== 'none';
 }
 
-function setGenerating(on) {
+let generating = false;
+let generatingDirty = false;
+let watchTimer = null;
+
+/**
+ * Brings the UI to the state asked for, skipping the DOM writes when nothing
+ * changed: the composer must never miss the flip back to "send".
+ *
+ * @param {boolean} on
+ * @param {{ force?: boolean }} [options]
+ */
+function setGenerating(on, { force = false } = {}) {
     const busy = !!on;
+    generating = busy;
+    if (busy === frame.classList.contains('is-generating') && !force) return;
 
     frame.classList.toggle('is-generating', busy);
     els.sendButton.innerHTML = svg(busy ? 'stop' : 'send');
@@ -540,6 +558,29 @@ function setGenerating(on) {
 
     els.input.readOnly = busy;
     els.input.placeholder = busy ? 'Generating\u2026' : 'Write your line\u2026';
+
+    generatingDirty = busy;
+}
+
+/**
+ * While we believe a generation runs, keep asking SillyTavern. Extensions can
+ * start dry-run generations that never emit GENERATION_ENDED, and any missed
+ * event would leave the composer locked; this heals the state within a beat.
+ */
+function startWatch() {
+    if (watchTimer !== null) return;
+
+    watchTimer = setInterval(() => {
+        if (!generating) {
+            clearInterval(watchTimer);
+            watchTimer = null;
+            return;
+        }
+
+        if (!stGenerating()) {
+            setGenerating(false);
+        }
+    }, 500);
 }
 
 /* ---------- log width ---------- */
@@ -800,7 +841,14 @@ function wireEvents() {
         if (isOpen()) applyBackground();
     });
 
-    on('GENERATION_STARTED', () => setGenerating(true));
+    // Dry runs (another extension assembling its prompt) never reach the chat:
+    // following them would wedge the composer, since no GENERATION_ENDED comes.
+    on('GENERATION_STARTED', (type, _options, dryRun) => {
+        if (dryRun) return;
+        setGenerating(true);
+        startWatch();
+    });
     on('GENERATION_ENDED', () => setGenerating(false));
     on('GENERATION_STOPPED', () => setGenerating(false));
+    on('GROUP_WRAPPER_FINISHED', () => setGenerating(false));
 }
