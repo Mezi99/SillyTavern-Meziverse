@@ -12,6 +12,16 @@
     --mz-text-lg: calc(var(--mz-raw-lg) * var(--mz-ui-scale));
     --mz-text-xl: calc(var(--mz-raw-xl) * var(--mz-ui-scale));
     --mz-text-2xl: calc(var(--mz-raw-2xl) * var(--mz-ui-scale));
+
+    /* The story's four inks. They point at the theme's own tokens here, so
+       each theme tints them its way; a theme may retune any of them, and
+       the prose-colors setting overrides them inline on this same element.
+       The log keeps a quieter base so it reads as a recap. */
+    --mz-prose-plain: var(--mz-text);
+    --mz-prose-q: var(--mz-accent);
+    --mz-prose-em: var(--mz-text-muted);
+    --mz-prose-strong: var(--mz-text);
+    --mz-prose-log-plain: var(--mz-text-muted);
 }
 
 /* ---------- ink · jade (default) ---------- */

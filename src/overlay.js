@@ -16,7 +16,11 @@ const PANE_DEFAULT = 300;
 const LOG_W_DEFAULT = 720;
 const LOG_H_SHARE = 0.7;
 const UI_STEPS = [0.9, 0.95, 1, 1.05, 1.1, 1.2];
-const NARR_STEPS = [16, 17, 18, 18.5, 19, 20, 21, 22, 24];
+const NARR_STEPS = [12, 13, 14, 15, 16, 17, 18, 18.5, 19, 20, 21, 22, 24];
+
+/* The prose inks, as tokens on #mz-root and as keys in settings(). */
+const PROSE_TOKENS = ['plain', 'q', 'em', 'strong'];
+const PROSE_KEYS = { plain: 'prosePlain', q: 'proseQ', em: 'proseEm', strong: 'proseStrong' };
 
 const THEMES = [
     { id: 'ink-jade', name: 'Jade', swatch: 'linear-gradient(90deg, #0c0e11 0 56%, #77c2aa 56%)' },
@@ -148,6 +152,23 @@ const FRAME_HTML = `
                     <option value="system">System serif</option>
                 </select>
             </div>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Prose colors</b><small>Plain, speech, emphasis, strong — pane and log.</small></span>
+                <div class="mz-seg" role="group" aria-label="Prose colors">
+                    <button type="button" data-mz-pick-prose="theme">Theme</button>
+                    <button type="button" data-mz-pick-prose="st">SillyTavern</button>
+                    <button type="button" data-mz-pick-prose="custom">Custom</button>
+                </div>
+            </div>
+            <div class="mz-set-row mz-set-row--colors" data-mz="prose-pickers" hidden>
+                <span class="mz-set-label"><b>Pick your inks</b><small>Plain text, speech, emphasis, strong.</small></span>
+                <div class="mz-colors">
+                    <label class="mz-color"><input type="color" data-mz-color="plain" aria-label="Plain color"><span>Plain</span></label>
+                    <label class="mz-color"><input type="color" data-mz-color="q" aria-label="Speech color"><span>Speech</span></label>
+                    <label class="mz-color"><input type="color" data-mz-color="em" aria-label="Emphasis color"><span>Emphasis</span></label>
+                    <label class="mz-color"><input type="color" data-mz-color="strong" aria-label="Strong color"><span>Strong</span></label>
+                </div>
+            </div>
         </div>
 
         <div class="mz-set-group">
@@ -212,6 +233,8 @@ export function mount() {
         uiValue: root.querySelector('[data-mz="ui-value"]'),
         narrValue: root.querySelector('[data-mz="narr-value"]'),
         fontSelect: root.querySelector('[data-mz="font"]'),
+        prosePickers: root.querySelector('[data-mz="prose-pickers"]'),
+        colorInputs: [...root.querySelectorAll('[data-mz-color]')],
         fullscreenButton: root.querySelector('[data-mz-action="fullscreen"]'),
         prevButton: root.querySelector('[data-mz-action="prev"]'),
         nextButton: root.querySelector('[data-mz-action="next"]'),
@@ -246,6 +269,7 @@ export function mount() {
     applyScale();
     applyNarration();
     applyNarrationFont();
+    applyProseColors();
     applyLogWidth(Number(settings().logWidth) || LOG_W_DEFAULT);
 
     wireActions();
@@ -285,6 +309,7 @@ export function open() {
 
     refreshChatName();
     applyBackground();
+    applyProseColors();
     applyLogWidth(Number(settings().logWidth) || LOG_W_DEFAULT);
     if (Number(settings().logHeight) > 0) applyLogHeight(settings().logHeight);
     setGenerating(stGenerating(), { force: true });
@@ -364,6 +389,77 @@ function applyNarrationFont() {
     else root.style.removeProperty('--mz-font-prose');
 
     if (els.fontSelect) els.fontSelect.value = key;
+}
+
+/* Reads the prose inks SillyTavern's chat has right now. A hidden probe
+   rides inside #chat for one tick — long enough for getComputedStyle to see
+   what .mes_text would show — and is removed before anything can observe it. */
+function sampleStProse() {
+    const chat = document.getElementById('chat');
+    if (!chat) return null;
+
+    const probe = document.createElement('div');
+    probe.className = 'mes';
+    probe.style.display = 'none';
+    probe.innerHTML = '<div class="mes_text">plain<q>speech</q><em>em</em><strong>strong</strong></div>';
+    chat.append(probe);
+
+    const text = probe.querySelector('.mes_text');
+    const inks = {
+        plain: getComputedStyle(text).color,
+        q: getComputedStyle(text.querySelector('q')).color,
+        em: getComputedStyle(text.querySelector('em')).color,
+        strong: getComputedStyle(text.querySelector('strong')).color,
+    };
+
+    probe.remove();
+    return inks;
+}
+
+function applyProseColors() {
+    const mode = settings().proseColors;
+
+    // The segmented control mirrors the chosen mode.
+    root.querySelectorAll('[data-mz-pick-prose]').forEach(button => {
+        const isOn = button.dataset.mzPickProse === mode;
+        button.classList.toggle('is-on', isOn);
+        button.setAttribute('aria-pressed', String(isOn));
+    });
+
+    // Custom pickers only make sense in Custom mode.
+    if (els.prosePickers) els.prosePickers.hidden = mode !== 'custom';
+    els.colorInputs.forEach(input => { input.value = settings()[PROSE_KEYS[input.dataset.mzColor]] || '#000000'; });
+
+    // Theme mode: drop every override so the theme tokens cascade.
+    if (mode === 'theme') {
+        PROSE_TOKENS.forEach(token => root.style.removeProperty(`--mz-prose-${token}`));
+        root.style.removeProperty('--mz-prose-log-plain');
+        return;
+    }
+
+    // Both other modes set the four inks inline; only the source differs.
+    const inks = mode === 'st'
+        ? sampleStProse()
+        : PROSE_TOKENS.reduce((carry, token) => {
+            carry[token] = settings()[PROSE_KEYS[token]];
+            return carry;
+        }, {});
+
+    const applied = {};
+    for (const token of PROSE_TOKENS) {
+        const value = typeof inks[token] === 'string' ? inks[token].trim() : '';
+        if (value) {
+            root.style.setProperty(`--mz-prose-${token}`, value);
+            applied[token] = value;
+        } else {
+            root.style.removeProperty(`--mz-prose-${token}`);
+        }
+    }
+
+    // The log keeps its muted recap tint in Theme mode; elsewhere it follows
+    // the chosen plain ink.
+    if (applied.plain) root.style.setProperty('--mz-prose-log-plain', applied.plain);
+    else root.style.removeProperty('--mz-prose-log-plain');
 }
 
 function stepValue(steps, current, dir) {
@@ -741,6 +837,14 @@ function wireActions() {
             return;
         }
 
+        const prosePick = event.target.closest('[data-mz-pick-prose]');
+        if (prosePick) {
+            settings().proseColors = prosePick.dataset.mzPickProse;
+            applyProseColors();
+            saveSettings();
+            return;
+        }
+
         const step = event.target.closest('[data-mz-step]');
         if (step) {
             const dir = Number(step.dataset.dir) || 0;
@@ -820,6 +924,14 @@ function wireActions() {
         settings().narrFont = els.fontSelect.value;
         applyNarrationFont();
         saveSettings();
+    });
+
+    els.colorInputs.forEach(input => {
+        input.addEventListener('input', () => {
+            settings()[PROSE_KEYS[input.dataset.mzColor]] = input.value;
+            applyProseColors();
+            saveSettings();
+        });
     });
 }
 

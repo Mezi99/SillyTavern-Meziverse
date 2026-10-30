@@ -470,7 +470,7 @@
     font-weight: 300;
     line-height: var(--mz-narr-leading);
     letter-spacing: .002em;
-    color: var(--mz-text);
+    color: var(--mz-prose-plain, var(--mz-text));
     overflow-wrap: break-word;
     scrollbar-width: thin;
 }
@@ -482,11 +482,23 @@
 .mz-prose q {
     /* ST keeps the quote marks inside <q>, so the browser must not add more */
     quotes: none;
-    color: var(--mz-text);
+    color: var(--mz-prose-q, var(--mz-accent));
 }
 
-.mz-prose em { font-style: italic; }
-.mz-prose strong { font-weight: 500; }
+/* speech stays one colour, however it is stressed — as SillyTavern does it */
+.mz-prose q em,
+.mz-prose q i,
+.mz-prose q strong { color: inherit; }
+
+.mz-prose em {
+    font-style: italic;
+    color: var(--mz-prose-em, var(--mz-text-muted));
+}
+
+.mz-prose strong {
+    font-weight: 500;
+    color: var(--mz-prose-strong, var(--mz-text));
+}
 
 .mz-prose hr {
     margin: .9em 0;
@@ -794,10 +806,12 @@
     padding-right: 0;
     font-size: calc(var(--mz-narr-size) * .84);
     line-height: 1.55;
-    color: var(--mz-text-muted);
+    color: var(--mz-prose-log-plain, var(--mz-prose-plain, var(--mz-text-muted)));
 }
 
-.mz-log-entry.is-on .mz-log-prose { color: var(--mz-text); }
+.mz-log-entry.is-on .mz-log-prose {
+    color: var(--mz-prose-plain, var(--mz-text));
+}
 
 .mz-log-prose .mz-prose-empty {
     justify-self: start;
@@ -949,6 +963,49 @@
 .mz-select option {
     background: var(--mz-surface-solid);
     color: var(--mz-text);
+}
+
+/* author display rules outrank the hidden attribute, so it needs help
+   (scoped: this stylesheet loads into SillyTavern's page) */
+#mz-root [hidden] { display: none !important; }
+
+/* the four ink pickers, shown only in Custom mode */
+.mz-set-row--colors { min-height: 0; }
+
+.mz-colors {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 14px;
+}
+
+.mz-color {
+    display: grid;
+    justify-items: center;
+    gap: 4px;
+    cursor: pointer;
+}
+
+.mz-color input {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid var(--mz-line-strong);
+    border-radius: var(--mz-r-sm);
+    background: var(--mz-surface-2);
+    cursor: pointer;
+}
+
+/* the swatch chrome is ours; the browser's own Chrome swatch fills it */
+.mz-color input::-webkit-color-swatch-wrapper { padding: 2px; }
+.mz-color input::-webkit-color-swatch { border: none; border-radius: 3px; }
+.mz-color input::-moz-color-swatch { border: none; border-radius: 3px; }
+
+.mz-color span {
+    font-size: var(--mz-text-2xs);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--mz-text-muted);
 }
 
 .mz-switch {
