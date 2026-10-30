@@ -201,6 +201,78 @@ export async function swipeMessage(direction, index) {
     }
 }
 
+/* ---------- message actions ---------- */
+
+/**
+ * Clicks one of SillyTavern's own per-message buttons in its copy of the
+ * chat, so the handler that knows the rules does the work.
+ *
+ * @param {string} selector a `.mes`-child button selector, e.g. '.mes_copy'
+ * @param {number} index the message's index in the chat
+ * @returns {Promise<boolean>} whether the button was found and pressed
+ */
+async function pressMessageButton(selector, index) {
+    const button = document.querySelector(`#chat .mes[mesid="${Number(index)}"] ${selector}`);
+    if (!(button instanceof Element)) return false;
+
+    // ST binds .mes_copy on pointerup, the rest on click; send both.
+    button.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+    button.click();
+    return true;
+}
+
+/**
+ * Copies a message's text through SillyTavern's own handler, which brings
+ * its "Copied!" toast.
+ *
+ * @param {number} index the message's index in the chat
+ * @returns {Promise<boolean>}
+ */
+export async function copyMessage(index) {
+    return pressMessageButton('.mes_copy', index);
+}
+
+/**
+ * Includes a message in the prompts again, or excludes it from them, through
+ * SillyTavern's own handler: it flips is_system, keeps its chat in sync and
+ * saves. It reports no event, so the caller must refresh the pane itself.
+ *
+ * @param {number} index the message's index in the chat
+ * @param {boolean} hidden true to exclude, false to include again
+ * @returns {Promise<boolean>}
+ */
+export async function setPromptHidden(index, hidden) {
+    const message = chatMessages()[Number(index)];
+    if (!message) return false;
+
+    const already = !!message.is_system;
+    if (already === !!hidden) return true;
+
+    return pressMessageButton(hidden ? '.mes_hide' : '.mes_unhide', index);
+}
+
+/**
+ * Checkpoints the chat at a message, through SillyTavern's own
+ * /checkpoint-create. The chat stays open; the checkpoint is linked to the
+ * message and its name is returned.
+ *
+ * @param {number} mesId index in the chat of the turn to checkpoint
+ * @returns {Promise<string|null>} the checkpoint's name, or null on failure
+ */
+export async function checkpointChat(mesId) {
+    const context = ctx();
+    if (typeof context?.executeSlashCommandsWithOptions !== 'function') return null;
+
+    try {
+        const result = await context.executeSlashCommandsWithOptions(`/checkpoint-create mesId=${Number(mesId)}`);
+        const name = typeof result === 'string' ? result : result?.pipe;
+        return typeof name === 'string' && name ? name : null;
+    } catch (error) {
+        console.warn('[Meziverse] could not create a checkpoint', error);
+        return null;
+    }
+}
+
 /**
  * Branches the chat at a message, through SillyTavern's own /branch-create.
  * The copy holds every message up to and including the pinned turn, and

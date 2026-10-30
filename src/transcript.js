@@ -8,15 +8,15 @@
  * switches are correct the moment SillyTavern reports them.
  */
 
-import { branchChat, chatMessages, ctx, currentChatId, on, swipeMessage, swipeSupported, swipingAllowed } from './st.js';
+import { branchChat, chatMessages, checkpointChat, copyMessage, ctx, currentChatId, on, setPromptHidden, swipeMessage, swipeSupported, swipingAllowed } from './st.js';
 import { renderInto, toHtml } from './prose.js';
 import { icon } from './icons.js';
 
 const FOLLOW = null;
 
-/** System notes are not part of the scene. */
+/** Small system events — commentaries and the like — are not part of the scene. */
 function visible(message) {
-    return !!message && !message.is_system;
+    return !!message && !message.extra?.isSmallSys;
 }
 
 function speakerOf(message) {
@@ -39,6 +39,9 @@ function speakerOf(message) {
  * @param {HTMLButtonElement} [parts.nextButton]
  * @param {HTMLButtonElement} [parts.latestButton]
  * @param {HTMLButtonElement} [parts.branchButton] any turn, the latest one included
+ * @param {HTMLButtonElement} [parts.copyButton] copies the shown turn
+ * @param {HTMLButtonElement} [parts.checkpointButton] checkpoints the chat at the shown turn
+ * @param {HTMLButtonElement} [parts.togglePromptButton] excludes the shown turn from prompts, or includes it again
  * @param {HTMLElement} [parts.swipeBar] the swipe footer, the chat's last character turn only
  * @param {HTMLButtonElement} [parts.swipePrev]
  * @param {HTMLButtonElement} [parts.swipeNext]
@@ -47,6 +50,7 @@ function speakerOf(message) {
 export function createTranscript({
     frame, isOpen, speaker, meta, prose, logPanel, logList, logButton, logClose,
     prevButton, nextButton, latestButton, branchButton,
+    copyButton, checkpointButton, togglePromptButton,
     swipeBar, swipePrev, swipeNext, swipeCount,
 }) {
     // null follows the newest message; a number pins that index in the chat.
@@ -95,6 +99,15 @@ export function createTranscript({
         if (prevButton) prevButton.disabled = at <= 0;
         if (nextButton) nextButton.disabled = at < 0 || at >= last;
         if (latestButton) latestButton.disabled = selected === FOLLOW || at < 0;
+
+        // the eye mirrors the shown turn's prompt state
+        const hidden = !!currentEntry()?.message?.is_system;
+        if (togglePromptButton) {
+            togglePromptButton.title = hidden
+                ? 'Include message in prompts' : 'Exclude message from prompts';
+            togglePromptButton.setAttribute('aria-label', togglePromptButton.title);
+            togglePromptButton.innerHTML = icon(hidden ? 'mz-i-eye-off' : 'mz-i-eye');
+        }
     }
 
     /**
@@ -145,6 +158,9 @@ export function createTranscript({
             fillProse(prose, entry.message, entry.index, { waiting: isWaitingForFirstToken(entry) });
         }
 
+        // a turn excluded from the prompts stays, dimmed, like ST's ghost
+        prose.classList.toggle('is-prompt-hidden', !!entry?.message?.is_system);
+
         prose.scrollTop = stick ? prose.scrollHeight : 0;
         updateControls();
         updateSwipeBar(entry);
@@ -171,6 +187,7 @@ export function createTranscript({
             const item = document.createElement('li');
             item.className = 'mz-log-entry';
             if (message.is_user) item.classList.add('is-user');
+            if (message.is_system) item.classList.add('is-prompt-hidden');
             item.dataset.mzLog = String(index);
 
             const head = document.createElement('header');
@@ -326,6 +343,42 @@ export function createTranscript({
         return entry ? branchFrom(entry.index) : Promise.resolve(null);
     }
 
+    /* ---------- message actions ---------- */
+
+    /**
+     * Copies the shown turn, through SillyTavern's own handler: it brings
+     * the toast, and the clipboard.
+     */
+    function copyShownTurn() {
+        const entry = currentEntry();
+        return entry ? copyMessage(entry.index) : Promise.resolve(false);
+    }
+
+    /**
+     * Checkpoints the chat at the shown turn. The chat stays open; the
+     * checkpoint is linked to the message.
+     */
+    function checkpointShownTurn() {
+        const entry = currentEntry();
+        if (!entry || frame.classList.contains('is-generating')) return Promise.resolve(null);
+        return checkpointChat(entry.index);
+    }
+
+    /**
+     * Excludes the shown turn from the prompts, or includes it again,
+     * through SillyTavern's own handler. SillyTavern reports no event for
+     * this, so the pane is refreshed here: the turn dims or clears, the eye
+     * flips, and the footer rethinks the last reply's overswipe.
+     */
+    async function togglePromptHidden() {
+        const entry = currentEntry();
+        if (!entry) return false;
+
+        const hidden = await setPromptHidden(entry.index, !entry.message.is_system);
+        if (hidden) refresh();
+        return hidden;
+    }
+
     /* ---------- swipes ---------- */
 
     /**
@@ -377,5 +430,5 @@ export function createTranscript({
         if (isOpen()) queueRefresh();
     });
 
-    return { refresh, openLog, closeLog, isLogOpen, step, latest, show, branchHere, swipeShownTurn };
+    return { refresh, openLog, closeLog, isLogOpen, step, latest, show, branchHere, swipeShownTurn, copyShownTurn, checkpointShownTurn, togglePromptHidden };
 }

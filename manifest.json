@@ -6,7 +6,7 @@
     "js": "index.js",
     "css": "style.css",
     "author": "Mezi",
-    "version": "0.4.0",
+    "version": "0.5.0",
     "homePage": "https://github.com/Mezi99/SillyTavern-Meziverse",
     "auto_update": false,
     "description": "A fullscreen visual-novel scene for one character card: chat-scoped trackers, a phone and a reading pane, built on SillyTavern's own chat."

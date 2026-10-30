@@ -425,9 +425,27 @@
 .mz-dlg-head {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     min-height: 22px;
 }
+
+/* our turn-stepping sits around the counter: speaker ◀ 3/3 ▶ ⤓ */
+.mz-dlg-nav { flex: 0 0 auto; }
+.mz-dlg-nav + .mz-dlg-meta,
+.mz-dlg-meta + .mz-dlg-nav { margin-left: 2px; }
+
+/* SillyTavern's message actions, its own glyphs, our hand */
+.mz-dlg-actions {
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    margin-left: auto;
+    opacity: .42;
+    transition: opacity var(--mz-dur-fast) var(--mz-ease);
+}
+.mz-dlg:hover .mz-dlg-actions { opacity: 1; }
+.mz-dlg-actions .mz-ibtn { width: 22px; height: 22px; }
+.mz-dlg-actions .mz-ibtn .ico { width: 13px; height: 13px; }
 
 .mz-speaker {
     font-size: var(--mz-text-xs);
@@ -454,6 +472,11 @@
 .mz-dlg:hover .mz-dlg-tools { opacity: 1; }
 .mz-dlg-tools .mz-ibtn { width: 22px; height: 22px; }
 .mz-dlg-tools .mz-ibtn .ico { width: 13px; height: 13px; }
+
+/* a turn kept out of the prompts stays, dimmed, like ST's ghost */
+.mz-prose.is-prompt-hidden,
+.mz-log-entry.is-prompt-hidden .mz-log-prose { opacity: .55; }
+.mz-log-entry.is-prompt-hidden .mz-log-who { opacity: .55; }
 
 .mz-ibtn:disabled {
     opacity: .3;

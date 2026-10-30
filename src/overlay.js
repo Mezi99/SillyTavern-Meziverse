@@ -11,7 +11,7 @@ import { settings, saveSettings } from './settings.js';
 import { injectSprite } from './icons.js';
 import { createTranscript } from './transcript.js';
 
-const VERSION = '0.4.0';
+const VERSION = '0.5.0';
 const PANE_DEFAULT = 300;
 const LOG_W_DEFAULT = 720;
 const LOG_H_SHARE = 0.7;
@@ -80,12 +80,15 @@ const FRAME_HTML = `
         <div class="mz-grip" role="separator" aria-orientation="horizontal" aria-label="Resize reading pane" tabindex="0"></div>
         <header class="mz-dlg-head">
             <span class="mz-speaker" data-mz="speaker"></span>
+            <button class="mz-ibtn mz-dlg-nav" type="button" title="Previous turn" aria-label="Previous turn" data-mz-action="prev">${svg('prev')}</button>
             <span class="mz-dlg-meta" data-mz="meta"></span>
-            <span class="mz-dlg-tools">
-                <button class="mz-ibtn" type="button" title="Previous turn" aria-label="Previous turn" data-mz-action="prev">${svg('prev')}</button>
-                <button class="mz-ibtn" type="button" title="Next turn" aria-label="Next turn" data-mz-action="next">${svg('next')}</button>
-                <button class="mz-ibtn" type="button" title="Latest turn" aria-label="Latest turn" data-mz-action="latest">${svg('latest')}</button>
+            <button class="mz-ibtn mz-dlg-nav" type="button" title="Next turn" aria-label="Next turn" data-mz-action="next">${svg('next')}</button>
+            <button class="mz-ibtn mz-dlg-nav" type="button" title="Latest turn" aria-label="Latest turn" data-mz-action="latest">${svg('latest')}</button>
+            <span class="mz-dlg-actions">
+                <button class="mz-ibtn" type="button" title="Copy" aria-label="Copy" data-mz-action="copy">${svg('copy')}</button>
+                <button class="mz-ibtn" type="button" title="Create checkpoint" aria-label="Create checkpoint" data-mz-action="checkpoint">${svg('flag')}</button>
                 <button class="mz-ibtn" type="button" title="Branch from this turn" aria-label="Branch from this turn" data-mz-action="branch">${svg('branch')}</button>
+                <button class="mz-ibtn" type="button" title="Exclude message from prompts" aria-label="Exclude message from prompts" data-mz-action="toggle-prompt">${svg('eye')}</button>
             </span>
         </header>
         <div class="mz-prose" data-mz="prose">
@@ -245,6 +248,9 @@ export function mount() {
         nextButton: root.querySelector('[data-mz-action="next"]'),
         latestButton: root.querySelector('[data-mz-action="latest"]'),
         branchButton: root.querySelector('[data-mz-action="branch"]'),
+        copyButton: root.querySelector('[data-mz-action="copy"]'),
+        checkpointButton: root.querySelector('[data-mz-action="checkpoint"]'),
+        togglePromptButton: root.querySelector('[data-mz-action="toggle-prompt"]'),
         swipeBar: root.querySelector('[data-mz="swipebar"]'),
         swipePrev: root.querySelector('[data-mz-action="swipe-prev"]'),
         swipeNext: root.querySelector('[data-mz-action="swipe-next"]'),
@@ -271,6 +277,9 @@ export function mount() {
         nextButton: els.nextButton,
         latestButton: els.latestButton,
         branchButton: els.branchButton,
+        copyButton: els.copyButton,
+        checkpointButton: els.checkpointButton,
+        togglePromptButton: els.togglePromptButton,
         swipeBar: els.swipeBar,
         swipePrev: els.swipePrev,
         swipeNext: els.swipeNext,
@@ -906,6 +915,15 @@ function wireActions() {
                 break;
             case 'swipe-next':
                 transcript.swipeShownTurn('right');
+                break;
+            case 'copy':
+                transcript.copyShownTurn();
+                break;
+            case 'checkpoint':
+                transcript.checkpointShownTurn();
+                break;
+            case 'toggle-prompt':
+                transcript.togglePromptHidden();
                 break;
             case 'branch':
                 transcript.branchHere();
