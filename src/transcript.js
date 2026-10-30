@@ -107,9 +107,11 @@ export function createTranscript({
     function updateControls() {
         const at = position();
         const last = shown.length - 1;
-        if (prevButton) prevButton.disabled = at <= 0;
-        if (nextButton) nextButton.disabled = at < 0 || at >= last;
-        if (latestButton) latestButton.disabled = selected === FOLLOW || at < 0;
+        const locked = editingIndex !== null;
+        if (prevButton) prevButton.disabled = locked || at <= 0;
+        if (nextButton) nextButton.disabled = locked || at < 0 || at >= last;
+        if (latestButton) latestButton.disabled = locked || selected === FOLLOW || at < 0;
+        if (editButton) editButton.disabled = locked;
 
         // the eye mirrors the shown turn's prompt state
         const hidden = !!currentEntry()?.message?.is_system;
@@ -134,10 +136,6 @@ export function createTranscript({
 
         // while editing, everything else in the header and footer stands down
         if (onEdit) {
-            if (prevButton) prevButton.disabled = true;
-            if (nextButton) nextButton.disabled = true;
-            if (latestButton) latestButton.disabled = true;
-            if (editButton) editButton.disabled = true;
             if (swipeBar) swipeBar.hidden = true;
         }
     }
