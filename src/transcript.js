@@ -8,15 +8,15 @@
  * switches are correct the moment SillyTavern reports them.
  */
 
-import { branchChat, chatMessages, ctx, currentChatId, on, swipeMessage, swipeSupported, swipingAllowed } from './st.js';
+import { acceptEdit, branchChat, cancelEdit, chatMessages, copyMessage, ctx, currentChatId, deleteEditedMessage, editMessage, editorTextarea, on, setPromptHidden, swipeMessage, swipeSupported, swipingAllowed } from './st.js';
 import { renderInto, toHtml } from './prose.js';
 import { icon } from './icons.js';
 
 const FOLLOW = null;
 
-/** System notes are not part of the scene. */
+/** Small system events — commentaries and the like — are not part of the scene. */
 function visible(message) {
-    return !!message && !message.is_system;
+    return !!message && !message.extra?.isSmallSys;
 }
 
 function speakerOf(message) {
@@ -39,6 +39,15 @@ function speakerOf(message) {
  * @param {HTMLButtonElement} [parts.nextButton]
  * @param {HTMLButtonElement} [parts.latestButton]
  * @param {HTMLButtonElement} [parts.branchButton] any turn, the latest one included
+ * @param {HTMLButtonElement} [parts.copyButton] copies the shown turn
+ * @param {HTMLButtonElement} [parts.togglePromptButton] excludes the shown turn from prompts, or includes it again
+ * @param {HTMLButtonElement} [parts.editButton] opens SillyTavern's editor on the shown turn
+ * @param {HTMLElement} [parts.actionsRow] the message-action row, replaced by the edit bar while editing
+ * @param {HTMLElement} [parts.editBar] the edit bar: accept, delete, discard
+ * @param {HTMLButtonElement} [parts.editAccept]
+ * @param {HTMLButtonElement} [parts.editDelete]
+ * @param {HTMLButtonElement} [parts.editCancel]
+ * @param {HTMLTextAreaElement} [parts.edit] the pane's mirror of SillyTavern's editor textarea
  * @param {HTMLElement} [parts.swipeBar] the swipe footer, the chat's last character turn only
  * @param {HTMLButtonElement} [parts.swipePrev]
  * @param {HTMLButtonElement} [parts.swipeNext]
@@ -47,6 +56,8 @@ function speakerOf(message) {
 export function createTranscript({
     frame, isOpen, speaker, meta, prose, logPanel, logList, logButton, logClose,
     prevButton, nextButton, latestButton, branchButton,
+    copyButton, togglePromptButton,
+    editButton, actionsRow, editBar, editAccept, editDelete, editCancel, edit,
     swipeBar, swipePrev, swipeNext, swipeCount,
 }) {
     // null follows the newest message; a number pins that index in the chat.
@@ -55,6 +66,10 @@ export function createTranscript({
     let chatId = currentChatId();
     let logDirty = true;
     let queued = false;
+    // the message index SillyTavern's editor is open on, or null
+    let editingIndex = null;
+    // guard so our own textarea sync is not echoed back to SillyTavern's
+    let syncing = false;
 
     function currentEntry() {
         if (!shown.length) return null;
@@ -92,9 +107,167 @@ export function createTranscript({
     function updateControls() {
         const at = position();
         const last = shown.length - 1;
-        if (prevButton) prevButton.disabled = at <= 0;
-        if (nextButton) nextButton.disabled = at < 0 || at >= last;
-        if (latestButton) latestButton.disabled = selected === FOLLOW || at < 0;
+        const locked = editingIndex !== null;
+        if (prevButton) prevButton.disabled = locked || at <= 0;
+        if (nextButton) nextButton.disabled = locked || at < 0 || at >= last;
+        if (latestButton) latestButton.disabled = locked || selected === FOLLOW || at < 0;
+        if (editButton) editButton.disabled = locked;
+
+        // the eye mirrors the shown turn's prompt state
+        const hidden = !!currentEntry()?.message?.is_system;
+        if (togglePromptButton) {
+            togglePromptButton.title = hidden
+                ? 'Include message in prompts' : 'Exclude message from prompts';
+            togglePromptButton.setAttribute('aria-label', togglePromptButton.title);
+            togglePromptButton.replaceChildren(icon(hidden ? 'mz-i-eye-off' : 'mz-i-eye'));
+        }
+    }
+
+    /* ---------- editing ---------- */
+
+    /** Brings the pane to editing state, or back out of it. */
+    function drawEditState() {
+        const onEdit = editingIndex !== null;
+
+        if (edit) edit.hidden = !onEdit;
+        if (prose) prose.hidden = onEdit;
+        if (actionsRow) actionsRow.hidden = onEdit;
+        if (editBar) editBar.hidden = !onEdit;
+
+        // while editing, everything else in the header and footer stands down
+        if (onEdit) {
+            if (swipeBar) swipeBar.hidden = true;
+        }
+    }
+
+    /**
+     * Mirrors SillyTavern's editor textarea in the pane. SillyTavern's copy
+     * is the one its accept handler reads, so ours only ever feeds it.
+     */
+    function syncFromSt() {
+        const st = editingIndex !== null ? editorTextarea(editingIndex) : null;
+        if (!st || !edit) return;
+
+        if (edit.value !== st.value && !syncing) {
+            edit.value = st.value;
+        }
+    }
+
+    /** Opens editing on the shown turn, through SillyTavern's own editor. */
+    async function editShownTurn() {
+        const entry = currentEntry();
+        if (!entry || frame.classList.contains('is-generating')) return false;
+        if (editingIndex !== null) return false;
+
+        const opened = await editMessage(entry.index);
+        if (!opened) return false;
+
+        editingIndex = entry.index;
+        const st = editorTextarea(entry.index);
+        if (edit) {
+            edit.value = st?.value ?? entry.message.mes ?? '';
+        }
+
+        drawEditState();
+        updateControls();
+
+        // the cursor belongs to our textarea, so typing starts at once
+        if (edit) {
+            edit.focus({ preventScroll: true });
+            edit.setSelectionRange(edit.value.length, edit.value.length);
+        }
+        return true;
+    }
+
+    /**
+     * Presses one of SillyTavern's own edit buttons — accept, delete or
+     * discard — on the message being edited. SillyTavern does the work: the
+     * save, the delete-or-swipe popup, the re-render. Its editor closes on
+     * its own async schedule, so the watch — not this — ends our editing
+     * state, by watching for the editor to disappear.
+     */
+    async function pressEditButton(press) {
+        if (editingIndex === null) return false;
+        return press();
+    }
+
+    function acceptShownEdit() {
+        return pressEditButton(acceptEdit);
+    }
+
+    function deleteShownEdit() {
+        return pressEditButton(deleteEditedMessage);
+    }
+
+    function cancelShownEdit() {
+        return pressEditButton(cancelEdit);
+    }
+
+    /** Leaves editing state without touching SillyTavern's editor. */
+    function exitEdit() {
+        editingIndex = null;
+        drawEditState();
+        updateControls();
+    }
+
+    /** Whether SillyTavern's editor is open on the shown turn. */
+    function isEditing() {
+        return editingIndex !== null;
+    }
+
+    /**
+     * Watches for SillyTavern's editor to appear on another message (ST
+     * allows one editor; opening it elsewhere auto-accepts ours), to close
+     * unexpectedly, and heals the pane after deletes.
+     */
+    function watchEdit() {
+        if (editingIndex === null) {
+            const st = editorTextarea();
+            if (st) {
+                // ST opened an editor on its own (or auto-accepted ours and
+                // moved); follow the message it belongs to.
+                const host = st.closest('.mes');
+                const mesid = Number(host?.getAttribute('mesid'));
+                const entry = shown.find(e => e.index === mesid);
+                if (entry) {
+                    selected = entry.index === shown[shown.length - 1].index ? FOLLOW : entry.index;
+                    editingIndex = entry.index;
+                    if (edit) edit.value = st.value;
+                    drawEditState();
+                    updateControls();
+                    if (edit) edit.focus({ preventScroll: true });
+                }
+            }
+            return;
+        }
+
+        const st = editorTextarea(editingIndex);
+        if (!st) {
+            // the editor closed: accept, cancel, delete, or a stray click.
+            // before leaving, an editor may have moved to another message —
+            // SillyTavern allows one — and that is a follow, not an exit.
+            const moved = editorTextarea();
+            if (moved) {
+                const host = moved.closest('.mes');
+                const mesid = Number(host?.getAttribute('mesid'));
+                const entry = shown.find(e => e.index === mesid);
+                if (entry) {
+                    selected = entry.index === shown[shown.length - 1].index ? FOLLOW : entry.index;
+                    editingIndex = entry.index;
+                    if (edit) edit.value = moved.value;
+                    drawEditState();
+                    updateControls();
+                    if (edit) edit.focus({ preventScroll: true });
+                    return;
+                }
+            }
+
+            exitEdit();
+            refresh();
+            return;
+        }
+
+        syncFromSt();
     }
 
     /**
@@ -106,6 +279,10 @@ export function createTranscript({
      */
     function updateSwipeBar(entry) {
         if (!swipeBar) return;
+        if (editingIndex !== null) {
+            swipeBar.hidden = true;
+            return;
+        }
 
         const message = entry?.message;
         const lastTurn = !!message && entry.index === chatMessages().length - 1;
@@ -145,6 +322,14 @@ export function createTranscript({
             fillProse(prose, entry.message, entry.index, { waiting: isWaitingForFirstToken(entry) });
         }
 
+        // a turn excluded from the prompts stays, dimmed, like ST's ghost
+        prose.classList.toggle('is-prompt-hidden', !!entry?.message?.is_system);
+
+        // while editing, our textarea shows the turn, not the prose
+        if (editingIndex !== null && entry && entry.index === editingIndex && edit) {
+            edit.value = edit.value || entry.message.mes || '';
+        }
+
         prose.scrollTop = stick ? prose.scrollHeight : 0;
         updateControls();
         updateSwipeBar(entry);
@@ -171,6 +356,7 @@ export function createTranscript({
             const item = document.createElement('li');
             item.className = 'mz-log-entry';
             if (message.is_user) item.classList.add('is-user');
+            if (message.is_system) item.classList.add('is-prompt-hidden');
             item.dataset.mzLog = String(index);
 
             const head = document.createElement('header');
@@ -233,6 +419,12 @@ export function createTranscript({
 
         if (selected !== FOLLOW && !shown.some(entry => entry.index === selected)) {
             selected = FOLLOW;
+        }
+
+        // the edited message may be gone (deleted, or its chat switched)
+        if (editingIndex !== null && !shown.some(entry => entry.index === editingIndex)) {
+            editingIndex = null;
+            drawEditState();
         }
 
         drawPane({ stick });
@@ -326,6 +518,32 @@ export function createTranscript({
         return entry ? branchFrom(entry.index) : Promise.resolve(null);
     }
 
+    /* ---------- message actions ---------- */
+
+    /**
+     * Copies the shown turn, through SillyTavern's own handler: it brings
+     * the toast, and the clipboard.
+     */
+    function copyShownTurn() {
+        const entry = currentEntry();
+        return entry ? copyMessage(entry.index) : Promise.resolve(false);
+    }
+
+    /**
+     * Excludes the shown turn from the prompts, or includes it again,
+     * through SillyTavern's own handler. SillyTavern reports no event for
+     * this, so the pane is refreshed here: the turn dims or clears, the eye
+     * flips, and the footer rethinks the last reply's overswipe.
+     */
+    async function togglePromptHidden() {
+        const entry = currentEntry();
+        if (!entry) return false;
+
+        const hidden = await setPromptHidden(entry.index, !entry.message.is_system);
+        if (hidden) refresh();
+        return hidden;
+    }
+
     /* ---------- swipes ---------- */
 
     /**
@@ -343,6 +561,26 @@ export function createTranscript({
     }
 
     /* ---------- wiring ---------- */
+
+    // our textarea feeds SillyTavern's; the guard stops the echo back
+    if (edit) {
+        edit.addEventListener('input', () => {
+            if (editingIndex === null) return;
+            const st = editorTextarea(editingIndex);
+            if (!st) return;
+
+            syncing = true;
+            st.value = edit.value;
+            st.dispatchEvent(new Event('input', { bubbles: true }));
+            syncing = false;
+        });
+    }
+
+    // the edit state is watched, not evented: SillyTavern reports no event
+    // for its editor opening or closing, and the pane must follow anyway
+    setInterval(() => {
+        if (isOpen()) watchEdit();
+    }, 400);
 
     logList.addEventListener('click', event => {
         // a link in the prose is a link, not a jump
@@ -377,5 +615,5 @@ export function createTranscript({
         if (isOpen()) queueRefresh();
     });
 
-    return { refresh, openLog, closeLog, isLogOpen, step, latest, show, branchHere, swipeShownTurn };
+    return { refresh, openLog, closeLog, isLogOpen, isEditing, step, latest, show, branchHere, swipeShownTurn, copyShownTurn, togglePromptHidden, editShownTurn, acceptShownEdit, deleteShownEdit, cancelShownEdit };
 }

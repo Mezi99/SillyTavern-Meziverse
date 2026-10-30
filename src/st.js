@@ -141,6 +141,62 @@ export function sendUserMessage(text) {
     return true;
 }
 
+/* ---------- composer actions ---------- */
+
+/**
+ * Clicks one of SillyTavern's own textbox-area controls. All its rules —
+ * busy gates, empty-input semantics, impersonate filling the box, continue
+ * extending the last reply — live in the handlers behind these elements.
+ *
+ * @param {string} id the element id, e.g. 'send_but'
+ * @returns {boolean} whether the element was found and clicked
+ */
+export function clickComposerControl(id) {
+    const control = document.getElementById(id);
+    if (!(control instanceof Element)) return false;
+
+    control.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+    control.click();
+    return true;
+}
+
+/**
+ * Clicks one of SillyTavern's own three-lines menu options. Both the new
+ * chat confirm and the parent-chat switch run through its handlers.
+ *
+ * @param {string} id option id, e.g. 'option_start_new_chat'
+ * @returns {boolean} whether the option was found and clicked
+ */
+export function clickOptionsMenu(id) {
+    const option = document.getElementById(id);
+    if (!(option instanceof Element)) return false;
+
+    // The menu itself may be display:none — ST's own handlers run regardless.
+    option.click();
+    return true;
+}
+
+/**
+ * Whether SillyTavern currently shows "Back to parent chat" in its menu.
+ * SillyTavern itself decides this (bookmarks.js): it appears only in a
+ * chat that was branched off another.
+ *
+ * @returns {boolean}
+ */
+export function hasParentChat() {
+    try {
+        return !!ctx()?.chatMetadata?.main_chat;
+    } catch {
+        return false;
+    }
+}
+
+/** SillyTavern's own composer textarea — the input our box mirrors. */
+export function stComposer() {
+    const textarea = document.getElementById('send_textarea');
+    return textarea instanceof HTMLTextAreaElement ? textarea : null;
+}
+
 /** Stops the generation SillyTavern is running. */
 export function stopGeneration() {
     const context = ctx();
@@ -199,6 +255,138 @@ export async function swipeMessage(direction, index) {
         console.warn('[Meziverse] could not swipe the message', error);
         return false;
     }
+}
+
+/* ---------- message actions ---------- */
+
+/**
+ * Clicks one of SillyTavern's own per-message buttons in its copy of the
+ * chat, so the handler that knows the rules does the work.
+ *
+ * @param {string} selector a `.mes`-child button selector, e.g. '.mes_copy'
+ * @param {number} index the message's index in the chat
+ * @returns {Promise<boolean>} whether the button was found and pressed
+ */
+async function pressMessageButton(selector, index) {
+    const button = document.querySelector(`#chat .mes[mesid="${Number(index)}"] ${selector}`);
+    if (!(button instanceof Element)) return false;
+
+    // ST binds .mes_copy on pointerup, the rest on click; send both.
+    button.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+    button.click();
+    return true;
+}
+
+/**
+ * Copies a message's text through SillyTavern's own handler, which brings
+ * its "Copied!" toast.
+ *
+ * @param {number} index the message's index in the chat
+ * @returns {Promise<boolean>}
+ */
+export async function copyMessage(index) {
+    return pressMessageButton('.mes_copy', index);
+}
+
+/* ---------- editing ---------- */
+
+/**
+ * Opens SillyTavern's editor on a message: its textarea appears in its own
+ * chat DOM, its rules run (one editor at a time; a previous edit elsewhere
+ * is auto-accepted), and accept/cancel/delete become reachable there.
+ *
+ * @param {number} index the message's index in the chat
+ * @returns {Promise<boolean>} whether the edit button was found and pressed
+ */
+export async function editMessage(index) {
+    return pressMessageButton('.mes_edit', index);
+}
+
+/**
+ * SillyTavern's own editor textarea for the message being edited, if one is
+ * open on that message. The textarea lives in ST's chat DOM and is the text
+ * its accept/cancel handlers act on, so the pane must mirror this element.
+ *
+ * @param {number} [index] when given, the editor must belong to that message
+ * @returns {HTMLTextAreaElement|null}
+ */
+export function editorTextarea(index) {
+    const textarea = document.querySelector('#chat .mes .edit_textarea');
+    if (!(textarea instanceof HTMLTextAreaElement)) return null;
+    if (index === undefined) return textarea;
+
+    const host = textarea.closest('.mes');
+    return host && host.getAttribute('mesid') === String(Number(index)) ? textarea : null;
+}
+
+/**
+ * Accepts the open edit through SillyTavern's own handler: it reads its
+ * textarea, updates the chat, saves and re-renders.
+ *
+ * @returns {Promise<boolean>}
+ */
+export async function acceptEdit() {
+    const textarea = editorTextarea();
+    if (!textarea) return false;
+
+    const done = textarea.closest('.mes')?.querySelector('.mes_edit_done');
+    if (!(done instanceof Element)) return false;
+
+    done.click();
+    return true;
+}
+
+/**
+ * Discards the open edit through SillyTavern's own handler: the original
+ * text is restored, nothing is saved.
+ *
+ * @returns {Promise<boolean>}
+ */
+export async function cancelEdit() {
+    const textarea = editorTextarea();
+    if (!textarea) return false;
+
+    const cancel = textarea.closest('.mes')?.querySelector('.mes_edit_cancel');
+    if (!(cancel instanceof Element)) return false;
+
+    cancel.click();
+    return true;
+}
+
+/**
+ * Deletes the message being edited through SillyTavern's own handler. When
+ * the message can lose a swipe instead, SillyTavern's own popup asks which.
+ *
+ * @returns {Promise<boolean>}
+ */
+export async function deleteEditedMessage() {
+    const textarea = editorTextarea();
+    if (!textarea) return false;
+
+    const del = textarea.closest('.mes')?.querySelector('.mes_edit_delete');
+    if (!(del instanceof Element)) return false;
+
+    del.click();
+    return true;
+}
+
+/**
+ * Includes a message in the prompts again, or excludes it from them, through
+ * SillyTavern's own handler: it flips is_system, keeps its chat in sync and
+ * saves. It reports no event, so the caller must refresh the pane itself.
+ *
+ * @param {number} index the message's index in the chat
+ * @param {boolean} hidden true to exclude, false to include again
+ * @returns {Promise<boolean>}
+ */
+export async function setPromptHidden(index, hidden) {
+    const message = chatMessages()[Number(index)];
+    if (!message) return false;
+
+    const already = !!message.is_system;
+    if (already === !!hidden) return true;
+
+    return pressMessageButton(hidden ? '.mes_hide' : '.mes_unhide', index);
 }
 
 /**
