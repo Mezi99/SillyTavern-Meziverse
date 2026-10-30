@@ -591,47 +591,79 @@
 .mz-frame.is-settings-open > .mz-veil,
 .mz-frame.is-log-open > .mz-veil { display: block; }
 
-/* ---------- log drawer ---------- */
+/* ---------- log window ---------- */
 .mz-log {
     position: absolute;
     z-index: var(--mz-z-sheet);
-    top: var(--mz-header-h);
-    right: 0;
-    bottom: 0;
+    top: 50%;
+    bottom: auto;
+    left: 50%;
+    right: auto;
     display: grid;
     grid-template-rows: auto 1fr;
-    width: var(--mz-log-w);
-    max-width: 78vw;
-    border-left: 1px solid var(--mz-line-strong);
+    width: min(var(--mz-log-w, 720px), calc(100% - 80px));
+    height: var(--mz-log-h, 70dvh);
+    max-height: calc(100% - 96px);
+    border: 1px solid var(--mz-line-strong);
+    border-radius: var(--mz-r-lg);
     background: var(--mz-surface-solid);
     box-shadow: var(--mz-shadow);
     visibility: hidden;
-    transform: translateX(100%);
+    transform: translate(-50%, calc(-50% + 8px));
+    opacity: 0;
     transition:
+        opacity var(--mz-dur) var(--mz-ease),
         transform var(--mz-dur) var(--mz-ease),
         visibility var(--mz-dur);
 }
 
 .mz-frame.is-log-open > .mz-log {
     visibility: visible;
-    transform: none;
+    transform: translate(-50%, -50%);
+    opacity: 1;
 }
 
 .mz-frame.is-log-resizing > .mz-log { transition: none; }
 
-/* the left edge drags the log wider; the width is remembered */
+/* two grips stretch the window: the top edge sets its height, the left
+   edge its width; both sizes are remembered */
 .mz-log-grip {
     position: absolute;
-    top: 0;
-    bottom: 0;
-    left: -7px;
     z-index: 1;
-    width: 14px;
-    cursor: col-resize;
     touch-action: none;
 }
 
-.mz-log-grip::before {
+.mz-log-grip-h {
+    top: -7px;
+    left: 0;
+    right: 0;
+    height: 14px;
+    cursor: row-resize;
+}
+
+.mz-log-grip-w {
+    top: 14px;
+    bottom: 0;
+    left: -7px;
+    width: 14px;
+    cursor: col-resize;
+}
+
+.mz-log-grip-h::before {
+    content: "";
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    width: 46px;
+    height: 3px;
+    margin-left: -23px;
+    border-radius: 2px;
+    background: var(--mz-line-strong);
+    opacity: 0;
+    transition: opacity var(--mz-dur-fast) var(--mz-ease);
+}
+
+.mz-log-grip-w::before {
     content: "";
     position: absolute;
     top: 50%;
@@ -996,52 +1028,8 @@
 
     .mz-sheet { width: calc(100% - 24px); max-height: calc(100% - 44px); padding: 18px 16px 16px; }
 
-    /* narrow screens read the log as a floating window over the scene — it
-       opens the way the settings sheet does, centered on the veil, but with
-       a top edge that can be dragged to stretch the window taller. */
-    .mz-log {
-        top: 50%;
-        bottom: auto;
-        left: 50%;
-        right: auto;
-        width: calc(100% - 24px);
-        max-width: none;
-        height: var(--mz-log-h, 70dvh);
-        max-height: calc(100% - 44px);
-        border: 1px solid var(--mz-line-strong);
-        border-radius: var(--mz-r-lg);
-        box-shadow: var(--mz-shadow);
-        transform: translate(-50%, calc(-50% + 8px));
-        opacity: 0;
-        transition:
-            opacity var(--mz-dur) var(--mz-ease),
-            transform var(--mz-dur) var(--mz-ease),
-            visibility var(--mz-dur);
-    }
-
-    .mz-frame.is-log-open > .mz-log {
-        transform: translate(-50%, -50%);
-        opacity: 1;
-    }
-
-    /* the grip rides the window's top edge and stretches its height */
-    .mz-log-grip {
-        top: -7px;
-        bottom: auto;
-        left: 0;
-        width: auto;
-        height: 14px;
-        cursor: row-resize;
-    }
-
-    .mz-log-grip::before {
-        top: 6px;
-        left: 50%;
-        width: 46px;
-        height: 3px;
-        margin-top: 0;
-        margin-left: -23px;
-    }
+    /* the log window relaxes its margins the same way the sheet does */
+    .mz-log { width: min(var(--mz-log-w, 720px), calc(100% - 24px)); max-height: calc(100% - 44px); }
 
     .mz-set-row { grid-template-columns: 1fr; gap: 8px; }
     .mz-set-control { justify-content: flex-start; }

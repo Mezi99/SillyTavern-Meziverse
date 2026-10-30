@@ -15,7 +15,7 @@ const DEFAULTS = {
     narrSize: 18.5,
     narrFont: 'theme',
     paneHeight: 300,
-    logWidth: 400,
+    logWidth: 720,
     logHeight: null,
 };
 

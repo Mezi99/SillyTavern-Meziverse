@@ -13,7 +13,8 @@ import { createTranscript } from './transcript.js';
 
 const VERSION = '0.2.0';
 const PANE_DEFAULT = 300;
-const LOG_DEFAULT = 400;
+const LOG_W_DEFAULT = 720;
+const LOG_H_SHARE = 0.7;
 const UI_STEPS = [0.9, 0.95, 1, 1.05, 1.1, 1.2];
 const NARR_STEPS = [16, 17, 18, 18.5, 19, 20, 21, 22, 24];
 
@@ -164,7 +165,8 @@ const FRAME_HTML = `
     </section>
 
     <aside class="mz-log" aria-hidden="true" aria-label="Chat log">
-        <div class="mz-log-grip" role="separator" aria-orientation="vertical" aria-label="Resize chat log" tabindex="0"></div>
+        <div class="mz-log-grip mz-log-grip-h" role="separator" aria-orientation="horizontal" aria-label="Resize chat log height" tabindex="0"></div>
+        <div class="mz-log-grip mz-log-grip-w" role="separator" aria-orientation="vertical" aria-label="Resize chat log width" tabindex="0"></div>
         <header class="mz-log-head">
             <h2>Chat log</h2>
             <button class="mz-ibtn" type="button" title="Close log" aria-label="Close log" data-mz-action="close-log">${svg('close')}</button>
@@ -215,7 +217,8 @@ export function mount() {
         nextButton: root.querySelector('[data-mz-action="next"]'),
         latestButton: root.querySelector('[data-mz-action="latest"]'),
         logPanel: root.querySelector('.mz-log'),
-        logGrip: root.querySelector('.mz-log-grip'),
+        logGripH: root.querySelector('.mz-log-grip-h'),
+        logGripW: root.querySelector('.mz-log-grip-w'),
         logList: root.querySelector('[data-mz="log-list"]'),
         logButton: root.querySelector('[data-mz-action="log"]'),
         logClose: root.querySelector('[data-mz-action="close-log"]'),
@@ -243,7 +246,7 @@ export function mount() {
     applyScale();
     applyNarration();
     applyNarrationFont();
-    applyLogWidth(Number(settings().logWidth) || LOG_DEFAULT);
+    applyLogWidth(Number(settings().logWidth) || LOG_W_DEFAULT);
 
     wireActions();
     wirePane();
@@ -258,7 +261,8 @@ export function mount() {
         requestAnimationFrame(() => {
             resizeQueued = false;
             applyPaneHeight(desiredPane);
-            applyLogWidth(Number(settings().logWidth) || LOG_DEFAULT);
+            applyLogWidth(Number(settings().logWidth) || LOG_W_DEFAULT);
+            if (Number(settings().logHeight) > 0) applyLogHeight(settings().logHeight);
         });
     });
 }
@@ -281,7 +285,8 @@ export function open() {
 
     refreshChatName();
     applyBackground();
-    syncLogGripMode();
+    applyLogWidth(Number(settings().logWidth) || LOG_W_DEFAULT);
+    if (Number(settings().logHeight) > 0) applyLogHeight(settings().logHeight);
     setGenerating(stGenerating(), { force: true });
     if (stGenerating()) startWatch();
     enterFullscreen();
@@ -585,24 +590,17 @@ function startWatch() {
 
 /* ---------- log geometry ---------- */
 
-/** Below this width the log is a floating window stretched by its height. */
-const NARROW_QUERY = '(max-width: 759px)';
-
-function isNarrow() {
-    return window.matchMedia(NARROW_QUERY).matches;
-}
-
 function applyLogWidth(width, persist = false) {
     if (!frame.clientWidth) return;
 
     const min = cssPx('--mz-log-w-min', 320);
-    const max = Math.max(min, Math.min(frame.clientWidth - 200, Math.round(frame.clientWidth * 0.78)));
-    const clamped = Math.round(Math.min(max, Math.max(min, Number(width) || LOG_DEFAULT)));
+    const max = Math.max(min, frame.clientWidth - 24);
+    const clamped = Math.round(Math.min(max, Math.max(min, Number(width) || LOG_W_DEFAULT)));
 
     frame.style.setProperty('--mz-log-w', `${clamped}px`);
-    els.logGrip.setAttribute('aria-valuemin', String(Math.round(min)));
-    els.logGrip.setAttribute('aria-valuemax', String(Math.round(max)));
-    els.logGrip.setAttribute('aria-valuenow', String(clamped));
+    els.logGripW.setAttribute('aria-valuemin', String(Math.round(min)));
+    els.logGripW.setAttribute('aria-valuemax', String(max));
+    els.logGripW.setAttribute('aria-valuenow', String(clamped));
 
     if (persist) {
         settings().logWidth = clamped;
@@ -610,7 +608,6 @@ function applyLogWidth(width, persist = false) {
     }
 }
 
-/** On narrow screens the floating log stretches vertically instead. */
 function applyLogHeight(height, persist = false) {
     if (!frame.clientHeight) return;
 
@@ -619,9 +616,9 @@ function applyLogHeight(height, persist = false) {
     const clamped = Math.round(Math.min(max, Math.max(min, Number(height) || min)));
 
     frame.style.setProperty('--mz-log-h', `${clamped}px`);
-    els.logGrip.setAttribute('aria-valuemin', String(min));
-    els.logGrip.setAttribute('aria-valuemax', String(max));
-    els.logGrip.setAttribute('aria-valuenow', String(clamped));
+    els.logGripH.setAttribute('aria-valuemin', String(min));
+    els.logGripH.setAttribute('aria-valuemax', String(max));
+    els.logGripH.setAttribute('aria-valuenow', String(clamped));
 
     if (persist) {
         settings().logHeight = clamped;
@@ -629,71 +626,63 @@ function applyLogHeight(height, persist = false) {
     }
 }
 
-/** The grip resizes the log's width on wide screens, its height on narrow. */
-function resizeLog(delta, persist = false) {
-    if (isNarrow()) applyLogHeight(els.logPanel.offsetHeight + delta, persist);
-    else applyLogWidth(els.logPanel.offsetWidth + delta, persist);
-}
-
-/** Keeps the grip's semantics and geometry matched to the current mode. */
-function syncLogGripMode() {
-    const narrow = isNarrow();
-    els.logGrip.setAttribute('aria-orientation', narrow ? 'horizontal' : 'vertical');
-    if (narrow) {
-        if (Number(settings().logHeight) > 0) applyLogHeight(settings().logHeight);
-    } else {
-        applyLogWidth(Number(settings().logWidth) || LOG_DEFAULT);
-    }
-}
-
-function wireLog() {
+/**
+ * Wires one resizing grip. The window stays centered while it resizes, so a
+ * dragged edge must travel twice the pointer's distance to keep tracking it.
+ */
+function wireGrip(grip, apply, measure, { axis, resetTo }) {
     let start = null;
 
-    window.matchMedia(NARROW_QUERY).addEventListener('change', syncLogGripMode);
-
-    els.logGrip.addEventListener('pointerdown', event => {
+    grip.addEventListener('pointerdown', event => {
         if (event.button !== 0 && event.pointerType === 'mouse') return;
         event.preventDefault();
-        start = isNarrow()
-            ? { y: event.clientY, height: els.logPanel.offsetHeight }
-            : { x: event.clientX, width: els.logPanel.offsetWidth };
+        start = { from: event[axis], size: measure() };
         frame.classList.add('is-log-resizing');
-        try { els.logGrip.setPointerCapture(event.pointerId); } catch { /* synthetic event */ }
+        try { grip.setPointerCapture(event.pointerId); } catch { /* synthetic event */ }
     });
 
-    els.logGrip.addEventListener('pointermove', event => {
+    grip.addEventListener('pointermove', event => {
         if (!start) return;
-        if (isNarrow()) applyLogHeight(start.height + (start.y - event.clientY));
-        else applyLogWidth(start.width + (start.x - event.clientX));
+        apply(start.size + (start.from - event[axis]) * 2);
     });
 
     const endDrag = event => {
         if (!start) return;
         start = null;
         frame.classList.remove('is-log-resizing');
-        try { els.logGrip.releasePointerCapture(event.pointerId); } catch { /* already released */ }
-        if (isNarrow()) applyLogHeight(els.logPanel.offsetHeight, true);
-        else applyLogWidth(els.logPanel.offsetWidth, true);
+        try { grip.releasePointerCapture(event.pointerId); } catch { /* already released */ }
+        apply(measure(), true);
     };
 
-    els.logGrip.addEventListener('pointerup', endDrag);
-    els.logGrip.addEventListener('pointercancel', endDrag);
+    grip.addEventListener('pointerup', endDrag);
+    grip.addEventListener('pointercancel', endDrag);
 
-    els.logGrip.addEventListener('keydown', event => {
-        const grow = isNarrow() ? 'ArrowUp' : 'ArrowLeft';
-        const shrink = isNarrow() ? 'ArrowDown' : 'ArrowRight';
+    grip.addEventListener('keydown', event => {
+        const growKey = axis === 'y' ? 'ArrowUp' : 'ArrowLeft';
+        const shrinkKey = axis === 'y' ? 'ArrowDown' : 'ArrowRight';
+        const step = axis === 'y' ? 24 : 48;
 
-        if (event.key === grow) {
+        if (event.key === growKey) {
             event.preventDefault();
-            resizeLog(24, true);
-        } else if (event.key === shrink) {
+            apply(measure() + step, true);
+        } else if (event.key === shrinkKey) {
             event.preventDefault();
-            resizeLog(-24, true);
+            apply(measure() - step, true);
         } else if (event.key === 'Home') {
             event.preventDefault();
-            if (isNarrow()) applyLogHeight(Math.round(frame.clientHeight * 0.7), true);
-            else applyLogWidth(LOG_DEFAULT, true);
+            apply(resetTo(), true);
         }
+    });
+}
+
+function wireLog() {
+    wireGrip(els.logGripH, applyLogHeight, () => els.logPanel.offsetHeight, {
+        axis: 'y',
+        resetTo: () => Math.round(frame.clientHeight * LOG_H_SHARE),
+    });
+    wireGrip(els.logGripW, applyLogWidth, () => els.logPanel.offsetWidth, {
+        axis: 'x',
+        resetTo: () => LOG_W_DEFAULT,
     });
 }
 
