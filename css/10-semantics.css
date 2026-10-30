@@ -29,6 +29,7 @@
     --mz-accent: #77c2aa;
     --mz-accent-soft: rgba(119, 194, 170, .16);
     --mz-accent-line: rgba(119, 194, 170, .24);
+    --mz-accent-wash: rgba(119, 194, 170, .07);
     --mz-accent-ink: #08110e;
     --mz-tone-desire: #c09a86;
     --mz-ok: #86c295;
@@ -60,6 +61,7 @@
     --mz-accent: #cfaa72;
     --mz-accent-soft: rgba(207, 170, 114, .16);
     --mz-accent-line: rgba(207, 170, 114, .26);
+    --mz-accent-wash: rgba(207, 170, 114, .07);
     --mz-accent-ink: #17110a;
     --mz-tone-desire: #c09a86;
     --mz-ok: #9dbe8f;
@@ -90,6 +92,7 @@
     --mz-accent: #c8929c;
     --mz-accent-soft: rgba(200, 146, 156, .16);
     --mz-accent-line: rgba(200, 146, 156, .26);
+    --mz-accent-wash: rgba(200, 146, 156, .07);
     --mz-accent-ink: #150b0e;
     --mz-tone-desire: #c49a8e;
     --mz-ok: #93bb9a;

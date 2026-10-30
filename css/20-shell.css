@@ -720,6 +720,14 @@
     box-shadow: inset 2px 0 0 var(--mz-accent);
 }
 
+/* your own lines carry a faint accent wash so they read at a glance */
+.mz-log-entry.is-user { background: var(--mz-accent-wash); }
+
+.mz-log-entry.is-user:hover,
+.mz-log-entry.is-user.is-on { background: var(--mz-accent-soft); }
+
+.mz-log-entry.is-user .mz-log-who { color: var(--mz-accent); }
+
 .mz-log-meta {
     display: flex;
     align-items: baseline;
@@ -746,7 +754,7 @@
     font-variant-numeric: tabular-nums;
 }
 
-.mz-log-read {
+.mz-log-jump {
     margin-left: auto;
     padding: 2px 9px;
     border: 1px solid var(--mz-line-strong);
@@ -759,10 +767,26 @@
         border-color var(--mz-dur-fast);
 }
 
-.mz-log-read:hover {
+.mz-log-jump:hover {
     color: var(--mz-accent);
     border-color: var(--mz-accent-line);
 }
+
+/* branching lands with the pane's Branch button; the icon waits with it */
+.mz-log-branch {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    margin-right: -6px;
+    border: none;
+    border-radius: var(--mz-r-sm);
+    color: var(--mz-text-dim);
+    transition: color var(--mz-dur-fast);
+}
+
+.mz-log-branch:hover:not(:disabled) { color: var(--mz-accent); }
+.mz-log-branch:disabled { cursor: default; opacity: .45; }
 
 /* the log is the whole story so far: every message in full, as prose */
 .mz-log-prose {

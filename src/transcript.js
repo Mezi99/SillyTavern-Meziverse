@@ -10,6 +10,7 @@
 
 import { chatMessages, ctx, currentChatId, on } from './st.js';
 import { renderInto, toHtml } from './prose.js';
+import { icon } from './icons.js';
 
 const FOLLOW = null;
 
@@ -127,6 +128,7 @@ export function createTranscript({
         shown.forEach(({ index, message }, at) => {
             const item = document.createElement('li');
             item.className = 'mz-log-entry';
+            if (message.is_user) item.classList.add('is-user');
             item.dataset.mzLog = String(index);
 
             const head = document.createElement('header');
@@ -140,14 +142,22 @@ export function createTranscript({
             turn.className = 'mz-log-turn';
             turn.textContent = `turn ${at + 1}`;
 
-            const read = document.createElement('button');
-            read.type = 'button';
-            read.className = 'mz-log-read';
-            read.dataset.mzLog = String(index);
-            read.textContent = 'Read';
-            read.setAttribute('aria-label', `Read ${speakerOf(message)}, turn ${at + 1}`);
+            const jump = document.createElement('button');
+            jump.type = 'button';
+            jump.className = 'mz-log-jump';
+            jump.dataset.mzLog = String(index);
+            jump.textContent = 'Jump';
+            jump.setAttribute('aria-label', `Jump to ${speakerOf(message)}, turn ${at + 1}`);
 
-            head.append(who, turn, read);
+            const branch = document.createElement('button');
+            branch.type = 'button';
+            branch.className = 'mz-log-branch';
+            branch.disabled = true;
+            branch.title = 'Branching arrives with the pane\u2019s Branch button';
+            branch.setAttribute('aria-label', `Branch from ${speakerOf(message)}, turn ${at + 1} (coming soon)`);
+            branch.append(icon('mz-i-branch'));
+
+            head.append(who, turn, jump, branch);
 
             const body = document.createElement('div');
             body.className = 'mz-prose mz-log-prose';
@@ -157,7 +167,7 @@ export function createTranscript({
 
             if (active && active.index === index) {
                 item.classList.add('is-on');
-                read.setAttribute('aria-current', 'true');
+                jump.setAttribute('aria-current', 'true');
             }
 
             fragment.append(item);
