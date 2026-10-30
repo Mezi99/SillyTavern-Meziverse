@@ -16,6 +16,7 @@ const DEFAULTS = {
     narrFont: 'theme',
     paneHeight: 300,
     logWidth: 400,
+    logHeight: null,
 };
 
 /** The live settings object, with defaults filled in on first use. */

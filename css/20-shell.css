@@ -995,7 +995,54 @@
     .mz-prose { font-size: calc(var(--mz-narr-size) * .9); }
 
     .mz-sheet { width: calc(100% - 24px); max-height: calc(100% - 44px); padding: 18px 16px 16px; }
-    .mz-log { width: 100%; max-width: none; }
+
+    /* narrow screens read the log as a floating window over the scene — it
+       opens the way the settings sheet does, centered on the veil, but with
+       a top edge that can be dragged to stretch the window taller. */
+    .mz-log {
+        top: 50%;
+        bottom: auto;
+        left: 50%;
+        right: auto;
+        width: calc(100% - 24px);
+        max-width: none;
+        height: var(--mz-log-h, 70dvh);
+        max-height: calc(100% - 44px);
+        border: 1px solid var(--mz-line-strong);
+        border-radius: var(--mz-r-lg);
+        box-shadow: var(--mz-shadow);
+        transform: translate(-50%, calc(-50% + 8px));
+        opacity: 0;
+        transition:
+            opacity var(--mz-dur) var(--mz-ease),
+            transform var(--mz-dur) var(--mz-ease),
+            visibility var(--mz-dur);
+    }
+
+    .mz-frame.is-log-open > .mz-log {
+        transform: translate(-50%, -50%);
+        opacity: 1;
+    }
+
+    /* the grip rides the window's top edge and stretches its height */
+    .mz-log-grip {
+        top: -7px;
+        bottom: auto;
+        left: 0;
+        width: auto;
+        height: 14px;
+        cursor: row-resize;
+    }
+
+    .mz-log-grip::before {
+        top: 6px;
+        left: 50%;
+        width: 46px;
+        height: 3px;
+        margin-top: 0;
+        margin-left: -23px;
+    }
+
     .mz-set-row { grid-template-columns: 1fr; gap: 8px; }
     .mz-set-control { justify-content: flex-start; }
     .mz-select { max-width: none; width: 100%; }

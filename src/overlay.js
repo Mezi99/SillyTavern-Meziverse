@@ -281,7 +281,7 @@ export function open() {
 
     refreshChatName();
     applyBackground();
-    applyLogWidth(Number(settings().logWidth) || LOG_DEFAULT);
+    syncLogGripMode();
     setGenerating(stGenerating(), { force: true });
     if (stGenerating()) startWatch();
     enterFullscreen();
@@ -583,7 +583,14 @@ function startWatch() {
     }, 500);
 }
 
-/* ---------- log width ---------- */
+/* ---------- log geometry ---------- */
+
+/** Below this width the log is a floating window stretched by its height. */
+const NARROW_QUERY = '(max-width: 759px)';
+
+function isNarrow() {
+    return window.matchMedia(NARROW_QUERY).matches;
+}
 
 function applyLogWidth(width, persist = false) {
     if (!frame.clientWidth) return;
@@ -603,20 +610,61 @@ function applyLogWidth(width, persist = false) {
     }
 }
 
+/** On narrow screens the floating log stretches vertically instead. */
+function applyLogHeight(height, persist = false) {
+    if (!frame.clientHeight) return;
+
+    const min = Math.round(frame.clientHeight * 0.35);
+    const max = Math.max(min, frame.clientHeight - 44);
+    const clamped = Math.round(Math.min(max, Math.max(min, Number(height) || min)));
+
+    frame.style.setProperty('--mz-log-h', `${clamped}px`);
+    els.logGrip.setAttribute('aria-valuemin', String(min));
+    els.logGrip.setAttribute('aria-valuemax', String(max));
+    els.logGrip.setAttribute('aria-valuenow', String(clamped));
+
+    if (persist) {
+        settings().logHeight = clamped;
+        saveSettings();
+    }
+}
+
+/** The grip resizes the log's width on wide screens, its height on narrow. */
+function resizeLog(delta, persist = false) {
+    if (isNarrow()) applyLogHeight(els.logPanel.offsetHeight + delta, persist);
+    else applyLogWidth(els.logPanel.offsetWidth + delta, persist);
+}
+
+/** Keeps the grip's semantics and geometry matched to the current mode. */
+function syncLogGripMode() {
+    const narrow = isNarrow();
+    els.logGrip.setAttribute('aria-orientation', narrow ? 'horizontal' : 'vertical');
+    if (narrow) {
+        if (Number(settings().logHeight) > 0) applyLogHeight(settings().logHeight);
+    } else {
+        applyLogWidth(Number(settings().logWidth) || LOG_DEFAULT);
+    }
+}
+
 function wireLog() {
     let start = null;
+
+    window.matchMedia(NARROW_QUERY).addEventListener('change', syncLogGripMode);
 
     els.logGrip.addEventListener('pointerdown', event => {
         if (event.button !== 0 && event.pointerType === 'mouse') return;
         event.preventDefault();
-        start = { x: event.clientX, width: els.logPanel.offsetWidth };
+        start = isNarrow()
+            ? { y: event.clientY, height: els.logPanel.offsetHeight }
+            : { x: event.clientX, width: els.logPanel.offsetWidth };
         frame.classList.add('is-log-resizing');
         try { els.logGrip.setPointerCapture(event.pointerId); } catch { /* synthetic event */ }
     });
 
     els.logGrip.addEventListener('pointermove', event => {
         if (!start) return;
-        applyLogWidth(start.width + (start.x - event.clientX));
+        if (isNarrow()) applyLogHeight(start.height + (start.y - event.clientY));
+        else applyLogWidth(start.width + (start.x - event.clientX));
     });
 
     const endDrag = event => {
@@ -624,22 +672,27 @@ function wireLog() {
         start = null;
         frame.classList.remove('is-log-resizing');
         try { els.logGrip.releasePointerCapture(event.pointerId); } catch { /* already released */ }
-        applyLogWidth(els.logPanel.offsetWidth, true);
+        if (isNarrow()) applyLogHeight(els.logPanel.offsetHeight, true);
+        else applyLogWidth(els.logPanel.offsetWidth, true);
     };
 
     els.logGrip.addEventListener('pointerup', endDrag);
     els.logGrip.addEventListener('pointercancel', endDrag);
 
     els.logGrip.addEventListener('keydown', event => {
-        if (event.key === 'ArrowLeft') {
+        const grow = isNarrow() ? 'ArrowUp' : 'ArrowLeft';
+        const shrink = isNarrow() ? 'ArrowDown' : 'ArrowRight';
+
+        if (event.key === grow) {
             event.preventDefault();
-            applyLogWidth(els.logPanel.offsetWidth + 24, true);
-        } else if (event.key === 'ArrowRight') {
+            resizeLog(24, true);
+        } else if (event.key === shrink) {
             event.preventDefault();
-            applyLogWidth(els.logPanel.offsetWidth - 24, true);
+            resizeLog(-24, true);
         } else if (event.key === 'Home') {
             event.preventDefault();
-            applyLogWidth(LOG_DEFAULT, true);
+            if (isNarrow()) applyLogHeight(Math.round(frame.clientHeight * 0.7), true);
+            else applyLogWidth(LOG_DEFAULT, true);
         }
     });
 }
