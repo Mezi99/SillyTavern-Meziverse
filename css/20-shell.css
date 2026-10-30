@@ -371,6 +371,8 @@
     bottom: var(--mz-gutter);
     left: var(--mz-gutter);
     height: var(--mz-pane-h);
+    max-width: var(--mz-dlg-max);
+    margin-inline: auto;
     display: grid;
     grid-template-rows: auto 1fr auto;
     gap: 9px;
@@ -465,6 +467,12 @@
     letter-spacing: .002em;
     color: var(--mz-text);
     scrollbar-width: thin;
+}
+
+.mz-prose p {
+    /* one newline is a line break, two are a paragraph break */
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
 }
 
 .mz-prose q { quotes: "\201C" "\201D" "\2018" "\2019"; }

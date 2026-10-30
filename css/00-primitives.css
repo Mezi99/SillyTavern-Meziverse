@@ -56,6 +56,9 @@
     --mz-rail-w-wide: 330px;
     --mz-dlg-gap: 20px;
 
+    /* the reading column, whatever the window or the rails leave it */
+    --mz-dlg-max: 680px;
+
     --mz-pane-h: 300px;
     --mz-pane-h-min: 220px;
     --mz-port-min-h: 180px;
