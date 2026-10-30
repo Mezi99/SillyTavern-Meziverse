@@ -182,15 +182,13 @@ export function createTranscript({
     /**
      * Presses one of SillyTavern's own edit buttons — accept, delete or
      * discard — on the message being edited. SillyTavern does the work: the
-     * save, the delete-or-swipe popup, the re-render. Our events bring the
-     * pane back; the watch heals it if none arrive.
+     * save, the delete-or-swipe popup, the re-render. Its editor closes on
+     * its own async schedule, so the watch — not this — ends our editing
+     * state, by watching for the editor to disappear.
      */
     async function pressEditButton(press) {
         if (editingIndex === null) return false;
-
-        const ok = await press();
-        if (ok) exitEdit();
-        return ok;
+        return press();
     }
 
     function acceptShownEdit() {
@@ -245,7 +243,25 @@ export function createTranscript({
 
         const st = editorTextarea(editingIndex);
         if (!st) {
-            // the editor closed: accept, cancel, delete, or a stray click
+            // the editor closed: accept, cancel, delete, or a stray click.
+            // before leaving, an editor may have moved to another message —
+            // SillyTavern allows one — and that is a follow, not an exit.
+            const moved = editorTextarea();
+            if (moved) {
+                const host = moved.closest('.mes');
+                const mesid = Number(host?.getAttribute('mesid'));
+                const entry = shown.find(e => e.index === mesid);
+                if (entry) {
+                    selected = entry.index === shown[shown.length - 1].index ? FOLLOW : entry.index;
+                    editingIndex = entry.index;
+                    if (edit) edit.value = moved.value;
+                    drawEditState();
+                    updateControls();
+                    if (edit) edit.focus({ preventScroll: true });
+                    return;
+                }
+            }
+
             exitEdit();
             refresh();
             return;
