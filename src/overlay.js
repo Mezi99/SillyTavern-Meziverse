@@ -11,7 +11,7 @@ import { settings, saveSettings } from './settings.js';
 import { injectSprite } from './icons.js';
 import { createTranscript } from './transcript.js';
 
-const VERSION = '0.5.0';
+const VERSION = '0.6.0';
 const PANE_DEFAULT = 300;
 const LOG_W_DEFAULT = 720;
 const LOG_H_SHARE = 0.7;
@@ -90,11 +90,18 @@ const FRAME_HTML = `
                 <button class="mz-ibtn" type="button" title="Copy" aria-label="Copy" data-mz-action="copy">${svg('copy')}</button>
                 <button class="mz-ibtn" type="button" title="Branch from this turn" aria-label="Branch from this turn" data-mz-action="branch">${svg('branch')}</button>
                 <button class="mz-ibtn" type="button" title="Exclude message from prompts" aria-label="Exclude message from prompts" data-mz-action="toggle-prompt">${svg('eye')}</button>
+                <button class="mz-ibtn" type="button" title="Edit this turn" aria-label="Edit this turn" data-mz-action="edit">${svg('pencil')}</button>
+            </span>
+            <span class="mz-dlg-actions mz-dlg-editbar" hidden>
+                <button class="mz-ibtn" type="button" title="Accept changes" aria-label="Accept changes" data-mz-action="edit-accept">${svg('check')}</button>
+                <button class="mz-ibtn" type="button" title="Delete message" aria-label="Delete message" data-mz-action="edit-delete">${svg('trash')}</button>
+                <button class="mz-ibtn" type="button" title="Discard changes" aria-label="Discard changes" data-mz-action="edit-cancel">${svg('close')}</button>
             </span>
         </header>
         <div class="mz-prose" data-mz="prose">
             <p class="mz-prose-empty">The scene begins when you write.</p>
         </div>
+        <textarea class="mz-edit" data-mz="edit" hidden spellcheck="true" aria-label="Edit this turn"></textarea>
         <div class="mz-swipebar" data-mz="swipebar" hidden>
             <button class="mz-swipebtn" type="button" title="Previous swipe" aria-label="Previous swipe" data-mz-action="swipe-prev">${svg('prev')}</button>
             <span class="mz-swipe-count" data-mz="swipe-count"></span>
@@ -251,6 +258,13 @@ export function mount() {
         branchButton: root.querySelector('[data-mz-action="branch"]'),
         copyButton: root.querySelector('[data-mz-action="copy"]'),
         togglePromptButton: root.querySelector('[data-mz-action="toggle-prompt"]'),
+        editButton: root.querySelector('[data-mz-action="edit"]'),
+        actionsRow: root.querySelector('.mz-dlg-actions:not(.mz-dlg-editbar)'),
+        editBar: root.querySelector('.mz-dlg-editbar'),
+        editAccept: root.querySelector('[data-mz-action="edit-accept"]'),
+        editDelete: root.querySelector('[data-mz-action="edit-delete"]'),
+        editCancel: root.querySelector('[data-mz-action="edit-cancel"]'),
+        edit: root.querySelector('[data-mz="edit"]'),
         swipeBar: root.querySelector('[data-mz="swipebar"]'),
         swipePrev: root.querySelector('[data-mz-action="swipe-prev"]'),
         swipeNext: root.querySelector('[data-mz-action="swipe-next"]'),
@@ -279,6 +293,13 @@ export function mount() {
         branchButton: els.branchButton,
         copyButton: els.copyButton,
         togglePromptButton: els.togglePromptButton,
+        editButton: els.editButton,
+        actionsRow: els.actionsRow,
+        editBar: els.editBar,
+        editAccept: els.editAccept,
+        editDelete: els.editDelete,
+        editCancel: els.editCancel,
+        edit: els.edit,
         swipeBar: els.swipeBar,
         swipePrev: els.swipePrev,
         swipeNext: els.swipeNext,
@@ -325,6 +346,9 @@ export function open() {
 
     root.classList.add('is-open');
     root.setAttribute('aria-hidden', 'false');
+    // SillyTavern's own popups and toasts must float above the scene, not
+    // behind it; the stylesheet lifts them while the scene is on screen.
+    document.body.classList.add('mz-open');
     frame.classList.remove('is-settings-open', 'is-log-open', 'is-dragging');
     els.sheet.setAttribute('aria-hidden', 'true');
     els.logPanel.setAttribute('aria-hidden', 'true');
@@ -355,6 +379,7 @@ export function close() {
 
     root.classList.remove('is-open', 'is-settings-open');
     root.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('mz-open');
     els.sheet.setAttribute('aria-hidden', 'true');
     frame.classList.remove('is-dragging', 'is-log-open');
     els.logPanel.setAttribute('aria-hidden', 'true');
@@ -921,6 +946,18 @@ function wireActions() {
             case 'toggle-prompt':
                 transcript.togglePromptHidden();
                 break;
+            case 'edit':
+                transcript.editShownTurn();
+                break;
+            case 'edit-accept':
+                transcript.acceptShownEdit();
+                break;
+            case 'edit-delete':
+                transcript.deleteShownEdit();
+                break;
+            case 'edit-cancel':
+                transcript.cancelShownEdit();
+                break;
             case 'branch':
                 transcript.branchHere();
                 break;
@@ -990,7 +1027,9 @@ function wireKeys() {
 
             event.preventDefault();
             event.stopPropagation();
-            if (transcript?.isLogOpen()) transcript.closeLog();
+            if (transcript?.isEditing?.()) {
+                transcript.cancelShownEdit();
+            } else if (transcript?.isLogOpen()) transcript.closeLog();
             else if (frame.classList.contains('is-settings-open')) closeSettings();
             else close();
             return;

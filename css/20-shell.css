@@ -23,6 +23,14 @@
 
 #mz-root.is-open { display: block; }
 
+/* While the scene is on screen, SillyTavern's own popups and toasts must
+   float above it, not behind it. This is the one deliberately global rule:
+   everything else Meziverse does is scoped to #mz-root. */
+body.mz-open #dialogue_popup,
+body.mz-open #dialogue_popup_holder,
+body.mz-open .popup,
+body.mz-open #toast-container { z-index: 9500 !important; }
+
 #mz-root,
 #mz-root *,
 #mz-root *::before,
@@ -375,7 +383,7 @@
     left: var(--mz-pane-left);
     height: var(--mz-pane-h);
     display: grid;
-    /* head / prose / swipe footer / composer; the footer collapses when absent */
+    /* head / prose or editor / swipe footer / composer; the footer collapses when absent */
     grid-template-rows: auto 1fr auto auto;
     gap: 9px;
     padding: 13px 17px 11px;
@@ -558,8 +566,7 @@
 
 .mz-prose img { max-width: 100%; height: auto; border-radius: var(--mz-r-sm); }
 
-.mz-prose code {
-    font-family: var(--mz-font-mono);
+.mz-prose code {    font-family: var(--mz-font-mono);
     font-size: .88em;
 }
 
@@ -579,6 +586,32 @@
     color: var(--mz-text-dim);
     letter-spacing: .3em;
 }
+
+/* the pane's mirror of SillyTavern's editor textarea: same face and size as
+   the prose it replaces, so the edit reads as the turn itself */
+.mz-edit {
+    display: block;
+    min-height: 0;
+    width: 100%;
+    height: 100%;
+    resize: none;
+    padding-right: 4px;
+    font-family: var(--mz-font-prose);
+    font-size: var(--mz-narr-size);
+    font-weight: 300;
+    line-height: var(--mz-narr-leading);
+    letter-spacing: .002em;
+    color: var(--mz-prose-plain, var(--mz-text));
+    background: none;
+    border: none;
+    outline: none;
+    overflow-wrap: break-word;
+    scrollbar-width: thin;
+}
+
+/* the edit bar takes the action row's place while editing */
+.mz-dlg-editbar .mz-ibtn { color: var(--mz-text); }
+.mz-dlg-editbar .mz-ibtn:hover { color: var(--mz-accent); }
 
 /* the swipe footer: SillyTavern's chevrons for the chat's last reply */
 .mz-swipebar {

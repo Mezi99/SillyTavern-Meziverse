@@ -232,6 +232,88 @@ export async function copyMessage(index) {
     return pressMessageButton('.mes_copy', index);
 }
 
+/* ---------- editing ---------- */
+
+/**
+ * Opens SillyTavern's editor on a message: its textarea appears in its own
+ * chat DOM, its rules run (one editor at a time; a previous edit elsewhere
+ * is auto-accepted), and accept/cancel/delete become reachable there.
+ *
+ * @param {number} index the message's index in the chat
+ * @returns {Promise<boolean>} whether the edit button was found and pressed
+ */
+export async function editMessage(index) {
+    return pressMessageButton('.mes_edit', index);
+}
+
+/**
+ * SillyTavern's own editor textarea for the message being edited, if one is
+ * open on that message. The textarea lives in ST's chat DOM and is the text
+ * its accept/cancel handlers act on, so the pane must mirror this element.
+ *
+ * @param {number} [index] when given, the editor must belong to that message
+ * @returns {HTMLTextAreaElement|null}
+ */
+export function editorTextarea(index) {
+    const textarea = document.querySelector('#chat .mes .edit_textarea');
+    if (!(textarea instanceof HTMLTextAreaElement)) return null;
+    if (index === undefined) return textarea;
+
+    const host = textarea.closest('.mes');
+    return host && host.getAttribute('mesid') === String(Number(index)) ? textarea : null;
+}
+
+/**
+ * Accepts the open edit through SillyTavern's own handler: it reads its
+ * textarea, updates the chat, saves and re-renders.
+ *
+ * @returns {Promise<boolean>}
+ */
+export async function acceptEdit() {
+    const textarea = editorTextarea();
+    if (!textarea) return false;
+
+    const done = textarea.closest('.mes')?.querySelector('.mes_edit_done');
+    if (!(done instanceof Element)) return false;
+
+    done.click();
+    return true;
+}
+
+/**
+ * Discards the open edit through SillyTavern's own handler: the original
+ * text is restored, nothing is saved.
+ *
+ * @returns {Promise<boolean>}
+ */
+export async function cancelEdit() {
+    const textarea = editorTextarea();
+    if (!textarea) return false;
+
+    const cancel = textarea.closest('.mes')?.querySelector('.mes_edit_cancel');
+    if (!(cancel instanceof Element)) return false;
+
+    cancel.click();
+    return true;
+}
+
+/**
+ * Deletes the message being edited through SillyTavern's own handler. When
+ * the message can lose a swipe instead, SillyTavern's own popup asks which.
+ *
+ * @returns {Promise<boolean>}
+ */
+export async function deleteEditedMessage() {
+    const textarea = editorTextarea();
+    if (!textarea) return false;
+
+    const del = textarea.closest('.mes')?.querySelector('.mes_edit_delete');
+    if (!(del instanceof Element)) return false;
+
+    del.click();
+    return true;
+}
+
 /**
  * Includes a message in the prompts again, or excludes it from them, through
  * SillyTavern's own handler: it flips is_system, keeps its chat in sync and
