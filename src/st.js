@@ -166,3 +166,26 @@ export function regenerate() {
     context.generate('regenerate').catch?.(() => {});
     return true;
 }
+
+/**
+ * Branches the chat at a message, through SillyTavern's own /branch-create.
+ * The copy holds every message up to and including the pinned turn, and
+ * SillyTavern opens it at once — CHAT_CHANGED carries the rest.
+ *
+ * @param {number} mesId index in the chat of the turn to branch from
+ * @returns {Promise<string|null>} the new chat's file name, or null on failure
+ */
+export async function branchChat(mesId) {
+    const context = ctx();
+    if (typeof context?.executeSlashCommandsWithOptions !== 'function') return null;
+
+    try {
+        const result = await context.executeSlashCommandsWithOptions(`/branch-create ${Number(mesId)}`);
+        // newer ST returns a closure result whose pipe is the branch name
+        const name = typeof result === 'string' ? result : result?.pipe;
+        return typeof name === 'string' && name ? name : null;
+    } catch (error) {
+        console.warn('[Meziverse] could not branch the chat', error);
+        return null;
+    }
+}

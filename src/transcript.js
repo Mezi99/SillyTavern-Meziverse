@@ -8,7 +8,7 @@
  * switches are correct the moment SillyTavern reports them.
  */
 
-import { chatMessages, ctx, currentChatId, on } from './st.js';
+import { branchChat, chatMessages, ctx, currentChatId, on } from './st.js';
 import { renderInto, toHtml } from './prose.js';
 import { icon } from './icons.js';
 
@@ -38,10 +38,12 @@ function speakerOf(message) {
  * @param {HTMLButtonElement} [parts.prevButton]
  * @param {HTMLButtonElement} [parts.nextButton]
  * @param {HTMLButtonElement} [parts.latestButton]
+ * @param {HTMLButtonElement} [parts.regenButton] shown on the latest turn
+ * @param {HTMLButtonElement} [parts.branchButton] shown on every earlier one
  */
 export function createTranscript({
     frame, isOpen, speaker, meta, prose, logPanel, logList, logButton, logClose,
-    prevButton, nextButton, latestButton,
+    prevButton, nextButton, latestButton, regenButton, branchButton,
 }) {
     // null follows the newest message; a number pins that index in the chat.
     let selected = FOLLOW;
@@ -89,6 +91,12 @@ export function createTranscript({
         if (prevButton) prevButton.disabled = at <= 0;
         if (nextButton) nextButton.disabled = at < 0 || at >= last;
         if (latestButton) latestButton.disabled = selected === FOLLOW || at < 0;
+
+        // On the latest turn the tool is regenerate; on any earlier one it is
+        // branch, because regenerating mid-chat would rewrite history.
+        const onPastTurn = at >= 0 && at < last;
+        if (regenButton) regenButton.hidden = onPastTurn;
+        if (branchButton) branchButton.hidden = !onPastTurn;
     }
 
     function drawPane({ stick = false } = {}) {
@@ -152,9 +160,9 @@ export function createTranscript({
             const branch = document.createElement('button');
             branch.type = 'button';
             branch.className = 'mz-log-branch';
-            branch.disabled = true;
-            branch.title = 'Branching arrives with the pane\u2019s Branch button';
-            branch.setAttribute('aria-label', `Branch from ${speakerOf(message)}, turn ${at + 1} (coming soon)`);
+            branch.dataset.mzBranch = String(index);
+            branch.title = 'Branch from this turn';
+            branch.setAttribute('aria-label', `Branch from ${speakerOf(message)}, turn ${at + 1}`);
             branch.append(icon('mz-i-branch'));
 
             head.append(who, turn, jump, branch);
@@ -261,11 +269,41 @@ export function createTranscript({
         closeLog();
     }
 
+    /* ---------- branching ---------- */
+
+    /**
+     * Forks the chat at a message. SillyTavern copies every message up to and
+     * including that turn into a new chat file and opens it; CHAT_CHANGED
+     * lands us in it. The log closes so a chat that no longer exists does not
+     * linger on screen. Mid-generation the fork is refused.
+     */
+    async function branchFrom(index) {
+        if (!Number.isInteger(index) || index < 0) return null;
+        if (frame.classList.contains('is-generating')) return null;
+
+        const name = await branchChat(index);
+        if (name) closeLog(false);
+        return name;
+    }
+
+    /** Branches from whichever message the pane is reading. */
+    function branchHere() {
+        const entry = currentEntry();
+        return entry ? branchFrom(entry.index) : Promise.resolve(null);
+    }
+
     /* ---------- wiring ---------- */
 
     logList.addEventListener('click', event => {
         // a link in the prose is a link, not a jump
         if (event.target.closest('a')) return;
+
+        // the branch icon forks; it must not fall through to the jump
+        const branch = event.target.closest('[data-mz-branch]');
+        if (branch) {
+            branchFrom(Number(branch.dataset.mzBranch));
+            return;
+        }
 
         const target = event.target.closest('[data-mz-log]');
         if (!target) return;
@@ -289,5 +327,5 @@ export function createTranscript({
         if (isOpen()) queueRefresh();
     });
 
-    return { refresh, openLog, closeLog, isLogOpen, step, latest, show };
+    return { refresh, openLog, closeLog, isLogOpen, step, latest, show, branchHere };
 }

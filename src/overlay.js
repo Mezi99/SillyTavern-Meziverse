@@ -11,7 +11,7 @@ import { settings, saveSettings } from './settings.js';
 import { injectSprite } from './icons.js';
 import { createTranscript } from './transcript.js';
 
-const VERSION = '0.2.0';
+const VERSION = '0.3.0';
 const PANE_DEFAULT = 300;
 const LOG_W_DEFAULT = 720;
 const LOG_H_SHARE = 0.7;
@@ -85,6 +85,7 @@ const FRAME_HTML = `
                 <button class="mz-ibtn" type="button" title="Previous turn" aria-label="Previous turn" data-mz-action="prev">${svg('prev')}</button>
                 <button class="mz-ibtn" type="button" title="Next turn" aria-label="Next turn" data-mz-action="next">${svg('next')}</button>
                 <button class="mz-ibtn" type="button" title="Latest turn" aria-label="Latest turn" data-mz-action="latest">${svg('latest')}</button>
+                <button class="mz-ibtn" type="button" title="Branch from this turn" aria-label="Branch from this turn" data-mz-action="branch" hidden>${svg('branch')}</button>
                 <button class="mz-ibtn" type="button" title="Regenerate" aria-label="Regenerate" data-mz-action="regen">${svg('regen')}</button>
             </span>
         </header>
@@ -239,6 +240,8 @@ export function mount() {
         prevButton: root.querySelector('[data-mz-action="prev"]'),
         nextButton: root.querySelector('[data-mz-action="next"]'),
         latestButton: root.querySelector('[data-mz-action="latest"]'),
+        branchButton: root.querySelector('[data-mz-action="branch"]'),
+        regenButton: root.querySelector('[data-mz-action="regen"]'),
         logPanel: root.querySelector('.mz-log'),
         logGripH: root.querySelector('.mz-log-grip-h'),
         logGripW: root.querySelector('.mz-log-grip-w'),
@@ -260,6 +263,8 @@ export function mount() {
         prevButton: els.prevButton,
         nextButton: els.nextButton,
         latestButton: els.latestButton,
+        branchButton: els.branchButton,
+        regenButton: els.regenButton,
     });
 
     desiredPane = Number(settings().paneHeight) || PANE_DEFAULT;
@@ -885,6 +890,9 @@ function wireActions() {
                 break;
             case 'regen':
                 regenerate();
+                break;
+            case 'branch':
+                transcript.branchHere();
                 break;
             case 'fullscreen':
                 if (document.fullscreenElement === root) leaveFullscreen();

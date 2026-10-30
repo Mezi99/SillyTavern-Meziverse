@@ -784,7 +784,7 @@
     border-color: var(--mz-accent-line);
 }
 
-/* branching lands with the pane's Branch button; the icon waits with it */
+/* forks the chat from this turn: a new chat ending here */
 .mz-log-branch {
     display: grid;
     place-items: center;
@@ -797,8 +797,7 @@
     transition: color var(--mz-dur-fast);
 }
 
-.mz-log-branch:hover:not(:disabled) { color: var(--mz-accent); }
-.mz-log-branch:disabled { cursor: default; opacity: .45; }
+.mz-log-branch:hover { color: var(--mz-accent); }
 
 /* the log is the whole story so far: every message in full, as prose */
 .mz-log-prose {
