@@ -169,8 +169,9 @@ export function clickComposerControl(id) {
  */
 export function clickOptionsMenu(id) {
     const option = document.getElementById(id);
-    if (!(option instanceof Element) || option.offsetParent === null) return false;
+    if (!(option instanceof Element)) return false;
 
+    // The menu itself may be display:none — ST's own handlers run regardless.
     option.click();
     return true;
 }
@@ -183,14 +184,11 @@ export function clickOptionsMenu(id) {
  * @returns {boolean}
  */
 export function hasParentChat() {
-    const option = document.getElementById('option_back_to_main');
-    if (!option) return false;
-
-    // ST toggles jQuery .show()/.hide(); both still resolve on :hidden
-    // being false, so read the style chain plus the class it also flips.
-    if (option.classList.contains('displayNone')) return false;
-    const style = getComputedStyle(option);
-    return style.display !== 'none' && style.visibility !== 'hidden';
+    try {
+        return !!ctx()?.chatMetadata?.main_chat;
+    } catch {
+        return false;
+    }
 }
 
 /** SillyTavern's own composer textarea — the input our box mirrors. */
