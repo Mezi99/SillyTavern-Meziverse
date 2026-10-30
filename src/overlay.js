@@ -1025,11 +1025,14 @@ function wireKeys() {
             // In full screen the first Esc belongs to the browser.
             if (document.fullscreenElement) return;
 
+            // While SillyTavern's editor is open, Esc belongs to it: ST's own
+            // handler accepts or cancels per its auto-save setting. Our watch
+            // follows the editor closing either way.
+            if (document.querySelector('#chat .mes .edit_textarea')) return;
+
             event.preventDefault();
             event.stopPropagation();
-            if (transcript?.isEditing?.()) {
-                transcript.cancelShownEdit();
-            } else if (transcript?.isLogOpen()) transcript.closeLog();
+            if (transcript?.isLogOpen()) transcript.closeLog();
             else if (frame.classList.contains('is-settings-open')) closeSettings();
             else close();
             return;
