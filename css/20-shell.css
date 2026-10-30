@@ -773,44 +773,92 @@ body.mz-open .popup { z-index: 9500 !important; }
 .mz-composer {
     display: grid;
     grid-template-columns: 1fr auto;
-    align-items: center;
-    gap: 10px;
+    align-items: end;
+    gap: 8px;
     padding-top: 9px;
     border-top: 1px solid var(--mz-line);
 }
 
-.mz-input {
+.mz-composer-box {
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
     min-width: 0;
-    height: 28px;
+}
+
+.mz-input {
+    flex: 1;
+    min-width: 0;
+    min-height: 30px;
+    max-height: 50dvh;
+    font-family: var(--mz-font-ui);
     font-size: var(--mz-text-md);
+    line-height: 1.4;
     color: var(--mz-text);
+    field-sizing: content;
+    resize: vertical;
 }
 
-.mz-input[readonly] { color: var(--mz-text-dim); cursor: default; }
+.mz-input[readonly] { color: var(--mz-text-dim); cursor: default; resize: none; }
 
-.mz-send {
-    display: grid;
-    place-items: center;
-    width: 30px;
-    height: 30px;
-    border-radius: var(--mz-r-pill);
-    background: var(--mz-accent);
-    color: var(--mz-accent-ink);
-    transition:
-        filter var(--mz-dur-fast),
-        background var(--mz-dur-fast),
-        color var(--mz-dur-fast),
-        transform var(--mz-dur-fast) var(--mz-ease);
+/* flat, theme-coloured action icons beside the box */
+.mz-composer-tools {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 2px;
+    padding-bottom: 1px;
 }
-.mz-send:hover { filter: brightness(1.08); }
-.mz-send:active { transform: scale(.94); }
-.mz-send .ico { width: 14px; height: 14px; }
 
-/* while SillyTavern generates, the send button stops the stream */
-.mz-frame.is-generating .mz-send {
-    background: var(--mz-bad);
-    color: var(--mz-bg);
+.mz-sendbtn .ico { width: 16px; height: 16px; }
+
+.mz-frame.is-generating .mz-sendbtn {
+    color: var(--mz-text-dim);
+    cursor: default;
 }
+
+.mz-frame.is-generating .mz-sendbtn[data-mz-action="send"] { color: var(--mz-bad); }
+
+/* ---------- three-lines menu ---------- */
+
+.mz-menu {
+    position: absolute;
+    left: 0;
+    bottom: calc(100% + 10px);
+    z-index: var(--mz-z-header);
+    display: flex;
+    flex-direction: column;
+    min-width: 208px;
+    padding: 5px;
+    border: 1px solid var(--mz-line);
+    border-radius: var(--mz-r-md);
+    background: color-mix(in srgb, var(--mz-surface-solid) 96%, transparent);
+    box-shadow: var(--mz-shadow);
+}
+
+.mz-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: var(--mz-r-sm);
+    background: none;
+    font-family: var(--mz-font-ui);
+    font-size: var(--mz-text-sm);
+    color: var(--mz-text-dim);
+    text-align: left;
+    cursor: pointer;
+    transition: color var(--mz-dur-fast) var(--mz-ease), background var(--mz-dur-fast) var(--mz-ease);
+}
+
+.mz-composer-tools .mz-ibtn { width: 28px; height: 28px; }
+
+.mz-menu-item .ico { width: 15px; height: 15px; flex: none; }
+
+.mz-menu-item:hover { color: var(--mz-text); background: var(--mz-surface-2); }
+.mz-menu-item:disabled { opacity: .38; cursor: default; background: none; color: var(--mz-text-dim); }
 
 /* ---------- veil ---------- */
 .mz-veil {

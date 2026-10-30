@@ -141,6 +141,64 @@ export function sendUserMessage(text) {
     return true;
 }
 
+/* ---------- composer actions ---------- */
+
+/**
+ * Clicks one of SillyTavern's own textbox-area controls. All its rules —
+ * busy gates, empty-input semantics, impersonate filling the box, continue
+ * extending the last reply — live in the handlers behind these elements.
+ *
+ * @param {string} id the element id, e.g. 'send_but'
+ * @returns {boolean} whether the element was found and clicked
+ */
+export function clickComposerControl(id) {
+    const control = document.getElementById(id);
+    if (!(control instanceof Element)) return false;
+
+    control.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+    control.click();
+    return true;
+}
+
+/**
+ * Clicks one of SillyTavern's own three-lines menu options. Both the new
+ * chat confirm and the parent-chat switch run through its handlers.
+ *
+ * @param {string} id option id, e.g. 'option_start_new_chat'
+ * @returns {boolean} whether the option was found and clicked
+ */
+export function clickOptionsMenu(id) {
+    const option = document.getElementById(id);
+    if (!(option instanceof Element) || option.offsetParent === null) return false;
+
+    option.click();
+    return true;
+}
+
+/**
+ * Whether SillyTavern currently shows "Back to parent chat" in its menu.
+ * SillyTavern itself decides this (bookmarks.js): it appears only in a
+ * chat that was branched off another.
+ *
+ * @returns {boolean}
+ */
+export function hasParentChat() {
+    const option = document.getElementById('option_back_to_main');
+    if (!option) return false;
+
+    // ST toggles jQuery .show()/.hide(); both still resolve on :hidden
+    // being false, so read the style chain plus the class it also flips.
+    if (option.classList.contains('displayNone')) return false;
+    const style = getComputedStyle(option);
+    return style.display !== 'none' && style.visibility !== 'hidden';
+}
+
+/** SillyTavern's own composer textarea — the input our box mirrors. */
+export function stComposer() {
+    const textarea = document.getElementById('send_textarea');
+    return textarea instanceof HTMLTextAreaElement ? textarea : null;
+}
+
 /** Stops the generation SillyTavern is running. */
 export function stopGeneration() {
     const context = ctx();

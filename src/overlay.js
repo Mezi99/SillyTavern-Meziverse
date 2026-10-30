@@ -6,13 +6,13 @@
  * only owns the chrome around it.
  */
 
-import { currentChatId, on, sendUserMessage, stopGeneration } from './st.js';
+import { currentChatId, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer } from './st.js';
 import { settings, saveSettings } from './settings.js';
 import { injectSprite } from './icons.js';
 import { createTranscript } from './transcript.js';
 import { interceptToastr } from './notify.js';
 
-const VERSION = '0.6.0';
+const VERSION = '0.7.0';
 const PANE_DEFAULT = 300;
 const LOG_W_DEFAULT = 720;
 const LOG_H_SHARE = 0.7;
@@ -109,8 +109,19 @@ const FRAME_HTML = `
             <button class="mz-swipebtn" type="button" title="Next swipe" aria-label="Next swipe" data-mz-action="swipe-next">${svg('next')}</button>
         </div>
         <div class="mz-composer">
-            <input class="mz-input" data-mz="input" type="text" placeholder="Write your line\u2026" autocomplete="off" spellcheck="true" aria-label="Your line">
-            <button class="mz-send" type="button" title="Send" aria-label="Send" data-mz-action="send">${svg('send')}</button>
+            <div class="mz-composer-box">
+                <button class="mz-ibtn mz-menu-btn" type="button" title="Chat options" aria-label="Chat options" aria-haspopup="true" aria-expanded="false" data-mz-action="menu">${svg('menu')}</button>
+                <div class="mz-menu" role="menu" aria-label="Chat options" hidden>
+                    <button class="mz-menu-item" type="button" role="menuitem" data-mz-action="new-chat">${svg('chat-new')}<span>Start new chat</span></button>
+                    <button class="mz-menu-item" type="button" role="menuitem" data-mz-action="back-to-parent">${svg('chat-parent')}<span>Back to parent chat</span></button>
+                </div>
+                <textarea class="mz-input" data-mz="input" rows="1" placeholder="Write your line\u2026" autocomplete="off" spellcheck="true" aria-label="Your line"></textarea>
+            </div>
+            <span class="mz-composer-tools">
+                <button class="mz-ibtn mz-sendbtn" type="button" title="Impersonate" aria-label="Impersonate" data-mz-action="impersonate">${svg('impersonate')}</button>
+                <button class="mz-ibtn mz-sendbtn" type="button" title="Continue" aria-label="Continue" data-mz-action="continue">${svg('continue')}</button>
+                <button class="mz-ibtn mz-sendbtn" type="button" title="Send" aria-label="Send" data-mz-action="send">${svg('send')}</button>
+            </span>
         </div>
     </section>
 
@@ -245,6 +256,12 @@ export function mount() {
         meta: root.querySelector('[data-mz="meta"]'),
         input: root.querySelector('[data-mz="input"]'),
         sendButton: root.querySelector('[data-mz-action="send"]'),
+        impersonateButton: root.querySelector('[data-mz-action="impersonate"]'),
+        continueButton: root.querySelector('[data-mz-action="continue"]'),
+        menuButton: root.querySelector('[data-mz-action="menu"]'),
+        menu: root.querySelector('.mz-menu'),
+        menuNewChat: root.querySelector('[data-mz-action="new-chat"]'),
+        menuBackToParent: root.querySelector('[data-mz-action="back-to-parent"]'),
         grip: root.querySelector('.mz-grip'),
         sheet: root.querySelector('.mz-sheet'),
         motion: root.querySelector('[data-mz-action="motion"]'),
@@ -319,6 +336,8 @@ export function mount() {
     applyLogWidth(Number(settings().logWidth) || LOG_W_DEFAULT);
 
     wireActions();
+    wireMenu();
+    wireComposer();
     wirePane();
     wireLog();
     wireFullscreen();
@@ -370,6 +389,9 @@ export function open() {
     applyPaneHeight(desiredPane);
 
     els.input?.focus({ preventScroll: true });
+    syncFromSt();
+    refreshMenu();
+    closeMenu();
 }
 
 /** Hides the scene and hands the page back to SillyTavern. */
@@ -712,6 +734,11 @@ function setGenerating(on, { force = false } = {}) {
     els.input.readOnly = busy;
     els.input.placeholder = busy ? 'Generating\u2026' : 'Write your line\u2026';
 
+    // impersonate and continue sit beside send; SillyTavern gates them with
+    // is_send_press, so grey them for exactly as long as the send flips.
+    els.impersonateButton.disabled = busy;
+    els.continueButton.disabled = busy;
+
     generatingDirty = busy;
 
     // the swipe footer lives and dies with this state; redraw once it flips
@@ -837,6 +864,129 @@ function wireLog() {
     });
 }
 
+/* ---------- three-lines menu ---------- */
+
+/** Brings the menu's items in line with what SillyTavern allows right now. */
+function refreshMenu() {
+    const hasParent = hasParentChat();
+    els.menuBackToParent.hidden = !hasParent;
+    els.menuBackToParent.disabled = !hasParent;
+}
+
+function openMenu() {
+    refreshMenu();
+    els.menu.hidden = false;
+    els.menuButton.setAttribute('aria-expanded', 'true');
+    els.menuButton.classList.add('is-on');
+}
+
+function closeMenu() {
+    if (els.menu.hidden) return;
+    els.menu.hidden = true;
+    els.menuButton.setAttribute('aria-expanded', 'false');
+    els.menuButton.classList.remove('is-on');
+}
+
+function toggleMenu() {
+    if (els.menu.hidden) openMenu();
+    else closeMenu();
+}
+
+/**
+ * Both items ride SillyTavern's own menu options: the new-chat confirm
+ * dialog and the parent-chat switch are its, and CHAT_CHANGED carries the
+ * transcript across.
+ */
+function runMenuOption(optionId) {
+    const fired = clickOptionsMenu(optionId);
+    closeMenu();
+    if (!fired) els.input.focus({ preventScroll: true });
+}
+
+function wireMenu() {
+    els.menuButton.addEventListener('click', event => {
+        event.stopPropagation();
+        toggleMenu();
+    });
+
+    els.menu.addEventListener('click', event => {
+        const item = event.target.closest('[data-mz-action]');
+        if (!item || !els.menu.contains(item)) return;
+
+        event.stopPropagation();
+        switch (item.dataset.mzAction) {
+            case 'new-chat':
+                runMenuOption('option_start_new_chat');
+                break;
+            case 'back-to-parent':
+                runMenuOption('option_back_to_main');
+                break;
+            default:
+                break;
+        }
+    });
+
+    // a click anywhere else, or leaving the pane, puts the menu away
+    frame.addEventListener('click', event => {
+        if (els.menu.hidden) return;
+        if (event.target.closest('.mz-composer-box')) return;
+        closeMenu();
+    });
+
+    frame.addEventListener('focusin', event => {
+        if (els.menu.hidden) return;
+        if (event.target.closest('.mz-composer-box')) return;
+        closeMenu();
+    });
+
+    els.menu.addEventListener('keydown', event => {
+        if (event.key !== 'Escape') return;
+        event.preventDefault();
+        event.stopPropagation();
+        closeMenu();
+        els.menuButton.focus({ preventScroll: true });
+    });
+}
+
+/* ---------- composer ---------- */
+
+/**
+ * Keeps our box and SillyTavern's in step while the scene is open.
+ * SillyTavern's textarea is the one its send handler reads, and the one
+ * impersonation drops its draft into; ours is the face the user sees.
+ */
+function syncFromSt() {
+    const st = stComposer();
+    if (!st || !isOpen()) return;
+    if (st.value === els.input.value) return;
+
+    els.input.value = st.value;
+    // impersonate drafts can be long; make sure the grown box is visible
+    if (document.activeElement !== els.input && st.value) {
+        els.input.setSelectionRange(st.value.length, st.value.length);
+    }
+}
+
+function wireComposer() {
+    // SillyTavern writes impersonation drafts into its own box; mirror them.
+    const st = stComposer();
+    st?.addEventListener('input', syncFromSt);
+
+    els.input.addEventListener('input', () => {
+        const box = stComposer();
+        if (!box || box.value === els.input.value) return;
+        box.value = els.input.value;
+        box.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    els.input.addEventListener('keydown', event => {
+        if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+            event.preventDefault();
+            if (!frame.classList.contains('is-generating')) submitLine();
+        }
+    });
+}
+
 /* ---------- actions ---------- */
 
 function openSettings() {
@@ -860,8 +1010,17 @@ function submitLine() {
     }
 
     const text = els.input.value.trim();
+
+    // An empty box sends exactly as SillyTavern's own: with "Continue on
+    // send" on it continues the last reply, otherwise the AI simply responds.
     if (!text) {
-        els.input.focus();
+        // keep SillyTavern's own box empty so its semantics decide
+        const st = stComposer();
+        if (st) {
+            st.value = '';
+            st.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        clickComposerControl('send_but');
         return;
     }
 
@@ -984,18 +1143,20 @@ function wireActions() {
             case 'send':
                 submitLine();
                 break;
+            case 'impersonate':
+                if (!frame.classList.contains('is-generating')) clickComposerControl('mes_impersonate');
+                break;
+            case 'continue':
+                if (!frame.classList.contains('is-generating')) clickComposerControl('mes_continue');
+                break;
+            case 'menu':
+                toggleMenu();
+                break;
             case 'exit':
                 close();
                 break;
             default:
                 break;
-        }
-    });
-
-    els.input.addEventListener('keydown', event => {
-        if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
-            event.preventDefault();
-            if (!frame.classList.contains('is-generating')) submitLine();
         }
     });
 
@@ -1067,10 +1228,18 @@ function wireEvents() {
     };
 
     on('CHAT_CHANGED', () => {
-        if (isOpen()) refresh();
+        if (isOpen()) {
+            refresh();
+            refreshMenu();
+            closeMenu();
+        }
     });
     on('CHAT_CREATED', () => {
-        if (isOpen()) refresh();
+        if (isOpen()) {
+            refresh();
+            refreshMenu();
+            closeMenu();
+        }
     });
     on('CHAT_RENAMED', () => {
         if (isOpen()) refresh();
