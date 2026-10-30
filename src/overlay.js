@@ -10,6 +10,7 @@ import { currentChatId, on, sendUserMessage, stopGeneration } from './st.js';
 import { settings, saveSettings } from './settings.js';
 import { injectSprite } from './icons.js';
 import { createTranscript } from './transcript.js';
+import { interceptToastr } from './notify.js';
 
 const VERSION = '0.6.0';
 const PANE_DEFAULT = 300;
@@ -218,6 +219,7 @@ let els = {};
 let transcript = null;
 let lastFocus = null;
 let previousOverflow = null;
+let restoreToastr = null;
 let desiredPane = PANE_DEFAULT;
 let dragStart = null;
 let resizeQueued = false;
@@ -346,9 +348,10 @@ export function open() {
 
     root.classList.add('is-open');
     root.setAttribute('aria-hidden', 'false');
-    // SillyTavern's own popups and toasts must float above the scene, not
-    // behind it; the stylesheet lifts them while the scene is on screen.
-    document.body.classList.add('mz-open');
+    // SillyTavern's own popups are dialogs and climb above the scene, but its
+    // toastr notices do not; while the scene is open they are re-rendered
+    // as Meziverse notices instead.
+    restoreToastr = interceptToastr();
     frame.classList.remove('is-settings-open', 'is-log-open', 'is-dragging');
     els.sheet.setAttribute('aria-hidden', 'true');
     els.logPanel.setAttribute('aria-hidden', 'true');
@@ -379,7 +382,8 @@ export function close() {
 
     root.classList.remove('is-open', 'is-settings-open');
     root.setAttribute('aria-hidden', 'true');
-    document.body.classList.remove('mz-open');
+    restoreToastr?.();
+    restoreToastr = null;
     els.sheet.setAttribute('aria-hidden', 'true');
     frame.classList.remove('is-dragging', 'is-log-open');
     els.logPanel.setAttribute('aria-hidden', 'true');

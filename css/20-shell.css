@@ -23,13 +23,13 @@
 
 #mz-root.is-open { display: block; }
 
-/* While the scene is on screen, SillyTavern's own popups and toasts must
-   float above it, not behind it. This is the one deliberately global rule:
-   everything else Meziverse does is scoped to #mz-root. */
+/* While the scene is on screen, SillyTavern's own popups must float above
+   it, not behind it. This is the one deliberately global rule: everything
+   else Meziverse does is scoped to #mz-root. (ST's toastr notices cannot be
+   lifted this way; notify.js intercepts them instead.) */
 body.mz-open #dialogue_popup,
 body.mz-open #dialogue_popup_holder,
-body.mz-open .popup,
-body.mz-open #toast-container { z-index: 9500 !important; }
+body.mz-open .popup { z-index: 9500 !important; }
 
 #mz-root,
 #mz-root *,
@@ -612,6 +612,73 @@ body.mz-open #toast-container { z-index: 9500 !important; }
 /* the edit bar takes the action row's place while editing */
 .mz-dlg-editbar .mz-ibtn { color: var(--mz-text); }
 .mz-dlg-editbar .mz-ibtn:hover { color: var(--mz-accent); }
+
+/* ---------- notices ---------- */
+
+/* the stack sits under the meziverse header, top centre of the scene */
+.mz-toasts {
+    position: absolute;
+    top: 42px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: var(--mz-z-sheet);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    pointer-events: none;
+}
+
+.mz-toast {
+    display: flex;
+    align-items: center;
+    max-width: min(420px, calc(100vw - 48px));
+    padding: 8px 14px;
+    border: 1px solid var(--mz-line);
+    border-radius: var(--mz-r-sm);
+    background: linear-gradient(180deg, rgba(15, 18, 22, .92), rgba(11, 13, 16, .96));
+    box-shadow: var(--mz-shadow);
+    font-family: var(--mz-font-ui);
+    font-size: var(--mz-text-sm);
+    letter-spacing: .01em;
+    color: var(--mz-text);
+    opacity: 0;
+    translate: 0 -12px;
+    transition:
+        opacity var(--mz-dur-fast) var(--mz-ease),
+        translate var(--mz-dur) var(--mz-ease);
+}
+
+.mz-toast.is-in { opacity: 1; translate: 0 0; }
+.mz-toast.is-out {
+    opacity: 0;
+    translate: 0 -8px;
+}
+
+/* the accent rides a hairline down the left edge */
+.mz-toast::before {
+    content: "";
+    position: absolute;
+    top: 7px;
+    bottom: 7px;
+    left: 6px;
+    width: 2px;
+    border-radius: 1px;
+    background: var(--mz-accent);
+}
+
+.mz-toast { position: relative; padding-left: 18px; }
+
+.mz-toast.is-success::before { background: var(--mz-accent); }
+.mz-toast.is-info::before { background: var(--mz-text-dim); }
+.mz-toast.is-warning::before { background: var(--mz-accent-line); }
+.mz-toast.is-error::before { background: var(--mz-text); }
+
+#mz-root[data-mz-motion="reduced"] .mz-toast {
+    transition: none;
+    opacity: 1;
+    translate: 0 0;
+}
 
 /* the swipe footer: SillyTavern's chevrons for the chat's last reply */
 .mz-swipebar {
