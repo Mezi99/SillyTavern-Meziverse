@@ -153,18 +153,52 @@ export function stopGeneration() {
     }
 }
 
-/** Regenerates the last reply, through ST's own button when it is there. */
-export function regenerate() {
-    const button = document.getElementById('option_regenerate');
-    if (button) {
-        button.click();
-        return true;
-    }
+/* ---------- swipes ---------- */
 
-    const context = ctx();
-    if (typeof context?.generate !== 'function') return false;
-    context.generate('regenerate').catch?.(() => {});
-    return true;
+/** Whether SillyTavern's swipe engine can be reached at all. */
+export function swipeSupported() {
+    return typeof ctx()?.swipe?.right === 'function';
+}
+
+/**
+ * SillyTavern's own gate for swiping: the setting is on, nothing is
+ * generating and no swipe is mid-flight. When it cannot be asked, swiping
+ * is assumed fine — SillyTavern still guards the swipe itself.
+ */
+export function swipingAllowed() {
+    const api = ctx()?.swipe;
+    if (typeof api?.isAllowed !== 'function') return true;
+    try {
+        return !!api.isAllowed();
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Swipes a message through SillyTavern's own engine, so a switch within the
+ * swipes, the wrap-around and the new reply past the last swipe all run
+ * exactly as they do behind SillyTavern's own chevrons — including the save.
+ *
+ * @param {('left'|'right')} direction
+ * @param {number} index the message's index in the chat
+ * @returns {Promise<boolean>} whether the swipe was handed over
+ */
+export async function swipeMessage(direction, index) {
+    const api = ctx()?.swipe;
+    if (direction !== 'left' && direction !== 'right') return false;
+    if (typeof api?.[direction] !== 'function') return false;
+
+    const message = chatMessages()[Number(index)];
+    if (!message) return false;
+
+    try {
+        await api[direction](null, { message });
+        return true;
+    } catch (error) {
+        console.warn('[Meziverse] could not swipe the message', error);
+        return false;
+    }
 }
 
 /**

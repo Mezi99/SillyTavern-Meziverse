@@ -6,12 +6,12 @@
  * only owns the chrome around it.
  */
 
-import { currentChatId, on, regenerate, sendUserMessage, stopGeneration } from './st.js';
+import { currentChatId, on, sendUserMessage, stopGeneration } from './st.js';
 import { settings, saveSettings } from './settings.js';
 import { injectSprite } from './icons.js';
 import { createTranscript } from './transcript.js';
 
-const VERSION = '0.3.0';
+const VERSION = '0.4.0';
 const PANE_DEFAULT = 300;
 const LOG_W_DEFAULT = 720;
 const LOG_H_SHARE = 0.7;
@@ -85,12 +85,16 @@ const FRAME_HTML = `
                 <button class="mz-ibtn" type="button" title="Previous turn" aria-label="Previous turn" data-mz-action="prev">${svg('prev')}</button>
                 <button class="mz-ibtn" type="button" title="Next turn" aria-label="Next turn" data-mz-action="next">${svg('next')}</button>
                 <button class="mz-ibtn" type="button" title="Latest turn" aria-label="Latest turn" data-mz-action="latest">${svg('latest')}</button>
-                <button class="mz-ibtn" type="button" title="Branch from this turn" aria-label="Branch from this turn" data-mz-action="branch" hidden>${svg('branch')}</button>
-                <button class="mz-ibtn" type="button" title="Regenerate" aria-label="Regenerate" data-mz-action="regen">${svg('regen')}</button>
+                <button class="mz-ibtn" type="button" title="Branch from this turn" aria-label="Branch from this turn" data-mz-action="branch">${svg('branch')}</button>
             </span>
         </header>
         <div class="mz-prose" data-mz="prose">
             <p class="mz-prose-empty">The scene begins when you write.</p>
+        </div>
+        <div class="mz-swipebar" data-mz="swipebar" hidden>
+            <button class="mz-swipebtn" type="button" title="Previous swipe" aria-label="Previous swipe" data-mz-action="swipe-prev">${svg('prev')}</button>
+            <span class="mz-swipe-count" data-mz="swipe-count"></span>
+            <button class="mz-swipebtn" type="button" title="Next swipe" aria-label="Next swipe" data-mz-action="swipe-next">${svg('next')}</button>
         </div>
         <div class="mz-composer">
             <input class="mz-input" data-mz="input" type="text" placeholder="Write your line\u2026" autocomplete="off" spellcheck="true" aria-label="Your line">
@@ -241,7 +245,10 @@ export function mount() {
         nextButton: root.querySelector('[data-mz-action="next"]'),
         latestButton: root.querySelector('[data-mz-action="latest"]'),
         branchButton: root.querySelector('[data-mz-action="branch"]'),
-        regenButton: root.querySelector('[data-mz-action="regen"]'),
+        swipeBar: root.querySelector('[data-mz="swipebar"]'),
+        swipePrev: root.querySelector('[data-mz-action="swipe-prev"]'),
+        swipeNext: root.querySelector('[data-mz-action="swipe-next"]'),
+        swipeCount: root.querySelector('[data-mz="swipe-count"]'),
         logPanel: root.querySelector('.mz-log'),
         logGripH: root.querySelector('.mz-log-grip-h'),
         logGripW: root.querySelector('.mz-log-grip-w'),
@@ -264,7 +271,10 @@ export function mount() {
         nextButton: els.nextButton,
         latestButton: els.latestButton,
         branchButton: els.branchButton,
-        regenButton: els.regenButton,
+        swipeBar: els.swipeBar,
+        swipePrev: els.swipePrev,
+        swipeNext: els.swipeNext,
+        swipeCount: els.swipeCount,
     });
 
     desiredPane = Number(settings().paneHeight) || PANE_DEFAULT;
@@ -666,6 +676,9 @@ function setGenerating(on, { force = false } = {}) {
     els.input.placeholder = busy ? 'Generating\u2026' : 'Write your line\u2026';
 
     generatingDirty = busy;
+
+    // the swipe footer lives and dies with this state; redraw once it flips
+    transcript?.refresh();
 }
 
 /**
@@ -888,8 +901,11 @@ function wireActions() {
             case 'latest':
                 transcript.latest();
                 break;
-            case 'regen':
-                regenerate();
+            case 'swipe-prev':
+                transcript.swipeShownTurn('left');
+                break;
+            case 'swipe-next':
+                transcript.swipeShownTurn('right');
                 break;
             case 'branch':
                 transcript.branchHere();

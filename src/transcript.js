@@ -8,7 +8,7 @@
  * switches are correct the moment SillyTavern reports them.
  */
 
-import { branchChat, chatMessages, ctx, currentChatId, on } from './st.js';
+import { branchChat, chatMessages, ctx, currentChatId, on, swipeMessage, swipeSupported, swipingAllowed } from './st.js';
 import { renderInto, toHtml } from './prose.js';
 import { icon } from './icons.js';
 
@@ -38,12 +38,16 @@ function speakerOf(message) {
  * @param {HTMLButtonElement} [parts.prevButton]
  * @param {HTMLButtonElement} [parts.nextButton]
  * @param {HTMLButtonElement} [parts.latestButton]
- * @param {HTMLButtonElement} [parts.regenButton] shown on the latest turn
- * @param {HTMLButtonElement} [parts.branchButton] shown on every earlier one
+ * @param {HTMLButtonElement} [parts.branchButton] any turn, the latest one included
+ * @param {HTMLElement} [parts.swipeBar] the swipe footer, the chat's last character turn only
+ * @param {HTMLButtonElement} [parts.swipePrev]
+ * @param {HTMLButtonElement} [parts.swipeNext]
+ * @param {HTMLElement} [parts.swipeCount]
  */
 export function createTranscript({
     frame, isOpen, speaker, meta, prose, logPanel, logList, logButton, logClose,
-    prevButton, nextButton, latestButton, regenButton, branchButton,
+    prevButton, nextButton, latestButton, branchButton,
+    swipeBar, swipePrev, swipeNext, swipeCount,
 }) {
     // null follows the newest message; a number pins that index in the chat.
     let selected = FOLLOW;
@@ -91,12 +95,41 @@ export function createTranscript({
         if (prevButton) prevButton.disabled = at <= 0;
         if (nextButton) nextButton.disabled = at < 0 || at >= last;
         if (latestButton) latestButton.disabled = selected === FOLLOW || at < 0;
+    }
 
-        // On the latest turn the tool is regenerate; on any earlier one it is
-        // branch, because regenerating mid-chat would rewrite history.
-        const onPastTurn = at >= 0 && at < last;
-        if (regenButton) regenButton.hidden = onPastTurn;
-        if (branchButton) branchButton.hidden = !onPastTurn;
+    /**
+     * The swipe footer follows SillyTavern's own chevrons: it belongs to the
+     * chat's last message when that message is the character's, and only
+     * while SillyTavern allows swiping at all. Past the last swipe the right
+     * chevron makes SillyTavern write a new reply; nothing here switches or
+     * saves by itself.
+     */
+    function updateSwipeBar(entry) {
+        if (!swipeBar) return;
+
+        const message = entry?.message;
+        const lastTurn = !!message && entry.index === chatMessages().length - 1;
+        const characterTurn = lastTurn
+            && !message.is_user
+            && !message.extra?.isSmallSys
+            && message.extra?.swipeable !== false;
+        const open = characterTurn
+            && !frame.classList.contains('is-generating')
+            && swipeSupported()
+            && swipingAllowed();
+
+        swipeBar.hidden = !open;
+        if (!open) return;
+
+        const count = Array.isArray(message.swipes) && message.swipes.length > 0
+            ? message.swipes.length : 1;
+        const at = Number.isInteger(message.swipe_id) ? message.swipe_id : 0;
+
+        if (swipeCount) {
+            swipeCount.textContent = `${at + 1}/${count}`;
+            swipeCount.setAttribute('aria-label', `Swipe ${at + 1} of ${count}`);
+        }
+        if (swipePrev) swipePrev.hidden = count <= 1;
     }
 
     function drawPane({ stick = false } = {}) {
@@ -114,6 +147,7 @@ export function createTranscript({
 
         prose.scrollTop = stick ? prose.scrollHeight : 0;
         updateControls();
+        updateSwipeBar(entry);
     }
 
     /** Rebuilds the log list, every message in full, and marks the one being read. */
@@ -292,6 +326,22 @@ export function createTranscript({
         return entry ? branchFrom(entry.index) : Promise.resolve(null);
     }
 
+    /* ---------- swipes ---------- */
+
+    /**
+     * Swipes the turn being read, through SillyTavern's own engine. The pane
+     * catches the new swipe on MESSAGE_SWIPED; the redraw after the await
+     * brings the footer back once SillyTavern's mid-swipe state has cleared.
+     */
+    async function swipeShownTurn(direction) {
+        const entry = currentEntry();
+        if (!entry || frame.classList.contains('is-generating')) return false;
+
+        const handed = await swipeMessage(direction, entry.index);
+        if (handed) refresh();
+        return handed;
+    }
+
     /* ---------- wiring ---------- */
 
     logList.addEventListener('click', event => {
@@ -327,5 +377,5 @@ export function createTranscript({
         if (isOpen()) queueRefresh();
     });
 
-    return { refresh, openLog, closeLog, isLogOpen, step, latest, show, branchHere };
+    return { refresh, openLog, closeLog, isLogOpen, step, latest, show, branchHere, swipeShownTurn };
 }

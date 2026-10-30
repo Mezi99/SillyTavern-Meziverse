@@ -375,7 +375,8 @@
     left: var(--mz-pane-left);
     height: var(--mz-pane-h);
     display: grid;
-    grid-template-rows: auto 1fr auto;
+    /* head / prose / swipe footer / composer; the footer collapses when absent */
+    grid-template-rows: auto 1fr auto auto;
     gap: 9px;
     padding: 13px 17px 11px;
     border: 1px solid var(--mz-line);
@@ -545,6 +546,39 @@
 .mz-prose-wait {
     color: var(--mz-text-dim);
     letter-spacing: .3em;
+}
+
+/* the swipe footer: SillyTavern's chevrons for the chat's last reply */
+.mz-swipebar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    min-height: 26px;
+}
+
+.mz-swipebtn {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border: none;
+    border-radius: var(--mz-r-sm);
+    color: var(--mz-text-dim);
+    transition: color var(--mz-dur-fast), background var(--mz-dur-fast);
+}
+
+.mz-swipebtn:hover { color: var(--mz-accent); background: var(--mz-surface-2); }
+.mz-swipebtn .ico { width: 15px; height: 15px; }
+
+.mz-swipe-count {
+    min-width: 46px;
+    text-align: center;
+    font-family: var(--mz-font-ui);
+    font-size: var(--mz-text-xs);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: .06em;
+    color: var(--mz-text-dim);
 }
 
 .mz-composer {
