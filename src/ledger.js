@@ -86,7 +86,7 @@ export function normalizeState(value) {
  * The thread rows of a ledger, in the tag's own order.
  *
  * @param {Array<object>} rows
- * @returns {Array<{name:string, outcome:string, state:string, clock:string, fill:number, total:number}>}
+ * @returns {Array<{name:string, plot:string, outcome:string, state:string, clock:string, fill:number, total:number}>}
  */
 export function normalizeThreads(rows) {
     const list = Array.isArray(rows) ? rows : [];
@@ -97,13 +97,14 @@ export function normalizeThreads(rows) {
 
         const attrs = row.attrs || {};
         const name = text(attrs.name).trim();
+        const plot = text(attrs.plot).trim();
         const outcome = text(attrs.outcome).trim();
-        if (!name && !outcome) continue;
+        if (!name && !outcome && !plot) continue;
 
         const clock = text(attrs.clock).trim();
         const { fill, total } = parseClock(clock);
 
-        threads.push({ name, outcome, state: normalizeState(attrs.state), clock, fill, total });
+        threads.push({ name, plot, outcome, state: normalizeState(attrs.state), clock, fill, total });
     }
 
     return threads;

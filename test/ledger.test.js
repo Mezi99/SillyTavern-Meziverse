@@ -85,18 +85,31 @@ test('normalizeState knows the three states and tolerates the rest', () => {
 
 test('normalizeThreads keeps the tag\u2019s words exactly as written', () => {
     const rows = ledgerRows(msg(LEDGER(
-        '<thread name="The gala" clock="\u25cf\u25cf\u25cf\u25cf\u25cf" outcome="Hoon offers a contract with strings" state="fires"/>',
+        '<thread name="The gala" plot="The room watches, the glass waits" clock="\u25cf\u25cf\u25cf\u25cf\u25cf" outcome="Hoon offers a contract with strings" state="fires"/>',
     )));
     const [thread] = normalizeThreads(rows);
 
     assert.deepEqual(thread, {
         name: 'The gala',
+        plot: 'The room watches, the glass waits',
         outcome: 'Hoon offers a contract with strings',
         state: 'fires',
         clock: '\u25cf\u25cf\u25cf\u25cf\u25cf',
         fill: 5,
         total: 5,
     });
+});
+
+test('plot is optional: the earlier shape still reads', () => {
+    const rows = ledgerRows(msg(LEDGER(
+        '<thread name="Old shape" clock="\u25cf\u25cb" outcome="No plot on this one" state="ticking"/>',
+        '<thread name="Plot only" plot="A quiet room, a loud clock" clock="\u25cf\u25cb" state="ticking"/>',
+    )));
+    const threads = normalizeThreads(rows);
+
+    assert.equal(threads[0].plot, '');
+    assert.equal(threads[1].plot, 'A quiet room, a loud clock');
+    assert.equal(threads[1].outcome, '');
 });
 
 test('a thread without a name still reads, one with neither field is dropped', () => {

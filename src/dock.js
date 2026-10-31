@@ -1,19 +1,23 @@
 /**
- * The tracker rails: a glance column of quiet cards on the right, its dock of
- * round buttons, and one flyout panel beside it — a bottom sheet on small
- * screens.
+ * The tracker rails: a column of quiet cards on the right, one icon button
+ * above each entry's boxes, and one popup with the full records — a bottom
+ * sheet on small screens.
  *
- * The ledger entries land one at a time, each in ENTRIES with its own glance
- * cards, flyout body and feature switch. An entry draws only under Meziverse
- * mode AND its own switch, and only when its rows exist: with nothing to
- * show the whole rail steps aside and the pane keeps the width. Story text
- * is only ever set as text, never as HTML.
+ * The ledger entries land one at a time, each in ENTRIES with its own boxes,
+ * popup body and feature switch. An entry draws only under Meziverse mode
+ * AND its own switch, and only when its rows exist: with nothing to show the
+ * whole rail steps aside and the pane keeps the width.
+ *
+ * The icons snap their rail part: pressed, the entry's boxes are visible;
+ * clicking a box opens the popup, which closes on a click away or Esc —
+ * clicks inside it never close it, so scrolling is safe. Story text is only
+ * ever set as text, never as HTML.
  */
 
 import { icon } from './icons.js';
 import { entryOn, modeOn } from './settings.js';
 
-const GLANCE_MAX = 3;
+const BOXES_MAX = 3;
 
 /**
  * The ledger entries. `threads` is the first; hooks, lore, recap and the
@@ -25,8 +29,8 @@ const ENTRIES = {
         title: 'Threads',
         has: ledger => !!ledger && ledger.threads.length > 0,
         sub: ledger => `${ledger.threads.length} live${ledger.carried ? ` \u00b7 from turn ${ledger.turn}` : ''}`,
-        glance: ledger => ledger.threads.slice(0, GLANCE_MAX).map(threadCard),
-        body: ledger => ledger.threads.map((thread, index) => threadItem(thread, index)),
+        boxes: ledger => ledger.threads.slice(0, BOXES_MAX).map(threadBox),
+        body: ledger => ledger.threads.map(threadRecord),
     },
 };
 
@@ -41,7 +45,10 @@ let railButton = null;
 let state = null;
 let openKey = null;
 let lastSignature = null;
-const openItems = new Set();
+
+/* Entries whose boxes are snapped off. Session-only: the future
+   mode-features menu owns what should persist. */
+const hiddenParts = new Set();
 
 /** Mounts the rail inside the frame. Idempotent. */
 export function mountDock(root) {
@@ -57,14 +64,15 @@ export function mountDock(root) {
 
     if (!frame || !glance || !fly) return;
 
-    frame.addEventListener('click', onClick);
-    frame.addEventListener('keydown', onKeyDown);
+    // One listener on the document: it sees clicks inside the frame and
+    // clicks on SillyTavern's own popups alike, which is exactly what
+    // "clicking away closes" needs.
+    document.addEventListener('click', onClick);
 }
 
 /**
  * Draws the rail for one resolved ledger (or null when the turn has none).
- * Rebuilds only when the board changes, so streaming frames are cheap and
- * unfolded items stay unfolded.
+ * Rebuilds only when the board changes, so streaming frames are cheap.
  *
  * @param {{threads:object[], turn:number, carried:boolean}|null} ledger
  */
@@ -78,66 +86,86 @@ export function renderDock(ledger) {
 
     const active = visible.length > 0;
     frame.classList.toggle('is-rails', active);
-    frame.classList.toggle('is-fly-open', !!openKey);
-    if (railButton) {
-        railButton.hidden = !active;
-        railButton.setAttribute('aria-expanded', String(!!openKey));
-    }
+    if (railButton) railButton.hidden = !active;
     glance.hidden = !active;
 
-    const signature = JSON.stringify({
-        visible,
-        state,
-    });
+    const signature = JSON.stringify({ visible, state, hidden: [...hiddenParts] });
 
     if (signature !== lastSignature) {
         lastSignature = signature;
-        glance.replaceChildren(...visible.flatMap(glanceOf), dockNav(visible));
+        buildRail();
         if (openKey) fillFly(openKey);
     }
 
     syncFly();
 }
 
-/** Whether one entry's flyout is open. */
+/** Whether one entry's popup is open. */
 export function isDockOpen() {
     return openKey !== null;
 }
 
-/** Closes the flyout, if one is open. */
+/** Closes the popup, if one is open. */
 export function closeDock() {
     if (openKey === null) return;
     openKey = null;
     syncFly();
 }
 
-/* ---------- entries ---------- */
+/* ---------- the rail ---------- */
 
 function visibleNow(key) {
     return modeOn() && entryOn(key) && !!ENTRIES[key]?.has(state);
 }
 
-function glanceOf(key) {
-    return ENTRIES[key].glance(state);
+function visibleKeys() {
+    return Object.keys(ENTRIES).filter(visibleNow);
 }
 
-function dockNav(keys) {
-    const nav = document.createElement('nav');
-    nav.className = 'mz-dock mz-dock--h';
-    nav.setAttribute('aria-label', 'Story trackers');
+/** One entry's rail part: its icon button, then its boxes while snapped on. */
+function railPart(key) {
+    const entry = ENTRIES[key];
+    const shown = !hiddenParts.has(key);
 
-    for (const key of keys) {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'mz-dbtn';
-        button.dataset.mzDock = key;
-        button.title = ENTRIES[key].title;
-        button.setAttribute('aria-label', ENTRIES[key].title);
-        button.append(icon(`mz-i-${key}`));
-        nav.append(button);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `mz-dbtn${shown ? ' is-on' : ''}`;
+    button.dataset.mzDock = key;
+    button.title = `${shown ? 'Hide' : 'Show'} ${entry.title.toLowerCase()}`;
+    button.setAttribute('aria-label', button.title);
+    button.setAttribute('aria-pressed', String(shown));
+    button.append(icon(`mz-i-${key}`));
+
+    return shown ? [button, ...entry.boxes(state)] : [button];
+}
+
+function buildRail() {
+    glance.replaceChildren(...visibleKeys().flatMap(railPart));
+}
+
+function toggleParts(key) {
+    // The rail is rebuilt below, so remember keyboard focus on the icon.
+    const hadFocus = document.activeElement?.dataset?.mzDock === key;
+
+    if (hiddenParts.has(key)) {
+        hiddenParts.delete(key);
+    } else {
+        hiddenParts.add(key);
+        if (openKey === key) openKey = null;
     }
+    buildRail();
+    syncFly();
 
-    return nav;
+    if (hadFocus) glance.querySelector(`[data-mz-dock="${key}"]`)?.focus();
+}
+
+/* ---------- the popup ---------- */
+
+function openPopup(key) {
+    if (openKey === key) return;
+    openKey = key;
+    fillFly(key);
+    syncFly();
 }
 
 function fillFly(key) {
@@ -145,13 +173,7 @@ function fillFly(key) {
     flyTitle.textContent = entry.title;
     flySub.textContent = entry.sub(state);
     fly.setAttribute('aria-label', entry.title);
-
-    const nodes = entry.body(state);
-    flyBody.replaceChildren(...nodes);
-
-    for (const node of nodes) {
-        node.classList.toggle('is-open', openItems.has(itemKey(node)));
-    }
+    flyBody.replaceChildren(...entry.body(state));
 }
 
 function syncFly() {
@@ -159,31 +181,16 @@ function syncFly() {
 
     fly.hidden = !openKey;
     frame.classList.toggle('is-fly-open', !!openKey);
-
-    if (openKey && flyBody.childElementCount === 0) fillFly(openKey);
-
     if (railButton) railButton.setAttribute('aria-expanded', String(!!openKey));
-
-    for (const button of glance.querySelectorAll('.mz-dbtn')) {
-        const on = button.dataset.mzDock === openKey;
-        button.classList.toggle('is-on', on);
-        button.setAttribute('aria-pressed', String(on));
-    }
-}
-
-function toggle(key, isToggle) {
-    if (!ENTRIES[key] || !visibleNow(key)) return;
-    openKey = isToggle && openKey === key ? null : key;
-    if (openKey) fillFly(openKey);
-    syncFly();
 }
 
 /* ---------- one thread ---------- */
 
-function threadCard(thread) {
+/** A rail box: the ring clock, the name, and state where outcome used to be. */
+function threadBox(thread) {
     const card = document.createElement('button');
     card.type = 'button';
-    card.className = 'mz-g';
+    card.className = 'mz-g mz-g--quiet';
     card.dataset.mzDock = 'threads';
 
     card.append(ring(thread));
@@ -193,11 +200,11 @@ function threadCard(thread) {
 
     const title = document.createElement('span');
     title.className = 'mz-g-t';
-    title.textContent = thread.name || thread.outcome;
+    title.textContent = thread.name || thread.outcome || thread.plot;
 
     const sub = document.createElement('span');
     sub.className = 'mz-g-s';
-    sub.textContent = thread.outcome;
+    sub.append(stateChip(thread));
 
     txt.append(title, sub);
     card.append(txt);
@@ -225,41 +232,39 @@ function ring(thread) {
     return span;
 }
 
-function threadItem(thread, index) {
+/** A popup record: name and clock, then plot, outcome and state — all of it. */
+function threadRecord(thread) {
     const item = document.createElement('div');
-    item.className = 'mz-item';
-    item.dataset.mzItem = `${index}:${thread.name}`;
-    item.setAttribute('role', 'button');
-    item.setAttribute('tabindex', '0');
+    item.className = 'mz-item is-full';
 
     const row = document.createElement('div');
     row.className = 'mz-item-row';
 
     const title = document.createElement('span');
     title.className = 'mz-item-title';
-    title.textContent = thread.name || thread.outcome;
+    title.textContent = thread.name || thread.outcome || thread.plot;
 
     row.append(title, pips(thread));
     item.append(row);
 
-    if (thread.name && thread.outcome) {
-        const sub = document.createElement('p');
-        sub.className = 'mz-item-sub';
-        sub.textContent = thread.outcome;
-        item.append(sub);
+    if (thread.plot) {
+        const plot = document.createElement('p');
+        plot.className = 'mz-item-sub';
+        plot.textContent = thread.plot;
+        item.append(plot);
     }
 
-    if (thread.state !== 'ticking') {
-        const more = document.createElement('div');
-        more.className = 'mz-more';
-
-        const chip = document.createElement('span');
-        chip.className = `mz-tag ${thread.state === 'fires' ? 'is-warn' : 'is-done'}`;
-        chip.textContent = thread.state;
-
-        more.append(chip);
-        item.append(more);
+    if (thread.outcome) {
+        const outcome = document.createElement('p');
+        outcome.className = 'mz-item-out';
+        outcome.textContent = thread.outcome;
+        item.append(outcome);
     }
+
+    const foot = document.createElement('div');
+    foot.className = 'mz-item-foot';
+    foot.append(stateChip(thread));
+    item.append(foot);
 
     return item;
 }
@@ -278,8 +283,12 @@ function pips(thread) {
     return span;
 }
 
-function itemKey(node) {
-    return `${openKey}:${node.dataset.mzItem}`;
+function stateChip(thread) {
+    const chip = document.createElement('span');
+    chip.className = 'mz-tag'
+        + (thread.state === 'fires' ? ' is-warn' : thread.state === 'resolved' ? ' is-done' : ' is-live');
+    chip.textContent = thread.state;
+    return chip;
 }
 
 /* ---------- input ---------- */
@@ -287,29 +296,20 @@ function itemKey(node) {
 function onClick(event) {
     const trigger = event.target.closest('[data-mz-dock]');
     if (trigger) {
-        // Dock buttons and the small-screen button toggle; glance cards open.
-        const toggles = trigger.classList.contains('mz-dbtn')
-            || trigger.classList.contains('mz-railbtn');
-        toggle(trigger.dataset.mzDock, toggles);
+        const key = trigger.dataset.mzDock;
+
+        if (trigger.classList.contains('mz-dbtn')) toggleParts(key);
+        else if (trigger.classList.contains('mz-railbtn')) {
+            // Small screens have no boxes to click: the button is the popup.
+            if (openKey === key) closeDock();
+            else openPopup(key);
+        } else {
+            openPopup(key);
+        }
         return;
     }
 
-    const item = event.target.closest('.mz-item');
-    if (item && fly.contains(item)) unfold(item);
-}
-
-function onKeyDown(event) {
-    if (event.key !== 'Enter' && event.key !== ' ') return;
-    const item = event.target.closest?.('.mz-item');
-    if (!item || !fly.contains(item)) return;
-
-    event.preventDefault();
-    unfold(item);
-}
-
-function unfold(item) {
-    const key = itemKey(item);
-    if (openItems.has(key)) openItems.delete(key);
-    else openItems.add(key);
-    item.classList.toggle('is-open', openItems.has(key));
+    // A click anywhere else closes the popup. Clicks inside it never do,
+    // so touching, scrolling or selecting within it is safe.
+    if (openKey && !fly.contains(event.target)) closeDock();
 }
