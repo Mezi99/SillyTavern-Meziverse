@@ -232,24 +232,25 @@ function ring(thread) {
     return span;
 }
 
-/** A popup record: name and clock, then plot, outcome and state — all of it. */
+/** A popup record: name with its state, then plot and outcome — all of it. */
 function threadRecord(thread) {
     const item = document.createElement('div');
     item.className = 'mz-item is-full';
 
     const row = document.createElement('div');
-    row.className = 'mz-item-row';
+    row.className = 'mz-item-row mz-item-row--title';
 
     const title = document.createElement('span');
     title.className = 'mz-item-title';
     title.textContent = thread.name || thread.outcome || thread.plot;
 
-    row.append(title, pips(thread));
+    // The state pill rides next to the name; the clock keeps the right edge.
+    row.append(title, stateChip(thread), pips(thread));
     item.append(row);
 
     if (thread.plot) {
         const plot = document.createElement('p');
-        plot.className = 'mz-item-sub';
+        plot.className = 'mz-item-plot';
         plot.textContent = thread.plot;
         item.append(plot);
     }
@@ -257,14 +258,9 @@ function threadRecord(thread) {
     if (thread.outcome) {
         const outcome = document.createElement('p');
         outcome.className = 'mz-item-out';
-        outcome.textContent = thread.outcome;
+        outcome.textContent = `Outcome: ${thread.outcome}`;
         item.append(outcome);
     }
-
-    const foot = document.createElement('div');
-    foot.className = 'mz-item-foot';
-    foot.append(stateChip(thread));
-    item.append(foot);
 
     return item;
 }

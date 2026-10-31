@@ -161,7 +161,7 @@ button.mz-g--quiet:hover .mz-g-t { color: var(--mz-accent); }
     gap: 10px;
     margin-bottom: 4px;
 }
-.mz-fly-head h2 { font: 400 22px / 1.2 var(--mz-font-prose); }
+.mz-fly-head h2 { font: 400 22px / 1.2 var(--mz-font-prose); color: var(--mz-accent); }
 .mz-fly-head span { font-size: var(--mz-text-xs); color: var(--mz-text-dim); }
 
 .mz-fly-body > .mz-item:first-child { border-top: 0; }
@@ -206,15 +206,24 @@ button.mz-g--quiet:hover .mz-g-t { color: var(--mz-accent); }
 .mz-item[role="button"]:hover .mz-item-title { color: var(--mz-accent); }
 .mz-item.is-open .mz-item-sub { -webkit-line-clamp: unset; display: block; }
 
-/* a full record shows everything at once: plot, outcome, state — no unfolding */
-.mz-item.is-full .mz-item-sub { -webkit-line-clamp: unset; display: block; }
+/* a full record shows everything at once: the pill beside the name, then
+   plot and outcome tightly stacked — no unfolding, no foot line */
+.mz-item-row--title .mz-item-title { flex: 0 1 auto; }
+.mz-item-row--title .mz-tag { flex: none; }
+.mz-item-row--title .mz-pips { margin-left: auto; }
+
+.mz-fly .mz-item-title { color: var(--mz-accent); }
+
+.mz-item-plot,
 .mz-item-out {
-    margin-top: 3px;
-    font-size: var(--mz-text-sm);
+    margin: 2px 0 0;
+    font-family: var(--mz-font-prose);
+    font-size: var(--mz-text-md);
+    font-weight: 400;
     line-height: 1.45;
-    color: var(--mz-text);
 }
-.mz-item-foot { margin-top: 7px; }
+.mz-item-plot { color: var(--mz-text); }
+.mz-item-out { color: var(--mz-text-muted); }
 .mz-more { display: none; margin-top: 8px; }
 .mz-item.is-open .mz-more { display: block; }
 .mz-item.is-open {
