@@ -121,6 +121,33 @@ export function sortThreads(threads) {
 }
 
 /**
+ * The plan rows of a ledger, in the tag's own order. `due` is free text,
+ * so no date sort would be honest; the tag's order is the board.
+ *
+ * @param {Array<object>} rows
+ * @returns {Array<{name:string, what:string, due:string, state:string}>}
+ */
+export function normalizePlans(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+    const plans = [];
+
+    for (const row of list) {
+        if (!row || row.name !== 'plan' || !row.closed) continue;
+
+        const attrs = row.attrs || {};
+        const name = text(attrs.name).trim();
+        const what = text(attrs.what).trim();
+        const due = text(attrs.due).trim();
+        const state = text(attrs.state).trim();
+        if (!name && !what && !due) continue;
+
+        plans.push({ name, what, due, state });
+    }
+
+    return plans;
+}
+
+/**
  * The ledger that governs a turn: the last complete block of the shown
  * message, or the most recent earlier one when the shown message has none.
  *
@@ -142,6 +169,7 @@ export function resolveLedger(messages, at) {
         return {
             rows,
             threads: sortThreads(normalizeThreads(rows)),
+            plans: normalizePlans(rows),
             index: i,
             turn: i + 1,
             carried: i !== index,

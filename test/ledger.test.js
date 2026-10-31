@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ledgerRows, normalizeState, normalizeThreads, parseClock, resolveLedger, sortThreads } from '../src/ledger.js';
+import { ledgerRows, normalizePlans, normalizeState, normalizeThreads, parseClock, resolveLedger, sortThreads } from '../src/ledger.js';
 import { stripTags } from '../src/tags.js';
 
 const msg = mes => ({ mes });
@@ -186,6 +186,51 @@ test('a streaming LEDGER falls back to the earlier turn', () => {
     assert.equal(ledger.turn, 1);
     assert.equal(ledger.carried, true);
     assert.deepEqual(ledger.threads.map(t => t.name), ['Old thread']);
+});
+
+test('resolveLedger carries the plans of the governing ledger', () => {
+    const chat = [msg(LEDGER(
+        '<plan name="Goodnight text" what="A promise to text before midnight" due="Tonight" state="pending"/>',
+        THREAD('Debt'),
+    ))];
+
+    const ledger = resolveLedger(chat, 0);
+    assert.deepEqual(ledger.plans.map(p => p.name), ['Goodnight text']);
+});
+
+test('normalizePlans reads name, what, due and state in the tag order', () => {
+    const rows = ledgerRows(msg(LEDGER(
+        '<plan name="Goodnight text" what="A promise to text before midnight" due="Tonight, before midnight" state="pending"/>',
+        '<plan name="Bar Friday" what="Friday with the crew" due="Friday, September 15" state="if he skips it, the crew stops asking"/>',
+    )));
+    const plans = normalizePlans(rows);
+
+    assert.deepEqual(plans[0], {
+        name: 'Goodnight text',
+        what: 'A promise to text before midnight',
+        due: 'Tonight, before midnight',
+        state: 'pending',
+    });
+    assert.deepEqual(plans.map(p => p.name), ['Goodnight text', 'Bar Friday']);
+});
+
+test('plans without the name field still read', () => {
+    const rows = ledgerRows(msg(LEDGER(
+        '<plan what="The old shape keeps working" due="Someday" state="pending"/>',
+    )));
+    const [plan] = normalizePlans(rows);
+
+    assert.equal(plan.name, '');
+    assert.equal(plan.what, 'The old shape keeps working');
+});
+
+test('a plan row that names nothing is dropped', () => {
+    const rows = ledgerRows(msg(LEDGER(
+        '<plan state="pending"/>',
+        '<plan name="Only a name"/>',
+    )));
+
+    assert.deepEqual(normalizePlans(rows).map(p => p.name), ['Only a name']);
 });
 
 test('the ledger never leaks into the prose', () => {

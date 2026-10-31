@@ -32,6 +32,13 @@ const ENTRIES = {
         boxes: ledger => ledger.threads.slice(0, BOXES_MAX).map(threadBox),
         body: ledger => ledger.threads.map(threadRecord),
     },
+    plans: {
+        title: 'Plans',
+        has: ledger => !!ledger && ledger.plans.length > 0,
+        sub: ledger => `${ledger.plans.length} planned${ledger.carried ? ` \u00b7 from turn ${ledger.turn}` : ''}`,
+        boxes: ledger => [planCard(ledger.plans)],
+        body: ledger => ledger.plans.map(planRecord),
+    },
 };
 
 let frame = null;
@@ -68,6 +75,7 @@ export function mountDock(root) {
     // clicks on SillyTavern's own popups alike, which is exactly what
     // "clicking away closes" needs.
     document.addEventListener('click', onClick);
+    document.addEventListener('keydown', onKeyDown);
 }
 
 /**
@@ -287,25 +295,101 @@ function stateChip(thread) {
     return chip;
 }
 
+/* ---------- one plan ---------- */
+
+/** The rail card: one bordered box, every plan as due over name. */
+function planCard(plans) {
+    const card = document.createElement('div');
+    card.className = 'mz-g mz-plans';
+    card.dataset.mzDock = 'plans';
+    card.setAttribute('role', 'button');
+    card.setAttribute('tabindex', '0');
+
+    const label = document.createElement('span');
+    label.className = 'mz-label';
+    label.textContent = 'Plans';
+    card.append(label);
+
+    for (const plan of plans) {
+        const row = document.createElement('div');
+        row.className = 'mz-plan-row';
+
+        const due = document.createElement('span');
+        due.className = 'mz-plan-due';
+        due.textContent = plan.due || '\u2014';
+
+        const name = document.createElement('span');
+        name.className = 'mz-plan-name';
+        name.textContent = plan.name || plan.what;
+
+        row.append(due, name);
+        card.append(row);
+    }
+
+    return card;
+}
+
+/** A popup record: due and what and state — the name would only clutter it. */
+function planRecord(plan) {
+    const item = document.createElement('div');
+    item.className = 'mz-item is-full';
+
+    const due = document.createElement('div');
+    due.className = 'mz-item-title';
+    due.textContent = plan.due || '\u2014';
+    item.append(due);
+
+    if (plan.what) {
+        const what = document.createElement('p');
+        what.className = 'mz-item-plot';
+        what.textContent = plan.what;
+        item.append(what);
+    }
+
+    if (plan.state) {
+        const state = document.createElement('p');
+        state.className = 'mz-item-out';
+        state.textContent = `State: ${plan.state}`;
+        item.append(state);
+    }
+
+    return item;
+}
+
 /* ---------- input ---------- */
+
+function activate(trigger) {
+    const key = trigger.dataset.mzDock;
+
+    if (trigger.classList.contains('mz-dbtn')) toggleParts(key);
+    else if (trigger.classList.contains('mz-railbtn')) {
+        // Small screens have no boxes to click: the button is the popup.
+        if (openKey === key) closeDock();
+        else openPopup(key);
+    } else {
+        openPopup(key);
+    }
+}
 
 function onClick(event) {
     const trigger = event.target.closest('[data-mz-dock]');
     if (trigger) {
-        const key = trigger.dataset.mzDock;
-
-        if (trigger.classList.contains('mz-dbtn')) toggleParts(key);
-        else if (trigger.classList.contains('mz-railbtn')) {
-            // Small screens have no boxes to click: the button is the popup.
-            if (openKey === key) closeDock();
-            else openPopup(key);
-        } else {
-            openPopup(key);
-        }
+        activate(trigger);
         return;
     }
 
     // A click anywhere else closes the popup. Clicks inside it never do,
     // so touching, scrolling or selecting within it is safe.
     if (openKey && !fly.contains(event.target)) closeDock();
+}
+
+function onKeyDown(event) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+
+    const trigger = event.target.closest?.('[data-mz-dock]');
+    // Real buttons do this on their own; only the card needs help.
+    if (!trigger || trigger instanceof HTMLButtonElement) return;
+
+    event.preventDefault();
+    activate(trigger);
 }

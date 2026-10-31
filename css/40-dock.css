@@ -368,19 +368,33 @@ button.mz-g--quiet:hover .mz-g-t { color: var(--mz-accent); }
     color: var(--mz-accent);
 }
 
-/* plans: the glance column's quiet list */
-.mz-plans { display: block; cursor: default; }
+/* plans: the glance column's one bordered card, every plan as due over name */
+.mz-plans { display: block; cursor: pointer; }
+.mz-plans:hover { border-color: var(--mz-line-strong); }
 .mz-plans .mz-label { display: block; margin-bottom: 5px; }
 .mz-plan-row {
-    display: flex;
-    justify-content: space-between;
-    gap: 10px;
-    font-size: var(--mz-text-sm);
-    line-height: 1.6;
+    display: block;
+    padding: 5px 0 6px;
+    border-top: 1px solid var(--mz-line);
 }
-.mz-plan-row span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mz-plan-row span + span { flex: none; color: var(--mz-text-muted); }
-.mz-plan-row:first-of-type span + span { color: var(--mz-accent); }
+.mz-plan-row:first-of-type { border-top: 0; padding-top: 1px; }
+.mz-plan-due {
+    display: block;
+    font-size: var(--mz-text-xs);
+    line-height: 1.35;
+    color: var(--mz-text-muted);
+}
+.mz-plan-name {
+    display: block;
+    margin-top: 1px;
+    font-family: var(--mz-font-prose);
+    font-size: var(--mz-text-sm);
+    line-height: 1.3;
+    color: var(--mz-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 
 /* ---------- small screens: the rail becomes a bottom sheet ---------- */
 
