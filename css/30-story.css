@@ -88,11 +88,6 @@
     overflow-wrap: anywhere;
 }
 
-.mz-scene-sep {
-    margin: 0 4px;
-    color: var(--mz-accent-line);
-}
-
 .mz-scene-cast {
     min-width: 0;
     font-size: var(--mz-text-2xs);

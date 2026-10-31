@@ -43,9 +43,9 @@ function sceneRow(tag, { compact, persona }) {
     if (scene.date) when.push(`<span class="mz-scene-date">${escapeHtml(scene.date)}</span>`);
     if (scene.time) when.push(`<b class="mz-scene-time">${escapeHtml(scene.time)}</b>`);
 
-    const place = scene.levels.length
-        ? scene.levels.map(level => escapeHtml(level)).join('<span class="mz-scene-sep" aria-hidden="true">\u203a</span>')
-        : escapeHtml(scene.placeFull);
+    // The location is shown exactly as the scene wrote it: re-joining the
+    // levels with our own separator only hid the model's own `|` from view.
+    const place = scene.placeFull ? escapeHtml(scene.placeFull) : '';
     const present = scene.present.map(name => escapeHtml(name)).join(', ');
 
     return `<aside class="mz-scene${compact ? ' is-compact' : ''}" aria-label="Scene">`

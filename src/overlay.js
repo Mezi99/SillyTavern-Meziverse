@@ -152,7 +152,7 @@ const FRAME_HTML = `
             <div class="mz-set-row">
                 <span class="mz-set-label"><b>Pane transparency</b><small>How much of the background shows through the reading pane.</small></span>
                 <div class="mz-range">
-                    <input type="range" min="55" max="100" step="5" data-mz="pane-opacity" aria-label="Pane transparency">
+                    <input type="range" min="20" max="100" step="5" data-mz="pane-opacity" aria-label="Pane transparency">
                     <span data-mz="pane-opacity-value">90%</span>
                 </div>
             </div>
@@ -407,6 +407,7 @@ export function open() {
     transcript.refresh({ followLatest: true });
     desiredPane = Number(settings().paneHeight) || PANE_DEFAULT;
     applyPaneHeight(desiredPane);
+    measureChatbar();
     requestAnimationFrame(refreshCastSizing);
 
     els.input?.focus({ preventScroll: true });
@@ -491,7 +492,7 @@ function applyNarrationFont() {
    never touched. */
 function applyPaneOpacity() {
     const raw = Number(settings().paneOpacity);
-    const percent = Number.isFinite(raw) ? Math.min(100, Math.max(55, raw)) : 90;
+    const percent = Number.isFinite(raw) ? Math.min(100, Math.max(20, raw)) : 90;
 
     root.style.setProperty('--mz-pane-alpha', String(percent / 100));
 
@@ -647,6 +648,20 @@ function refreshChatName() {
 /* ---------- scene header and cast ---------- */
 
 /**
+ * Publishes the chat-bar's real height as `--mz-chatbar-real`. The bar grows
+ * to two lines when a scene's place is long, and the cast stage anchors to its
+ * underside, so the fixed design height is only a floor. Remeasure whenever
+ * the header text changes or the window resizes.
+ */
+function measureChatbar() {
+    const bar = root.querySelector('.mz-chatbar');
+    if (!bar) return;
+
+    const height = Math.round(bar.getBoundingClientRect().height);
+    if (height > 0) root.style.setProperty('--mz-chatbar-real', `${height}px`);
+}
+
+/**
  * Puts the governing scene into the chrome: the clock, the place, the weather
  * chip and the cast strip. `record` is transcript's `{tag, index, scene}` for
  * the turn on screen, or null when the chat has no usable scene yet.
@@ -658,7 +673,7 @@ function applyScene(record) {
     els.date.title = scene?.dateRaw || '';
     els.time.textContent = scene ? scene.time : '--:--';
     els.time.title = scene?.time || '';
-    els.place.textContent = scene?.place || '\u2014';
+    els.place.textContent = scene?.placeFull || '\u2014';
     els.place.title = scene?.placeFull || '';
 
     if (scene?.weather) {
@@ -669,6 +684,7 @@ function applyScene(record) {
         els.weather.hidden = true;
     }
 
+    measureChatbar();
     renderCast(scene);
 }
 
@@ -1296,6 +1312,12 @@ function wireEvents() {
         refreshChatName();
         applyBackground();
     };
+
+    // A resize can wrap the place onto two lines, which moves the cast stage.
+    window.addEventListener('resize', () => {
+        measureChatbar();
+        refreshCastSizing();
+    });
 
     on('CHAT_CHANGED', () => {
         if (isOpen()) {
