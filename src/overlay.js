@@ -10,6 +10,7 @@ import { currentChatId, on, sendUserMessage, stopGeneration, clickComposerContro
 import { settings, saveSettings } from './settings.js';
 import { injectSprite } from './icons.js';
 import { createTranscript } from './transcript.js';
+import { mountCast, refreshCastSizing, renderCast } from './cast.js';
 import { interceptToastr } from './notify.js';
 
 const VERSION = '0.7.0';
@@ -75,7 +76,7 @@ const FRAME_HTML = `
         </div>
     </header>
 
-    <div class="mz-cast" aria-hidden="true"></div>
+    <div class="mz-cast" role="group" aria-label="Cast"></div>
 
     <section class="mz-dlg" aria-label="Reading pane">
         <div class="mz-grip" role="separator" aria-orientation="horizontal" aria-label="Resize reading pane" tabindex="0"></div>
@@ -146,6 +147,13 @@ const FRAME_HTML = `
                 <div class="mz-seg" role="group" aria-label="Background">
                     <button type="button" data-mz-pick-bg="none">None</button>
                     <button type="button" data-mz-pick-bg="st">SillyTavern</button>
+                </div>
+            </div>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Pane transparency</b><small>How much of the background shows through the reading pane.</small></span>
+                <div class="mz-range">
+                    <input type="range" min="20" max="100" step="5" data-mz="pane-opacity" aria-label="Pane transparency">
+                    <span data-mz="pane-opacity-value">90%</span>
                 </div>
             </div>
         </div>
@@ -251,6 +259,11 @@ export function mount() {
     els = {
         chatName: root.querySelector('[data-mz="chatname"]'),
         chatNameText: root.querySelector('[data-mz="chatname"] b'),
+        date: root.querySelector('[data-mz="date"]'),
+        time: root.querySelector('[data-mz="time"]'),
+        place: root.querySelector('[data-mz="place"]'),
+        weather: root.querySelector('[data-mz="weather"]'),
+        cast: root.querySelector('.mz-cast'),
         prose: root.querySelector('[data-mz="prose"]'),
         speaker: root.querySelector('[data-mz="speaker"]'),
         meta: root.querySelector('[data-mz="meta"]'),
@@ -268,6 +281,8 @@ export function mount() {
         uiValue: root.querySelector('[data-mz="ui-value"]'),
         narrValue: root.querySelector('[data-mz="narr-value"]'),
         fontSelect: root.querySelector('[data-mz="font"]'),
+        paneOpacity: root.querySelector('[data-mz="pane-opacity"]'),
+        paneOpacityValue: root.querySelector('[data-mz="pane-opacity-value"]'),
         prosePickers: root.querySelector('[data-mz="prose-pickers"]'),
         colorInputs: [...root.querySelectorAll('[data-mz-color]')],
         fullscreenButton: root.querySelector('[data-mz-action="fullscreen"]'),
@@ -296,6 +311,8 @@ export function mount() {
         logClose: root.querySelector('[data-mz-action="close-log"]'),
     };
 
+    mountCast(els.cast);
+
     transcript = createTranscript({
         frame,
         isOpen,
@@ -323,6 +340,7 @@ export function mount() {
         swipePrev: els.swipePrev,
         swipeNext: els.swipeNext,
         swipeCount: els.swipeCount,
+        onShown: ({ scene }) => applyScene(scene),
     });
 
     desiredPane = Number(settings().paneHeight) || PANE_DEFAULT;
@@ -333,6 +351,7 @@ export function mount() {
     applyNarration();
     applyNarrationFont();
     applyProseColors();
+    applyPaneOpacity();
     applyLogWidth(Number(settings().logWidth) || LOG_W_DEFAULT);
 
     wireActions();
@@ -379,6 +398,7 @@ export function open() {
     refreshChatName();
     applyBackground();
     applyProseColors();
+    applyPaneOpacity();
     applyLogWidth(Number(settings().logWidth) || LOG_W_DEFAULT);
     if (Number(settings().logHeight) > 0) applyLogHeight(settings().logHeight);
     setGenerating(stGenerating(), { force: true });
@@ -387,6 +407,8 @@ export function open() {
     transcript.refresh({ followLatest: true });
     desiredPane = Number(settings().paneHeight) || PANE_DEFAULT;
     applyPaneHeight(desiredPane);
+    measureChatbar();
+    requestAnimationFrame(refreshCastSizing);
 
     els.input?.focus({ preventScroll: true });
     syncFromSt();
@@ -463,6 +485,19 @@ function applyNarrationFont() {
     else root.style.removeProperty('--mz-font-prose');
 
     if (els.fontSelect) els.fontSelect.value = key;
+}
+
+/* The reading pane's own see-through-ness, as a fraction the CSS multiplies
+   into both of its background stops. Only the pane; the scene behind it is
+   never touched. */
+function applyPaneOpacity() {
+    const raw = Number(settings().paneOpacity);
+    const percent = Number.isFinite(raw) ? Math.min(100, Math.max(20, raw)) : 90;
+
+    root.style.setProperty('--mz-pane-alpha', String(percent / 100));
+
+    if (els.paneOpacity) els.paneOpacity.value = String(percent);
+    if (els.paneOpacityValue) els.paneOpacityValue.textContent = `${percent}%`;
 }
 
 /* Reads the prose inks SillyTavern's chat has right now. A hidden probe
@@ -610,6 +645,49 @@ function refreshChatName() {
     els.chatName.title = label;
 }
 
+/* ---------- scene header and cast ---------- */
+
+/**
+ * Publishes the chat-bar's real height as `--mz-chatbar-real`. The bar grows
+ * to two lines when a scene's place is long, and the cast stage anchors to its
+ * underside, so the fixed design height is only a floor. Remeasure whenever
+ * the header text changes or the window resizes.
+ */
+function measureChatbar() {
+    const bar = root.querySelector('.mz-chatbar');
+    if (!bar) return;
+
+    const height = Math.round(bar.getBoundingClientRect().height);
+    if (height > 0) root.style.setProperty('--mz-chatbar-real', `${height}px`);
+}
+
+/**
+ * Puts the governing scene into the chrome: the clock, the place, the weather
+ * chip and the cast strip. `record` is transcript's `{tag, index, scene}` for
+ * the turn on screen, or null when the chat has no usable scene yet.
+ */
+function applyScene(record) {
+    const scene = record?.scene || null;
+
+    els.date.textContent = scene?.date || '\u2014';
+    els.date.title = scene?.dateRaw || '';
+    els.time.textContent = scene ? scene.time : '--:--';
+    els.time.title = scene?.time || '';
+    els.place.textContent = scene?.placeFull || '\u2014';
+    els.place.title = scene?.placeFull || '';
+
+    if (scene?.weather) {
+        els.weather.textContent = scene.weather;
+        els.weather.hidden = false;
+    } else {
+        els.weather.textContent = '';
+        els.weather.hidden = true;
+    }
+
+    measureChatbar();
+    renderCast(scene);
+}
+
 /* ---------- reading pane ---------- */
 
 function cssPx(name, fallback) {
@@ -651,6 +729,8 @@ function applyPaneHeight(height, persist = false) {
         settings().paneHeight = clamped;
         saveSettings();
     }
+
+    refreshCastSizing();
 }
 
 function wirePane() {
@@ -1166,6 +1246,12 @@ function wireActions() {
         saveSettings();
     });
 
+    els.paneOpacity?.addEventListener('input', () => {
+        settings().paneOpacity = Number(els.paneOpacity.value);
+        applyPaneOpacity();
+        saveSettings();
+    });
+
     els.colorInputs.forEach(input => {
         input.addEventListener('input', () => {
             settings()[PROSE_KEYS[input.dataset.mzColor]] = input.value;
@@ -1226,6 +1312,12 @@ function wireEvents() {
         refreshChatName();
         applyBackground();
     };
+
+    // A resize can wrap the place onto two lines, which moves the cast stage.
+    window.addEventListener('resize', () => {
+        measureChatbar();
+        refreshCastSizing();
+    });
 
     on('CHAT_CHANGED', () => {
         if (isOpen()) {

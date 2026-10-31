@@ -1,0 +1,401 @@
+/* ==========================================================================
+   Meziverse — story furniture
+   Scene rows in the prose, the cast posters, and their attach affordances.
+   Loaded after the shell so it can retune the older portrait rules in place.
+   ========================================================================== */
+
+/* ---------- the header's weather chip ---------- */
+.mz-chip[data-mz="weather"] {
+    color: var(--mz-accent);
+    border-color: var(--mz-accent-line);
+    background: var(--mz-accent-wash);
+}
+
+/* ---------- scene rows ---------- */
+
+.mz-prose .mz-scene {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin: .95em 0;
+    padding: .5em 10px .55em 17px;
+    border-top: 1px solid var(--mz-accent-line);
+    border-bottom: 1px solid var(--mz-line);
+    border-radius: var(--mz-r-sm);
+    background: color-mix(in srgb, var(--mz-accent) 7%, transparent);
+    font-family: var(--mz-font-ui);
+    font-size: var(--mz-text-xs);
+    line-height: 1.35;
+    letter-spacing: .015em;
+    color: var(--mz-text-muted);
+}
+
+.mz-prose .mz-scene:first-child { margin-top: 0; }
+
+.mz-prose .mz-scene-orn {
+    position: absolute;
+    top: .78em;
+    left: 1px;
+    width: 7px;
+    height: 7px;
+    border: 1px solid var(--mz-accent-line);
+    background: var(--mz-accent-soft);
+    transform: rotate(45deg);
+}
+
+.mz-scene-main {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 3px 10px;
+    min-width: 0;
+}
+
+.mz-scene-when {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 5px;
+    min-width: 0;
+}
+
+.mz-scene-date {
+    color: var(--mz-text-muted);
+    white-space: nowrap;
+}
+
+.mz-scene-time {
+    font-family: var(--mz-font-prose);
+    font-size: calc(var(--mz-text-xs) + .5px);
+    font-weight: 400;
+    letter-spacing: .02em;
+    color: var(--mz-text);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.mz-scene-dot { color: var(--mz-text-dim); }
+
+.mz-scene-weather {
+    color: var(--mz-accent);
+    letter-spacing: .03em;
+    white-space: nowrap;
+}
+
+.mz-scene-place {
+    min-width: 0;
+    color: var(--mz-text);
+    overflow-wrap: anywhere;
+}
+
+.mz-scene-cast {
+    min-width: 0;
+    font-size: var(--mz-text-2xs);
+    letter-spacing: .05em;
+    color: var(--mz-text-dim);
+    overflow-wrap: anywhere;
+}
+
+/* the same band, quieter, inside the chat log */
+.mz-scene.is-compact {
+    margin: .65em 0;
+    padding: .35em 8px .4em 14px;
+    font-size: var(--mz-text-2xs);
+    border-top-color: var(--mz-line-strong);
+    background: color-mix(in srgb, var(--mz-accent) 5%, transparent);
+}
+
+.mz-scene.is-compact .mz-scene-orn {
+    top: .58em;
+    width: 5px;
+    height: 5px;
+}
+
+.mz-scene.is-compact .mz-scene-time { font-size: var(--mz-text-2xs); }
+
+/* ---------- cast stage ---------- */
+
+.mz-cast {
+    display: block;
+    padding: 0;
+    pointer-events: none;
+}
+
+.mz-cast-track {
+    box-sizing: border-box;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    justify-content: safe center;
+    gap: 20px;
+    width: 100%;
+    height: 100%;
+    padding: 14px clamp(24px, 10vw, 160px) calc(var(--mz-pane-h) + var(--mz-gutter));
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    pointer-events: none;
+    transition: padding var(--mz-dur) var(--mz-ease);
+}
+
+.mz-cast-track::-webkit-scrollbar { display: none; }
+
+/* the strip runs past the viewport: soften both ends instead of cutting them */
+.mz-cast.is-scroll .mz-cast-track {
+    mask-image: linear-gradient(90deg, transparent 0, #000 28px, #000 calc(100% - 28px), transparent 100%);
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 28px, #000 calc(100% - 28px), transparent 100%);
+}
+
+.mz-cast .mz-port {
+    pointer-events: auto;
+    height: var(--mz-port-h);
+    opacity: .9;
+    background: hsl(var(--h) 16% 10%);
+    box-shadow:
+        0 34px 70px -26px rgba(0, 0, 0, .9),
+        inset 0 0 0 1px rgba(255, 255, 255, .07);
+    transition:
+        opacity var(--mz-dur) var(--mz-ease),
+        height var(--mz-dur) var(--mz-ease),
+        transform var(--mz-dur) var(--mz-ease);
+}
+
+.mz-cast .mz-port:hover,
+.mz-cast .mz-port:focus-within { opacity: 1; }
+
+/* A portrait that actually loaded owns the whole plate: no ink fill, no halo,
+   no monogram, no scrim. Many cast images are transparent PNGs, and a plate
+   behind one reads as a dark rectangle pasted over the art. The empty plate
+   and the load-error fallback below are the only states that draw furniture. */
+.mz-cast .mz-port.is-loaded {
+    background: transparent;
+    box-shadow: none;
+}
+
+.mz-cast .mz-port.is-loaded .mz-port-plate,
+.mz-cast .mz-port.is-loaded .mz-port-scrim { display: none; }
+
+/* ---------- the plate behind an empty or broken portrait ---------- */
+
+.mz-port-plate {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    background:
+        radial-gradient(92% 62% at 50% 4%, hsl(var(--h) 28% 40% / .95), transparent 68%),
+        linear-gradient(180deg, hsl(var(--h) 20% 24%) 0%, hsl(var(--h) 15% 9%) 78%, hsl(var(--h) 12% 6%) 100%);
+}
+
+.mz-port-halo {
+    position: absolute;
+    width: 54%;
+    aspect-ratio: 1;
+    border: 1px solid hsl(var(--h) 28% 68% / .24);
+    border-radius: 50%;
+    box-shadow:
+        inset 0 0 40px hsl(var(--h) 36% 52% / .16),
+        0 0 40px hsl(var(--h) 40% 40% / .12);
+}
+
+.mz-cast .mz-port-initial {
+    position: relative;
+    z-index: 1;
+    font-family: var(--mz-font-prose);
+    font-size: calc(var(--mz-port-h) * .26);
+    font-weight: 300;
+    letter-spacing: .02em;
+    color: hsl(var(--h) 18% 92% / .34);
+    text-shadow: 0 1px 20px rgba(0, 0, 0, .5);
+}
+
+/* ---------- the portrait itself ---------- */
+
+.mz-port-img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: 50% 20%;
+    opacity: 0;
+    transition: opacity var(--mz-dur-mark) var(--mz-ease);
+}
+
+.mz-port--cast.is-loaded .mz-port-img { opacity: 1; }
+
+.mz-port-scrim {
+    position: absolute;
+    inset: auto 0 0;
+    height: 42%;
+    background: linear-gradient(180deg, transparent, rgba(6, 8, 10, .72) 62%, rgba(6, 8, 10, .9));
+    pointer-events: none;
+}
+
+.mz-port--cast .mz-port-tag {
+    position: absolute;
+    z-index: 2;
+    right: 8px;
+    bottom: 8px;
+    left: 8px;
+    font-family: var(--mz-font-prose);
+    font-size: calc(var(--mz-text-2xs) + 1px);
+    letter-spacing: .03em;
+    text-align: center;
+    color: rgba(255, 255, 255, .9);
+    text-shadow: 0 1px 10px rgba(0, 0, 0, .85);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+}
+
+/* ---------- attaching a portrait ---------- */
+
+.mz-port-attach {
+    position: absolute;
+    z-index: 3;
+    top: 70%;
+    left: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 5px 10px;
+    border: 1px solid rgba(255, 255, 255, .2);
+    border-radius: var(--mz-r-pill);
+    background: rgba(8, 10, 12, .34);
+    backdrop-filter: blur(4px);
+    color: rgba(255, 255, 255, .72);
+    cursor: pointer;
+    opacity: 0;
+    transform: translate(-50%, -50%);
+    transition:
+        opacity var(--mz-dur) var(--mz-ease),
+        background var(--mz-dur-fast),
+        border-color var(--mz-dur-fast),
+        color var(--mz-dur-fast);
+}
+
+.mz-port--cast.is-empty .mz-port-attach { opacity: .72; }
+
+.mz-port--cast:hover .mz-port-attach,
+.mz-port--cast:focus-within .mz-port-attach { opacity: 1; }
+
+.mz-port-attach:hover,
+.mz-port-attach:focus-visible {
+    border-color: hsl(var(--h) 40% 70% / .55);
+    background: rgba(8, 10, 12, .62);
+    color: #fff;
+}
+
+.mz-port-attach-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--mz-font-ui);
+    font-size: var(--mz-text-2xs);
+    font-weight: 500;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.mz-port-attach .ico {
+    width: 13px;
+    height: 13px;
+    opacity: .8;
+}
+
+/* ---------- change / remove, on an attached portrait ---------- */
+
+.mz-port-tools {
+    position: absolute;
+    z-index: 3;
+    top: 8px;
+    right: 8px;
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity var(--mz-dur) var(--mz-ease);
+}
+
+.mz-port--cast:hover .mz-port-tools,
+.mz-port--cast:focus-within .mz-port-tools { opacity: 1; }
+
+.mz-port-tool {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, .22);
+    border-radius: var(--mz-r-pill);
+    background: rgba(8, 10, 12, .48);
+    backdrop-filter: blur(6px);
+    color: rgba(255, 255, 255, .82);
+    cursor: pointer;
+    transition: background var(--mz-dur-fast), border-color var(--mz-dur-fast), color var(--mz-dur-fast);
+}
+
+.mz-port-tool:hover {
+    background: rgba(8, 10, 12, .72);
+    color: #fff;
+}
+
+.mz-port-tool.is-danger:hover {
+    border-color: rgba(207, 125, 118, .5);
+    color: var(--mz-bad);
+}
+
+.mz-port-tool .ico {
+    width: 13px;
+    height: 13px;
+}
+
+.mz-port-busy {
+    position: absolute;
+    z-index: 4;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: rgba(6, 8, 10, .55);
+    backdrop-filter: blur(2px);
+    font-family: var(--mz-font-ui);
+    font-size: var(--mz-text-2xs);
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, .82);
+}
+
+.mz-port--cast.is-busy .mz-port-tools {
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* ---------- small screens ---------- */
+
+@media (max-width: 759px) {
+    .mz-cast-track {
+        gap: 14px;
+        padding: 10px 16px calc(var(--mz-pane-h) + var(--mz-gutter));
+    }
+
+    .mz-port--cast .mz-port-tag { bottom: 6px; }
+
+    .mz-port-attach {
+        top: 8px;
+        right: 8px;
+        left: auto;
+        padding: 6px;
+        transform: none;
+    }
+    .mz-port-attach-text { display: none; }
+
+    .mz-prose .mz-scene { font-size: var(--mz-text-2xs); }
+}
+
+/* a touch screen has no hover: keep the tools reachable */
+@media (hover: none) {
+    .mz-port-tools { opacity: 1; }
+}

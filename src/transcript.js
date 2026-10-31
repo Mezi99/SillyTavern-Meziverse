@@ -8,8 +8,9 @@
  * switches are correct the moment SillyTavern reports them.
  */
 
-import { acceptEdit, branchChat, cancelEdit, chatMessages, copyMessage, ctx, currentChatId, deleteEditedMessage, editMessage, editorTextarea, on, setPromptHidden, swipeMessage, swipeSupported, swipingAllowed } from './st.js';
+import { acceptEdit, branchChat, cancelEdit, chatMessages, copyMessage, ctx, currentChatId, deleteEditedMessage, editMessage, editorTextarea, on, personaName, setPromptHidden, swipeMessage, swipeSupported, swipingAllowed } from './st.js';
 import { renderInto, toHtml } from './prose.js';
+import { resolveScene } from './scene.js';
 import { icon } from './icons.js';
 
 const FOLLOW = null;
@@ -52,6 +53,7 @@ function speakerOf(message) {
  * @param {HTMLButtonElement} [parts.swipePrev]
  * @param {HTMLButtonElement} [parts.swipeNext]
  * @param {HTMLElement} [parts.swipeCount]
+ * @param {(state: {entry: object|null, scene: object|null}) => void} [parts.onShown] tells the chrome which turn, and which scene, is on screen
  */
 export function createTranscript({
     frame, isOpen, speaker, meta, prose, logPanel, logList, logButton, logClose,
@@ -59,6 +61,7 @@ export function createTranscript({
     copyButton, togglePromptButton,
     editButton, actionsRow, editBar, editAccept, editDelete, editCancel, edit,
     swipeBar, swipePrev, swipeNext, swipeCount,
+    onShown,
 }) {
     // null follows the newest message; a number pins that index in the chat.
     let selected = FOLLOW;
@@ -82,8 +85,8 @@ export function createTranscript({
         return entry ? shown.indexOf(entry) : -1;
     }
 
-    function fillProse(element, message, index, { waiting = false } = {}) {
-        const html = toHtml(message, index);
+    function fillProse(element, message, index, { waiting = false, compact = false } = {}) {
+        const html = toHtml(message, index, { compact, persona: personaName() });
         if (html) {
             renderInto(element, html);
             return;
@@ -333,6 +336,13 @@ export function createTranscript({
         prose.scrollTop = stick ? prose.scrollHeight : 0;
         updateControls();
         updateSwipeBar(entry);
+
+        // the chrome reads the same turn: its last usable scene, or the most
+        // recent earlier one when this message has none.
+        const scene = entry
+            ? resolveScene(chatMessages(), entry.index, { persona: personaName() })
+            : null;
+        onShown?.({ entry, scene });
     }
 
     /** Rebuilds the log list, every message in full, and marks the one being read. */
@@ -389,7 +399,7 @@ export function createTranscript({
 
             const body = document.createElement('div');
             body.className = 'mz-prose mz-log-prose';
-            fillProse(body, message, index);
+            fillProse(body, message, index, { compact: true });
 
             item.append(head, body);
 
