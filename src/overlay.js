@@ -149,6 +149,13 @@ const FRAME_HTML = `
                     <button type="button" data-mz-pick-bg="st">SillyTavern</button>
                 </div>
             </div>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Pane transparency</b><small>How much of the background shows through the reading pane.</small></span>
+                <div class="mz-range">
+                    <input type="range" min="55" max="100" step="5" data-mz="pane-opacity" aria-label="Pane transparency">
+                    <span data-mz="pane-opacity-value">90%</span>
+                </div>
+            </div>
         </div>
 
         <div class="mz-set-group">
@@ -274,6 +281,8 @@ export function mount() {
         uiValue: root.querySelector('[data-mz="ui-value"]'),
         narrValue: root.querySelector('[data-mz="narr-value"]'),
         fontSelect: root.querySelector('[data-mz="font"]'),
+        paneOpacity: root.querySelector('[data-mz="pane-opacity"]'),
+        paneOpacityValue: root.querySelector('[data-mz="pane-opacity-value"]'),
         prosePickers: root.querySelector('[data-mz="prose-pickers"]'),
         colorInputs: [...root.querySelectorAll('[data-mz-color]')],
         fullscreenButton: root.querySelector('[data-mz-action="fullscreen"]'),
@@ -342,6 +351,7 @@ export function mount() {
     applyNarration();
     applyNarrationFont();
     applyProseColors();
+    applyPaneOpacity();
     applyLogWidth(Number(settings().logWidth) || LOG_W_DEFAULT);
 
     wireActions();
@@ -388,6 +398,7 @@ export function open() {
     refreshChatName();
     applyBackground();
     applyProseColors();
+    applyPaneOpacity();
     applyLogWidth(Number(settings().logWidth) || LOG_W_DEFAULT);
     if (Number(settings().logHeight) > 0) applyLogHeight(settings().logHeight);
     setGenerating(stGenerating(), { force: true });
@@ -473,6 +484,19 @@ function applyNarrationFont() {
     else root.style.removeProperty('--mz-font-prose');
 
     if (els.fontSelect) els.fontSelect.value = key;
+}
+
+/* The reading pane's own see-through-ness, as a fraction the CSS multiplies
+   into both of its background stops. Only the pane; the scene behind it is
+   never touched. */
+function applyPaneOpacity() {
+    const raw = Number(settings().paneOpacity);
+    const percent = Number.isFinite(raw) ? Math.min(100, Math.max(55, raw)) : 90;
+
+    root.style.setProperty('--mz-pane-alpha', String(percent / 100));
+
+    if (els.paneOpacity) els.paneOpacity.value = String(percent);
+    if (els.paneOpacityValue) els.paneOpacityValue.textContent = `${percent}%`;
 }
 
 /* Reads the prose inks SillyTavern's chat has right now. A hidden probe
@@ -1203,6 +1227,12 @@ function wireActions() {
     els.fontSelect?.addEventListener('change', () => {
         settings().narrFont = els.fontSelect.value;
         applyNarrationFont();
+        saveSettings();
+    });
+
+    els.paneOpacity?.addEventListener('input', () => {
+        settings().paneOpacity = Number(els.paneOpacity.value);
+        applyPaneOpacity();
         saveSettings();
     });
 

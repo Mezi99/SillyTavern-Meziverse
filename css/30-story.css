@@ -19,9 +19,11 @@
     flex-direction: column;
     gap: 3px;
     margin: .95em 0;
-    padding: .5em 0 .55em 17px;
+    padding: .5em 10px .55em 17px;
     border-top: 1px solid var(--mz-accent-line);
     border-bottom: 1px solid var(--mz-line);
+    border-radius: var(--mz-r-sm);
+    background: color-mix(in srgb, var(--mz-accent) 7%, transparent);
     font-family: var(--mz-font-ui);
     font-size: var(--mz-text-xs);
     line-height: 1.35;
@@ -102,9 +104,10 @@
 /* the same band, quieter, inside the chat log */
 .mz-scene.is-compact {
     margin: .65em 0;
-    padding: .35em 0 .4em 14px;
+    padding: .35em 8px .4em 14px;
     font-size: var(--mz-text-2xs);
     border-top-color: var(--mz-line-strong);
+    background: color-mix(in srgb, var(--mz-accent) 5%, transparent);
 }
 
 .mz-scene.is-compact .mz-scene-orn {
@@ -132,7 +135,7 @@
     gap: 20px;
     width: 100%;
     height: 100%;
-    padding: 14px clamp(24px, 10vw, 160px) calc(var(--mz-pane-h) + 28px);
+    padding: 14px clamp(24px, 10vw, 160px) calc(var(--mz-pane-h) + var(--mz-gutter));
     overflow-x: auto;
     overflow-y: hidden;
     scrollbar-width: none;
@@ -164,6 +167,18 @@
 
 .mz-cast .mz-port:hover,
 .mz-cast .mz-port:focus-within { opacity: 1; }
+
+/* A portrait that actually loaded owns the whole plate: no ink fill, no halo,
+   no monogram, no scrim. Many cast images are transparent PNGs, and a plate
+   behind one reads as a dark rectangle pasted over the art. The empty plate
+   and the load-error fallback below are the only states that draw furniture. */
+.mz-cast .mz-port.is-loaded {
+    background: transparent;
+    box-shadow: none;
+}
+
+.mz-cast .mz-port.is-loaded .mz-port-plate,
+.mz-cast .mz-port.is-loaded .mz-port-scrim { display: none; }
 
 /* ---------- the plate behind an empty or broken portrait ---------- */
 
@@ -368,7 +383,7 @@
 @media (max-width: 759px) {
     .mz-cast-track {
         gap: 14px;
-        padding: 10px 16px calc(var(--mz-pane-h) + 22px);
+        padding: 10px 16px calc(var(--mz-pane-h) + var(--mz-gutter));
     }
 
     .mz-port--cast .mz-port-tag { bottom: 6px; }

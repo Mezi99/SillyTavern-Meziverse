@@ -20,6 +20,7 @@ const DEFAULTS = {
     proseEm: '#8d9199',
     proseStrong: '#e9e7e2',
     paneHeight: 300,
+    paneOpacity: 90,
     logWidth: 720,
     logHeight: null,
 };

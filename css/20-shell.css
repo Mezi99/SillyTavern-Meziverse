@@ -406,8 +406,8 @@ body.mz-open .popup { z-index: 9500 !important; }
     border-radius: var(--mz-r-lg);
     background: linear-gradient(
         180deg,
-        color-mix(in srgb, var(--mz-bg) 74%, transparent),
-        color-mix(in srgb, var(--mz-bg-2) 86%, transparent)
+        color-mix(in srgb, var(--mz-bg) calc(var(--mz-pane-alpha, .9) * 100%), transparent),
+        color-mix(in srgb, var(--mz-bg-2) calc(var(--mz-pane-alpha, .9) * 100%), transparent)
     );
     backdrop-filter: var(--mz-blur);
     box-shadow: var(--mz-shadow);
@@ -1216,6 +1216,24 @@ body.mz-open .popup { z-index: 9500 !important; }
     font-size: var(--mz-text-xs);
     color: var(--mz-text);
     text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+.mz-range {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+}
+.mz-range input[type="range"] {
+    width: 148px;
+    accent-color: var(--mz-accent);
+    cursor: pointer;
+}
+.mz-range span {
+    min-width: 40px;
+    font-size: var(--mz-text-xs);
+    color: var(--mz-text);
+    text-align: right;
     font-variant-numeric: tabular-nums;
 }
 
