@@ -314,8 +314,8 @@ async function onFileChosen() {
             return;
         }
 
-        setCastImage(request.name, path);
-        notify(`Portrait added for ${request.name}.`, 'success');
+        const status = setCastImage(request.name, path);
+        announceAdded(request.name, status);
     } catch (error) {
         console.warn('[Meziverse] could not attach the portrait', error);
         notify(`Could not add a portrait for ${request.name}.`, 'error');
@@ -329,7 +329,9 @@ async function onFileChosen() {
 
 function forget(name) {
     if (!name || busyName) return;
-    if (!removeCastImage(name)) return;
+
+    const status = removeCastImage(name);
+    if (status === 'failed') return;
 
     notify(`Portrait removed for ${name}.`, 'info');
     lastSignature = '';
@@ -398,6 +400,25 @@ function loadFromElement(file) {
 }
 
 /* ---------- small helpers ---------- */
+
+/**
+ * Says how attaching a portrait went. The one case worth calling out is a
+ * portrait stored only in memory: it is on screen now, but SillyTavern could
+ * not be asked to write the chat, so it will be gone on reload.
+ */
+function announceAdded(name, status) {
+    if (status === 'saved') {
+        notify(`Portrait added for ${name}.`, 'success');
+        return;
+    }
+
+    if (status === 'memory-only') {
+        notify(`Portrait added for ${name}, but it could not be saved and will be lost on reload.`, 'warning');
+        return;
+    }
+
+    notify(`Could not add a portrait for ${name}.`, 'error');
+}
 
 function castSignature() {
     const images = castImages();

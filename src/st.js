@@ -6,22 +6,25 @@
  * own: it hands the context over and lets the caller decide.
  */
 
-let cached = null;
-
-/** SillyTavern's own context object, or null while the app is still loading. */
+/**
+ * SillyTavern's own context object, or null while the app is still loading.
+ *
+ * Deliberately never cached. `getContext()` hands back a fresh snapshot each
+ * call, and some of what it points at (chatMetadata above all) is *rebound* by
+ * SillyTavern as chats load and clear. A cached snapshot keeps pointing at the
+ * old object, so writes land somewhere the save never reads. The snapshot is
+ * only a small object of references, so rebuilding it per call costs nothing
+ * and every read stays live.
+ */
 export function ctx() {
-    if (cached) return cached;
-
     const st = globalThis.SillyTavern;
-    if (st && typeof st.getContext === 'function') {
-        try {
-            cached = st.getContext();
-        } catch {
-            cached = null;
-        }
-    }
+    if (!st || typeof st.getContext !== 'function') return null;
 
-    return cached;
+    try {
+        return st.getContext();
+    } catch {
+        return null;
+    }
 }
 
 /**
@@ -104,13 +107,13 @@ export function castImages() {
     return cast && typeof cast === 'object' && !Array.isArray(cast) ? cast : {};
 }
 
-/** Writes one portrait path into the open chat's metadata. */
+/** Writes one portrait path into the open chat's metadata and persists it. */
 export function setCastImage(name, path) {
     const key = castKey(name);
-    if (!key || typeof path !== 'string' || !path.trim()) return false;
+    if (!key || typeof path !== 'string' || !path.trim()) return 'failed';
 
     const metadata = ctx()?.chatMetadata;
-    if (!metadata || typeof metadata !== 'object') return false;
+    if (!metadata || typeof metadata !== 'object') return 'failed';
 
     if (!metadata.meziverse || typeof metadata.meziverse !== 'object') metadata.meziverse = {};
     if (!metadata.meziverse.cast || typeof metadata.meziverse.cast !== 'object') {
@@ -118,40 +121,61 @@ export function setCastImage(name, path) {
     }
 
     metadata.meziverse.cast[key] = path.trim();
-    saveChatMetadata();
-    return true;
+
+    // Read the path back through a fresh context. The round trip is the proof
+    // the write landed on the object SillyTavern will serialise, not on a
+    // snapshot it has since dropped.
+    if (castImages()[key] !== path.trim()) return 'failed';
+
+    return saveChatMetadata() ? 'saved' : 'memory-only';
 }
 
-/** Removes one portrait path from the open chat's metadata. */
+/** Removes one portrait path from the open chat's metadata and persists it. */
 export function removeCastImage(name) {
     const key = castKey(name);
-    if (!key) return false;
+    if (!key) return 'failed';
 
     const cast = ctx()?.chatMetadata?.meziverse?.cast;
-    if (!cast || typeof cast !== 'object' || !(key in cast)) return false;
+    if (!cast || typeof cast !== 'object' || !(key in cast)) return 'failed';
 
     delete cast[key];
-    saveChatMetadata();
-    return true;
+    return saveChatMetadata() ? 'saved' : 'memory-only';
 }
 
-/** Asks SillyTavern to persist the chat's metadata, debounced when it can. */
+/**
+ * Asks SillyTavern to persist the chat's metadata.
+ *
+ * Prefers the immediate save over the debounced one: a portrait is attached by
+ * hand and then the page may be reloaded at any moment, so waiting out a
+ * debounce is how images get lost. Falls back to the debounced call when that
+ * is all there is. Never fails quietly — if nothing can persist, say so.
+ *
+ * @returns {boolean} whether anything was asked to write the chat to disk
+ */
 export function saveChatMetadata() {
     const context = ctx();
-
-    try {
-        if (typeof context?.saveMetadataDebounced === 'function') {
-            context.saveMetadataDebounced();
-            return true;
-        }
-        if (typeof context?.saveMetadata === 'function') {
-            context.saveMetadata();
-            return true;
-        }
-    } catch (error) {
-        console.warn('[Meziverse] could not save chat metadata', error);
+    if (!context) {
+        console.warn('[Meziverse] no SillyTavern context: chat metadata cannot be saved');
+        return false;
     }
 
+    const attempts = [context.saveMetadata, context.saveMetadataDebounced, context.saveChat];
+
+    for (const attempt of attempts) {
+        if (typeof attempt !== 'function') continue;
+
+        try {
+            Promise.resolve(attempt.call(context))?.catch?.(error => {
+                console.warn('[Meziverse] could not save chat metadata', error);
+            });
+            return true;
+        } catch (error) {
+            console.warn('[Meziverse] could not save chat metadata', error);
+            return false;
+        }
+    }
+
+    console.warn('[Meziverse] SillyTavern offers no way to save chat metadata');
     return false;
 }
 
