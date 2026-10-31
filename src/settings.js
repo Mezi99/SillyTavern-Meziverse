@@ -8,6 +8,9 @@
 import { ctx } from './st.js';
 
 const DEFAULTS = {
+    // Meziverse mode: the master switch every feature sits under. Phase 5
+    // binds it to the owned preset; until then it is flipped by hand.
+    mode: true,
     theme: 'ink-jade',
     background: 'none',
     reducedMotion: false,
@@ -39,6 +42,16 @@ export function settings() {
     }
 
     return store.meziverse;
+}
+
+/**
+ * Whether Meziverse mode is on. Every feature — scene rows, the header scene
+ * cluster, the cast strip — asks this before it draws anything. Off means a
+ * non-Meziverse preset is in play: tags are still stripped from the prose, but
+ * no decoration is drawn and no placeholders promise otherwise.
+ */
+export function modeOn() {
+    return settings().mode !== false;
 }
 
 /** Ask SillyTavern to save settings on its usual debounce. */
