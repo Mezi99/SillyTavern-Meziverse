@@ -1,16 +1,18 @@
 /**
- * The tracker rails: a column of quiet cards on the right, one icon button
- * above each entry's boxes, and one popup with the full records — a bottom
- * sheet on small screens.
+ * The tracker rails: an icon menu at the top of the right column, quiet
+ * cards under it for the entries that have them, and one popup with the
+ * full records — a bottom sheet on small screens.
  *
- * The ledger entries land one at a time, each in ENTRIES with its own boxes,
- * popup body and feature switch. An entry draws only under Meziverse mode
- * AND its own switch, and only when its rows exist: with nothing to show the
+ * The ledger entries land one at a time, each in ENTRIES with its own
+ * popup body and feature switch; entries with `boxes` also draw a glance
+ * part under the menu. An entry draws only under Meziverse mode AND its
+ * own switch, and only when its rows exist: with nothing to show the
  * whole rail steps aside and the pane keeps the width.
  *
- * The icons snap their rail part: pressed, the entry's boxes are visible;
- * clicking a box opens the popup, which closes on a click away or Esc —
- * clicks inside it never close it, so scrolling is safe. Story text is only
+ * The menu buttons snap their entry's boxes, or — for popup-only entries
+ * like hooks, lore and recap — open the popup. Clicking a box or card
+ * opens the popup too; it closes on a click away or Esc, and clicks
+ * inside it never close it, so scrolling is safe. Story text is only
  * ever set as text, never as HTML.
  */
 
@@ -20,9 +22,10 @@ import { entryOn, modeOn } from './settings.js';
 const BOXES_MAX = 3;
 
 /**
- * The ledger entries. `threads` is the first; hooks, lore, recap and the
- * rest join here as they land, and the future mode-features menu flips
- * their switches in `settings().entries`.
+ * The ledger entries. `threads` and `plans` carry glance boxes; hooks,
+ * lore and recap are popup-only. The rest joins here as it lands, and
+ * the future mode-features menu flips their switches in
+ * `settings().entries`.
  */
 const ENTRIES = {
     threads: {
@@ -39,6 +42,24 @@ const ENTRIES = {
         boxes: ledger => [planCard(ledger.plans)],
         body: ledger => ledger.plans.map(planRecord),
     },
+    hooks: {
+        title: 'Hooks',
+        has: ledger => !!ledger && ledger.hooks.length > 0,
+        sub: ledger => `${ledger.hooks.length} open${ledger.carried ? ` \u00b7 from turn ${ledger.turn}` : ''}`,
+        body: ledger => ledger.hooks.map(hookRecord),
+    },
+    lore: {
+        title: 'Lore',
+        has: ledger => !!ledger && ledger.lore.length > 0,
+        sub: ledger => `${ledger.lore.length} seeds${ledger.carried ? ` \u00b7 from turn ${ledger.turn}` : ''}`,
+        body: ledger => ledger.lore.map(loreRecord),
+    },
+    recap: {
+        title: 'Story So Far',
+        has: ledger => !!ledger && ledger.recap.length > 0,
+        sub: ledger => `${ledger.recap.length} moments${ledger.carried ? ` \u00b7 from turn ${ledger.turn}` : ''}`,
+        body: ledger => ledger.recap.map(recapRecord),
+    },
 };
 
 let frame = null;
@@ -47,7 +68,7 @@ let fly = null;
 let flyTitle = null;
 let flySub = null;
 let flyBody = null;
-let railButton = null;
+let railButtons = null;
 
 let state = null;
 let openKey = null;
@@ -67,7 +88,7 @@ export function mountDock(root) {
     flyTitle = fly?.querySelector('[data-mz="fly-title"]');
     flySub = fly?.querySelector('[data-mz="fly-sub"]');
     flyBody = fly?.querySelector('[data-mz="fly-body"]');
-    railButton = root.querySelector('[data-mz-railbtn]');
+    railButtons = root.querySelector('[data-mz-railbtns]');
 
     if (!frame || !glance || !fly) return;
 
@@ -94,7 +115,7 @@ export function renderDock(ledger) {
 
     const active = visible.length > 0;
     frame.classList.toggle('is-rails', active);
-    if (railButton) railButton.hidden = !active;
+    if (railButtons) railButtons.hidden = !active;
     glance.hidden = !active;
 
     const signature = JSON.stringify({ visible, state, hidden: [...hiddenParts] });
@@ -130,25 +151,67 @@ function visibleKeys() {
     return Object.keys(ENTRIES).filter(visibleNow);
 }
 
-/** One entry's rail part: its icon button, then its boxes while snapped on. */
-function railPart(key) {
-    const entry = ENTRIES[key];
-    const shown = !hiddenParts.has(key);
-
+/** One menu button: the entry's glyph in the shared icon menu. */
+function menuButton(key) {
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = `mz-dbtn${shown ? ' is-on' : ''}`;
+    button.className = 'mz-dbtn';
     button.dataset.mzDock = key;
-    button.title = `${shown ? 'Hide' : 'Show'} ${entry.title.toLowerCase()}`;
-    button.setAttribute('aria-label', button.title);
-    button.setAttribute('aria-pressed', String(shown));
     button.append(icon(`mz-i-${key}`));
+    syncMenuButton(button, key);
+    return button;
+}
 
-    return shown ? [button, ...entry.boxes(state)] : [button];
+/**
+ * Pressed means the entry is showing itself: boxes visible for the
+ * entries that have them, popup open for the popup-only ones.
+ */
+function syncMenuButton(button, key) {
+    const entry = ENTRIES[key];
+    const on = entry.boxes ? !hiddenParts.has(key) : openKey === key;
+
+    button.classList.toggle('is-on', on);
+    button.setAttribute('aria-pressed', String(on));
+    button.title = entry.boxes
+        ? `${on ? 'Hide' : 'Show'} ${entry.title.toLowerCase()}`
+        : entry.title;
+    button.setAttribute('aria-label', button.title);
+}
+
+function syncMenu() {
+    for (const button of glance.querySelectorAll('.mz-dbtn')) {
+        syncMenuButton(button, button.dataset.mzDock);
+    }
+}
+
+/** The chat bar's stand-in for small screens: one popup button per entry. */
+function railButton(key) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'mz-ibtn mz-railbtn';
+    button.dataset.mzDock = key;
+    button.title = ENTRIES[key].title;
+    button.setAttribute('aria-label', button.title);
+    button.setAttribute('aria-expanded', String(openKey === key));
+    button.append(icon(`mz-i-${key}`));
+    return button;
 }
 
 function buildRail() {
-    glance.replaceChildren(...visibleKeys().flatMap(railPart));
+    const keys = visibleKeys();
+    const boxes = keys.flatMap(key => {
+        const entry = ENTRIES[key];
+        return entry.boxes && !hiddenParts.has(key) ? entry.boxes(state) : [];
+    });
+
+    const nav = document.createElement('nav');
+    nav.className = 'mz-dock mz-dock--h';
+    nav.setAttribute('aria-label', 'Ledger');
+    nav.append(...keys.map(menuButton));
+
+    glance.replaceChildren(nav, ...boxes);
+
+    if (railButtons) railButtons.replaceChildren(...keys.map(railButton));
 }
 
 function toggleParts(key) {
@@ -189,7 +252,11 @@ function syncFly() {
 
     fly.hidden = !openKey;
     frame.classList.toggle('is-fly-open', !!openKey);
-    if (railButton) railButton.setAttribute('aria-expanded', String(!!openKey));
+    syncMenu();
+
+    for (const button of railButtons?.querySelectorAll('.mz-railbtn') || []) {
+        button.setAttribute('aria-expanded', String(openKey === button.dataset.mzDock));
+    }
 }
 
 /* ---------- one thread ---------- */
@@ -356,13 +423,121 @@ function planRecord(plan) {
     return item;
 }
 
+/* ---------- one hook ---------- */
+
+/** A popup record: the question with its state, then the clue. */
+function hookRecord(hook) {
+    const item = document.createElement('div');
+    item.className = 'mz-item is-full';
+
+    const row = document.createElement('div');
+    row.className = 'mz-item-row mz-item-row--title';
+
+    const title = document.createElement('span');
+    title.className = 'mz-item-title';
+    title.textContent = hook.question || hook.clue;
+
+    row.append(title, hookChip(hook));
+    item.append(row);
+
+    if (hook.question && hook.clue) {
+        const clue = document.createElement('p');
+        clue.className = 'mz-item-clue';
+
+        const label = document.createElement('span');
+        label.className = 'mz-item-lbl';
+        label.textContent = 'Clue:';
+
+        clue.append(label, ` ${hook.clue}`);
+        item.append(clue);
+    }
+
+    return item;
+}
+
+function hookChip(hook) {
+    const chip = document.createElement('span');
+    chip.className = 'mz-tag'
+        + (hook.state === 'warm' ? ' is-warn' : hook.state === 'answered' ? ' is-done' : ' is-live');
+    chip.textContent = hook.state;
+    return chip;
+}
+
+/* ---------- one lore seed ---------- */
+
+/** A popup record: the kind over its idea. */
+function loreRecord(lore) {
+    const item = document.createElement('div');
+    item.className = 'mz-item is-full';
+
+    if (lore.kind) {
+        const kind = document.createElement('span');
+        kind.className = 'mz-kind';
+        kind.textContent = lore.kind;
+        item.append(kind);
+    }
+
+    if (lore.idea) {
+        const idea = document.createElement('p');
+        idea.className = 'mz-item-plot';
+        idea.textContent = lore.idea;
+        item.append(idea);
+    }
+
+    return item;
+}
+
+/* ---------- one recap moment ---------- */
+
+/** A popup record on the story timeline: era, fact, and the subtext. */
+function recapRecord(recap) {
+    const item = document.createElement('div');
+    item.className = 'mz-item is-full mz-recap';
+
+    const orn = document.createElement('i');
+    orn.className = 'mz-orn';
+    orn.setAttribute('aria-hidden', 'true');
+    item.append(orn);
+
+    const row = document.createElement('div');
+    row.className = 'mz-item-row mz-item-row--title';
+
+    const era = document.createElement('span');
+    era.className = 'mz-item-title';
+    era.textContent = recap.era || recap.fact;
+
+    row.append(era);
+    item.append(row);
+
+    if (recap.era && recap.fact) {
+        const fact = document.createElement('p');
+        fact.className = 'mz-item-plot';
+        fact.textContent = recap.fact;
+        item.append(fact);
+    }
+
+    if (recap.subtext) {
+        const subtext = document.createElement('p');
+        subtext.className = 'mz-item-out';
+        subtext.textContent = `Subtext: ${recap.subtext}`;
+        item.append(subtext);
+    }
+
+    return item;
+}
+
 /* ---------- input ---------- */
 
 function activate(trigger) {
     const key = trigger.dataset.mzDock;
+    const entry = ENTRIES[key] || {};
 
-    if (trigger.classList.contains('mz-dbtn')) toggleParts(key);
-    else if (trigger.classList.contains('mz-railbtn')) {
+    if (trigger.classList.contains('mz-dbtn')) {
+        // The menu snaps the boxes, or opens the popup when there are none.
+        if (entry.boxes) toggleParts(key);
+        else if (openKey === key) closeDock();
+        else openPopup(key);
+    } else if (trigger.classList.contains('mz-railbtn')) {
         // Small screens have no boxes to click: the button is the popup.
         if (openKey === key) closeDock();
         else openPopup(key);

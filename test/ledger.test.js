@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ledgerRows, normalizePlans, normalizeState, normalizeThreads, parseClock, resolveLedger, sortThreads } from '../src/ledger.js';
+import { ledgerRows, normalizeHookState, normalizeHooks, normalizeLore, normalizePlans, normalizeRecap, normalizeState, normalizeThreads, parseClock, resolveLedger, sortThreads } from '../src/ledger.js';
 import { stripTags } from '../src/tags.js';
 
 const msg = mes => ({ mes });
@@ -231,6 +231,97 @@ test('a plan row that names nothing is dropped', () => {
     )));
 
     assert.deepEqual(normalizePlans(rows).map(p => p.name), ['Only a name']);
+});
+
+test('normalizeHooks reads question, clue and state in the tag order', () => {
+    const rows = ledgerRows(msg(LEDGER(
+        '<hook question="Who left the lamp lit?" clue="Oil is fresh, someone was there tonight" state="open"/>',
+        '<hook question="What is in the shed?" state="warm"/>',
+    )));
+    const hooks = normalizeHooks(rows);
+
+    assert.deepEqual(hooks[0], {
+        question: 'Who left the lamp lit?',
+        clue: 'Oil is fresh, someone was there tonight',
+        state: 'open',
+    });
+    assert.equal(hooks[1].clue, '');
+    assert.equal(hooks[1].state, 'warm');
+});
+
+test('hook state reads warm and answered, anything else is open', () => {
+    assert.equal(normalizeHookState('warm'), 'warm');
+    assert.equal(normalizeHookState('Answered'), 'answered');
+    assert.equal(normalizeHookState(''), 'open');
+    assert.equal(normalizeHookState('screaming'), 'open');
+});
+
+test('a hook row that questions nothing is dropped', () => {
+    const rows = ledgerRows(msg(LEDGER(
+        '<hook state="open"/>',
+        '<hook question="Who knocked?"/>',
+    )));
+
+    assert.deepEqual(normalizeHooks(rows).map(h => h.question), ['Who knocked?']);
+});
+
+test('normalizeLore reads kind and idea, in the tag order', () => {
+    const rows = ledgerRows(msg(LEDGER(
+        '<lore kind="rule" idea="Iron rusts where the old road ran"/>',
+        '<lore kind="history" idea="The lighthouse predates the town"/>',
+    )));
+    const lore = normalizeLore(rows);
+
+    assert.deepEqual(lore[0], { kind: 'rule', idea: 'Iron rusts where the old road ran' });
+    assert.deepEqual(lore.map(l => l.kind), ['rule', 'history']);
+});
+
+test('a lore row that says nothing is dropped', () => {
+    const rows = ledgerRows(msg(LEDGER(
+        '<lore/>',
+        '<lore idea="Just an idea"/>',
+    )));
+
+    assert.deepEqual(normalizeLore(rows).map(l => l.idea), ['Just an idea']);
+});
+
+test('normalizeRecap reads era, fact and the optional subtext', () => {
+    const rows = ledgerRows(msg(LEDGER(
+        '<recap era="Day 1" fact="Arrived on the night ferry" subtext="Ran from something"/>',
+        '<recap era="Day 2" fact="Found the lamp still lit"/>',
+    )));
+    const recap = normalizeRecap(rows);
+
+    assert.deepEqual(recap[0], {
+        era: 'Day 1',
+        fact: 'Arrived on the night ferry',
+        subtext: 'Ran from something',
+    });
+    assert.equal(recap[1].subtext, '');
+});
+
+test('recap rows keep the story order and bare rows are dropped', () => {
+    const rows = ledgerRows(msg(LEDGER(
+        '<recap era="Day 2" fact="Second"/>',
+        '<recap subtext="Only a whisper"/>',
+        '<recap era="Day 1" fact="First"/>',
+    )));
+
+    assert.deepEqual(normalizeRecap(rows).map(r => r.era), ['Day 2', 'Day 1']);
+});
+
+test('resolveLedger carries hooks, lore and recap of the governing ledger', () => {
+    const chat = [msg(LEDGER(
+        '<recap era="Day 1" fact="Arrived"/>',
+        '<lore kind="rule" idea="Iron rusts"/>',
+        '<hook question="Who knocked?" state="open"/>',
+        THREAD('Debt'),
+    ))];
+
+    const ledger = resolveLedger(chat, 0);
+    assert.equal(ledger.recap[0].era, 'Day 1');
+    assert.equal(ledger.lore[0].kind, 'rule');
+    assert.equal(ledger.hooks[0].question, 'Who knocked?');
 });
 
 test('the ledger never leaks into the prose', () => {

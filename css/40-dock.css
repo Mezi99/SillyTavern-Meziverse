@@ -224,6 +224,17 @@ button.mz-g--quiet:hover .mz-g-t { color: var(--mz-accent); }
 }
 .mz-item-plot { color: var(--mz-text); }
 .mz-item-out { color: var(--mz-text-muted); }
+
+/* the hook clue: a dimmed label, then the clue in white */
+.mz-item-clue {
+    margin: 2px 0 0;
+    font-family: var(--mz-font-prose);
+    font-size: var(--mz-text-md);
+    font-weight: 400;
+    line-height: 1.45;
+    color: var(--mz-text);
+}
+.mz-item-lbl { margin-right: 4px; color: var(--mz-text-dim); }
 .mz-more { display: none; margin-top: 8px; }
 .mz-item.is-open .mz-more { display: block; }
 .mz-item.is-open {
@@ -380,9 +391,10 @@ button.mz-g--quiet:hover .mz-g-t { color: var(--mz-accent); }
 .mz-plan-row:first-of-type { border-top: 0; padding-top: 1px; }
 .mz-plan-due {
     display: block;
-    font-size: var(--mz-text-xs);
-    line-height: 1.35;
-    color: var(--mz-text-muted);
+    font-family: var(--mz-font-prose);
+    font-size: var(--mz-text-sm);
+    line-height: 1.3;
+    color: var(--mz-accent);
 }
 .mz-plan-name {
     display: block;
@@ -398,10 +410,10 @@ button.mz-g--quiet:hover .mz-g-t { color: var(--mz-accent); }
 
 /* ---------- small screens: the rail becomes a bottom sheet ---------- */
 
-.mz-railbtn { display: none; }
+.mz-railbtns { display: none; }
 
 @media (max-width: 759px) {
-    .mz-railbtn:not([hidden]) { display: inline-flex; }
+    .mz-railbtns:not([hidden]) { display: inline-flex; gap: 2px; }
 
     .mz-glance { display: none; }
 

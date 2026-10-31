@@ -74,7 +74,7 @@ const FRAME_HTML = `
             <span class="mz-chip" data-mz="weather" hidden></span>
         </div>
         <div class="mz-chatbar-tools">
-            <button class="mz-ibtn mz-railbtn" type="button" title="Threads" aria-label="Threads" aria-expanded="false" data-mz-railbtn data-mz-dock="threads" hidden>${svg('threads')}</button>
+            <div class="mz-railbtns" data-mz-railbtns hidden></div>
             <button class="mz-ibtn" type="button" title="Chat log" aria-label="Chat log" aria-expanded="false" data-mz-action="log">${svg('list')}</button>
         </div>
     </header>

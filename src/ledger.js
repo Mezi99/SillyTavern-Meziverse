@@ -148,6 +148,89 @@ export function normalizePlans(rows) {
 }
 
 /**
+ * The recap rows of a ledger — the story so far — in the tag's own order.
+ * The order is the chronology, so it is never touched.
+ *
+ * @param {Array<object>} rows
+ * @returns {Array<{era:string, fact:string, subtext:string}>}
+ */
+export function normalizeRecap(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+    const recap = [];
+
+    for (const row of list) {
+        if (!row || row.name !== 'recap' || !row.closed) continue;
+
+        const attrs = row.attrs || {};
+        const era = text(attrs.era).trim();
+        const fact = text(attrs.fact).trim();
+        const subtext = text(attrs.subtext).trim();
+        if (!era && !fact) continue;
+
+        recap.push({ era, fact, subtext });
+    }
+
+    return recap;
+}
+
+/**
+ * The lore rows of a ledger, in the tag's own order: a kind and its idea.
+ *
+ * @param {Array<object>} rows
+ * @returns {Array<{kind:string, idea:string}>}
+ */
+export function normalizeLore(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+    const lore = [];
+
+    for (const row of list) {
+        if (!row || row.name !== 'lore' || !row.closed) continue;
+
+        const attrs = row.attrs || {};
+        const kind = text(attrs.kind).trim();
+        const idea = text(attrs.idea).trim();
+        if (!kind && !idea) continue;
+
+        lore.push({ kind, idea });
+    }
+
+    return lore;
+}
+
+/** The display state of a hook: `warm`, `answered`, or `open`. */
+export function normalizeHookState(value) {
+    const raw = text(value).trim().toLowerCase();
+    if (raw === 'warm') return 'warm';
+    if (raw === 'answered') return 'answered';
+    return 'open';
+}
+
+/**
+ * The hook rows of a ledger, in the tag's own order: an open question,
+ * its clue, and how warm it is.
+ *
+ * @param {Array<object>} rows
+ * @returns {Array<{question:string, clue:string, state:string}>}
+ */
+export function normalizeHooks(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+    const hooks = [];
+
+    for (const row of list) {
+        if (!row || row.name !== 'hook' || !row.closed) continue;
+
+        const attrs = row.attrs || {};
+        const question = text(attrs.question).trim();
+        const clue = text(attrs.clue).trim();
+        if (!question && !clue) continue;
+
+        hooks.push({ question, clue, state: normalizeHookState(attrs.state) });
+    }
+
+    return hooks;
+}
+
+/**
  * The ledger that governs a turn: the last complete block of the shown
  * message, or the most recent earlier one when the shown message has none.
  *
@@ -170,6 +253,9 @@ export function resolveLedger(messages, at) {
             rows,
             threads: sortThreads(normalizeThreads(rows)),
             plans: normalizePlans(rows),
+            hooks: normalizeHooks(rows),
+            lore: normalizeLore(rows),
+            recap: normalizeRecap(rows),
             index: i,
             turn: i + 1,
             carried: i !== index,
