@@ -7,12 +7,14 @@ Meziverse is an extension, not a fork. SillyTavern stays the engine and the stor
 ## What it does
 
 - **The scene** — a fullscreen frame with a reading pane showing the newest message as plain prose, and a stretchable log window for everything earlier.
+- **Scene info** — the model's in-band `scene` tags come alive: quiet scene rows at their place in the prose, and a chat bar with date, time, place, weather and a cast strip of posters (portraits attached per chat).
+- **Meziverse mode** — one switch beside the wordmark gates every feature. Off means clean prose and an empty chat-bar, whatever preset is running; tags are stripped either way.
 - **Every message action rides SillyTavern's own handlers** — copy, branch from any turn, hide from prompt, edit (with ✓ / 🗑 / ✕), swipe, regenerate, stop.
 - **A composer that is SillyTavern's composer** — a growing textarea mirrored with ST's own input box, plus a ☰ menu (start new chat, back to parent chat) and impersonate / continue / send buttons that click ST's own controls. Empty sends, busy gates and drafts behave exactly as in native ST.
 - **Theming** — ink + one metal (jade, amber or rose), Newsreader prose / Inter interface, adjustable narration size, interface scale, reduced motion, custom prose colours, optional ST background.
 - **Notices** — ST's toastr toasts re-render as Meziverse toasts while the scene is open.
 
-The phone and the story trackers (Scene, Profiles, Shifts, Threads, Plans) are planned; the buttons are placeholders for now.
+The story trackers (Story, Hooks, Threads, People, Shifts, Standing & Plans) arrive next as ledger panels; the phone is still a placeholder and its buttons do nothing yet.
 
 ## Install
 

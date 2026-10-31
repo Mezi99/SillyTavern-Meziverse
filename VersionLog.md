@@ -1,5 +1,25 @@
 # Meziverse — version log
 
+## 2.1 — 2026-10-31
+
+The first Meziverse feature family — scene info — and the umbrella every feature now sits under: Meziverse mode.
+
+### Scene info
+- A tolerant parser reads the model's in-band tags (`scene`, `LEDGER`, the guides). Tags are stripped from the prose in every mode; only the decoration is gated.
+- Inline scene rows: every complete `<scene>` renders as a quiet band where it appeared — date and time, the location exactly as written, the present cast. Nothing is collapsed or duplicated.
+- The chat bar comes alive: date, time, the whole location path (wrapping on narrow screens), a weather chip, and a cast strip of 3:5 posters that shrink with the reading pane. Portraits are attached per chat and kept in `chatMetadata.meziverse.cast`; empty posters show a subtle attach affordance.
+- The last usable scene governs the chrome; a turn without one inherits the latest earlier scene.
+- A loaded portrait is clean — no plate, halo or scrim behind it; its name rides a text shadow. Those only appear on an empty or broken image. The scene band is tinted from the theme and posters seat flush to the pane.
+- A pane transparency slider (20–100 %, default 90) tints the main background only, never the scene band.
+
+### Meziverse mode
+- The umbrella: one switch (default on), riding in the header beside the wordmark. Every feature family checks it before it draws. A later version binds it to the owned preset; for now it is flipped by hand and persists.
+- With mode off the scene cluster, the scene rows and the cast strip step aside and the chat-bar is left empty — no placeholder promises. Tagged history renders as clean prose.
+
+### Notes
+- The version string moved out of the settings sheet and rides beside the wordmark ("Meziverse v2.1").
+- `manifest.json` now carries the same version as this log; it had lagged at 0.7.0 through the 1.0 line.
+
 ## 1.0 — 2026-10-31
 
 The base extension: a fullscreen VN scene over SillyTavern, feature-complete as a reader and composer. Everything rides ST's own handlers.

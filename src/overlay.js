@@ -13,7 +13,7 @@ import { createTranscript } from './transcript.js';
 import { mountCast, refreshCastSizing, renderCast } from './cast.js';
 import { interceptToastr } from './notify.js';
 
-const VERSION = '0.7.0';
+const VERSION = '2.1';
 const PANE_DEFAULT = 300;
 const LOG_W_DEFAULT = 720;
 const LOG_H_SHARE = 0.7;
@@ -49,7 +49,7 @@ const FRAME_HTML = `
     <div class="mz-scrim" aria-hidden="true"></div>
 
     <header class="mz-header">
-        <div class="mz-brand"><b>Meziverse</b><button class="mz-mode" type="button" role="switch" aria-checked="true" title="Meziverse mode \u2014 scene info and features" aria-label="Meziverse mode" data-mz-action="mode"><i aria-hidden="true"></i><span data-mz="mode-label">mode \u00b7 on</span></button></div>
+        <div class="mz-brand"><b>Meziverse</b><small class="mz-version">v${VERSION}</small><button class="mz-mode" type="button" role="switch" aria-checked="true" title="Meziverse mode \u2014 scene info and features" aria-label="Meziverse mode" data-mz-action="mode"><i aria-hidden="true"></i><span data-mz="mode-label">mode \u00b7 on</span></button></div>
         <div class="mz-chatname" data-mz="chatname"><b class="is-empty">No chat open</b></div>
         <div class="mz-header-tools">
             <button class="mz-ibtn" type="button" title="Full screen" aria-label="Full screen" data-mz-action="fullscreen">${svg('expand')}</button>
@@ -217,7 +217,6 @@ const FRAME_HTML = `
 
         <footer class="mz-sheet-foot">
             <button class="mz-btn-ghost" type="button" data-mz-action="reset-pane">Reset pane height</button>
-            <span>Meziverse ${VERSION}</span>
         </footer>
     </section>
 

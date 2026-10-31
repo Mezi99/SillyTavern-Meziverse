@@ -199,13 +199,23 @@ body.mz-open .popup { z-index: 9500 !important; }
     color: var(--mz-text-dim);
 }
 
+/* The version rides tight against the wordmark: "Meziverse v2.1". */
+.mz-brand .mz-version {
+    margin-left: 1px;
+    font-family: var(--mz-font-ui);
+    font-size: var(--mz-text-2xs);
+    letter-spacing: .08em;
+    text-transform: none;
+    color: var(--mz-text-dim);
+}
+
 /* The mode switch rides beside the wordmark: the one control that stays
    visible exactly when everything it governs steps aside. */
 .mz-mode {
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    margin-left: 2px;
+    margin-left: 10px;
     padding: 2px 9px;
     border: 1px solid var(--mz-line);
     border-radius: var(--mz-r-pill);

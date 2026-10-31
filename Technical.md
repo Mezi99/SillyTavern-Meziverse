@@ -1,6 +1,6 @@
 # Meziverse — how it works
 
-Technical notes for version 1.0. Written for whoever picks this up next — including future us.
+Technical notes for version 2.1. Written for whoever picks this up next — including future us.
 
 ## The one rule: Ride SillyTavern
 
@@ -23,15 +23,22 @@ src/
   overlay.js         the fullscreen chrome: headers, settings sheet, composer, menus, toasts
   transcript.js     the reading pane + log window: rendering, edit state machine, message actions
   st.js              the ONLY file that talks to SillyTavern (see below)
-  settings.js        defaults + read/write of extensionSettings.meziverse
+  settings.js        defaults + read/write of extensionSettings.meziverse + modeOn()
   notify.js          notify() helper + toastr interception while the scene is open
-  prose.js           message text → styled prose (ST's formatter output, re-skinned)
+  tags.js            tolerant tag tokenizer + stripTags (pure: no DOM, no ST)
+  scene.js           scene resolution: last-usable rule, date/time split, location levels, cast names
+  prose.js           message text → styled prose + inline scene rows
+  cast.js            the cast strip: posters, per-chat portraits, upload
   icons.js           inline SVG sprite (mz-i-* symbols)
+test/
+  tags.test.js       synthetic tokenizer tests
+  scene.test.js      synthetic scene tests
 css/
   00-primitives.css  colours, fonts, sizes, timings, motion — raw variables
   10-semantics.css   semantic tokens; one block per theme (ink-jade / ink-amber / ink-rose)
   20-shell.css       all chrome: frame, headers, pane, log, composer, menus, toasts, settings
-style.css            @imports the three sheets (manifest points here)
+  30-story.css       scene features: scene rows, cast strip, portrait plates
+style.css            @imports the four sheets (manifest points here)
 ```
 
 `st.js` is the seam: every touch of ST internals is supposed to live there (`ctx()`, `whenReady()`, event wiring, and wrappers like `clickComposerControl`, `clickOptionsMenu`, `stComposer`, the edit/swipe/branch/copy/hide wrappers). When ST changes an internal, there is one place to fix.
@@ -39,9 +46,24 @@ style.css            @imports the three sheets (manifest points here)
 ## The scene
 
 - **Mount once, open/close by class.** `#mz-root` is built at boot and hidden; `open()` adds `is-open` (and `body.mz-open`), `close()` removes them. Exit always returns to ST.
-- **Two headers.** Meziverse header (34 px): "Meziverse", chat file name, settings + exit. Chat header (48 px): clock/date/place/weather placeholders + log button.
+- **Two headers.** Meziverse header (34 px): "Meziverse" + the version, the mode switch, chat file name, settings + exit. Chat header (48 px): the scene cluster (date, time, place, weather chip) + log button; the cast strip rides just below it, flush on the reading pane.
 - **Reading pane** shows the newest message as prose; a drag handle resizes it (persisted in settings). The **log** is a floating, stretchable window listing earlier turns, with per-turn actions and its own remembered size.
 - **Message actions** replicate ST's message-header menu as flat icon buttons — no dropdowns — on ALL turns: copy, branch, hide-from-prompt (eye), edit, swipe, download-earlier. Edit opens ST's own `.mes_edit` editor (the pane mirrors `#curEditTextarea` one-way) with an edit bar ✓ / 🗑 / ✕; a 400 ms watch owns edit-state exit, and Esc defers to ST while its editor is open.
+
+## Scene info (the first feature family)
+
+The model already emits the state of the story as in-band tags (`scene`, `LEDGER`, the guides — see the plan doc's tag catalogue). Meziverse reads them; it never invents or writes them.
+
+- **Parsing.** `tags.js` tokenizes a copy of `message.mes` with a tolerant grammar: tag names case-insensitive, attribute order free, single or double quotes, optional closing slash, unknown names are not tags (so card-written HTML passes through). `stripTags()` yields clean prose, and `prose.js` hands that to ST's formatter — so regex scripts, Markdown, quotes and every display extension behave exactly as in native ST. Tags are stripped in both modes; only decoration is gated.
+- **The last-usable rule.** `scene.js` resolves the governing scene: the last complete `scene` with at least one of date / location / present; a turn without one inherits the latest earlier scene, walking backwards through the chat. Every complete scene still renders as an inline row at its place in the prose — rows live in the pane and the log only, never in ST's native chat (the chat file is never touched).
+- **Cast.** Names come from `present`, minus the persona, deduped case-insensitively in order. Portraits are per chat — paths in `chatMetadata.meziverse.cast`, keyed by normalised name — uploaded through ST's own `/api/images/upload` as a small WebP. Nothing is auto-deleted. A loaded portrait is clean (no plate, halo or scrim — the name rides a text shadow); those appear only on an empty or broken image.
+- **Chat bar and header** read the same scene: date and time (the last time-like piece splits from the date), the whole location string as written, a weather chip when present.
+
+## Meziverse mode
+
+One `mode` flag in `settings.js` (default on) behind a single `modeOn()` accessor — the umbrella every feature family checks (`prose.js` rows, `cast.js` strip, `overlay.js` chrome). Off means a non-Meziverse preset is in play: tags are still stripped from the prose, but no decoration is drawn, the scene cluster, rows and cast step aside, and the chat-bar is left empty — placeholders would promise scene info that can never arrive.
+
+The switch rides in the header beside the wordmark as a small pill; flipping it redraws the turn at once and persists in extension settings. Phase 5 binds `modeOn()` to the owned preset — only what feeds the accessor changes, never a feature file.
 
 ## The composer
 
@@ -77,9 +99,10 @@ While the scene is open, ST's `toastr` is intercepted: `notify.js` swaps in func
 
 - No bundler; plain ES modules at repo root. `manifest.json`: `js: index.js`, `css: style.css`.
 - All selectors/ids/classes prefixed `mz-` / `--mz-*` / `#mz-root`.
+- Tests: `npm test` (plain `node --test`) over `test/*.test.js`. Synthetic strings only — never a line of real story text from a live chat.
 - Before shipping: `node --check` every `src/*.js` (copy to temp, rename `.mjs`), brace-balance the CSS, then push → `git pull` in the deployment clone → reload the tab and confirm the served file actually changed (a reload can silently fail in an embedded browser).
 - ST formatter output to expect: `<p>` wrapper, `<br>` newlines, `<q>`, `<em>`, `<strong>`.
 
 ## The next layer (not built yet)
 
-The **M-series** trackers — Scene, Profiles, Shifts, Threads, Plans, later Standing/Hooks/Lore/Chronicle — will ride the same principle: state in `chatMetadata.meziverse` (per chat, saved by ST), injected into the prompt via `ctx().setExtensionPrompt('meziverse_state', …)`, exchanged with the model as in-band JSON tags. The phone is the intended UI, and its buttons are placeholders in v1. See `LocalHelpFiles/Frame VN Tracker Extension (Design Spec v0.1).md` — that spec is authoritative for the M-series.
+The **M-series** trackers — Story, Hooks, Threads, People, Shifts, Standing & Plans — arrive next as the **ledger panels**, rendered from the `LEDGER` block the model already emits (full state per reply, parsed, never accumulated). They ride the same principle: state in `chatMetadata.meziverse` (per chat, saved by ST), later injected into the prompt via `ctx().setExtensionPrompt('meziverse_state', …)` — though prompt work stays out until the preset phase. The phone is the intended UI, and its buttons are placeholders for now. See `LocalHelpFiles/Frame VN Tracker Extension (Design Spec v0.1).md` — that spec is authoritative for the M-series.
