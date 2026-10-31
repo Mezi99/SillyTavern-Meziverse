@@ -7,7 +7,7 @@
  */
 
 import { currentChatId, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer } from './st.js';
-import { settings, saveSettings } from './settings.js';
+import { settings, saveSettings, modeOn } from './settings.js';
 import { injectSprite } from './icons.js';
 import { createTranscript } from './transcript.js';
 import { mountCast, refreshCastSizing, renderCast } from './cast.js';
@@ -49,7 +49,7 @@ const FRAME_HTML = `
     <div class="mz-scrim" aria-hidden="true"></div>
 
     <header class="mz-header">
-        <div class="mz-brand"><b>Meziverse</b></div>
+        <div class="mz-brand"><b>Meziverse</b><button class="mz-mode" type="button" role="switch" aria-checked="true" title="Meziverse mode \u2014 scene info and features" aria-label="Meziverse mode" data-mz-action="mode"><i aria-hidden="true"></i><span data-mz="mode-label">mode \u00b7 on</span></button></div>
         <div class="mz-chatname" data-mz="chatname"><b class="is-empty">No chat open</b></div>
         <div class="mz-header-tools">
             <button class="mz-ibtn" type="button" title="Full screen" aria-label="Full screen" data-mz-action="fullscreen">${svg('expand')}</button>
@@ -259,6 +259,9 @@ export function mount() {
     els = {
         chatName: root.querySelector('[data-mz="chatname"]'),
         chatNameText: root.querySelector('[data-mz="chatname"] b'),
+        modeButton: root.querySelector('[data-mz-action="mode"]'),
+        modeLabel: root.querySelector('[data-mz="mode-label"]'),
+        sceneCluster: root.querySelector('.mz-chatbar-left'),
         date: root.querySelector('[data-mz="date"]'),
         time: root.querySelector('[data-mz="time"]'),
         place: root.querySelector('[data-mz="place"]'),
@@ -347,6 +350,7 @@ export function mount() {
 
     applyTheme();
     applyMotion();
+    applyMode();
     applyScale();
     applyNarration();
     applyNarrationFont();
@@ -461,6 +465,14 @@ function applyMotion() {
     root.dataset.mzMotion = reduced ? 'reduced' : 'normal';
     els.motion.classList.toggle('is-on', reduced);
     els.motion.setAttribute('aria-checked', String(reduced));
+}
+
+/** Syncs the header's mode switch with the setting. */
+function applyMode() {
+    const on = modeOn();
+    els.modeButton?.classList.toggle('is-on', on);
+    els.modeButton?.setAttribute('aria-checked', String(on));
+    if (els.modeLabel) els.modeLabel.textContent = on ? 'mode \u00b7 on' : 'mode \u00b7 off';
 }
 
 function applyScale() {
@@ -647,6 +659,9 @@ function refreshChatName() {
 
 /* ---------- scene header and cast ---------- */
 
+/** The turn on screen, kept so a mode flip can redraw the chrome at once. */
+let lastShown = null;
+
 /**
  * Publishes the chat-bar's real height as `--mz-chatbar-real`. The bar grows
  * to two lines when a scene's place is long, and the cast stage anchors to its
@@ -667,7 +682,13 @@ function measureChatbar() {
  * the turn on screen, or null when the chat has no usable scene yet.
  */
 function applyScene(record) {
-    const scene = record?.scene || null;
+    lastShown = record || null;
+
+    // With Meziverse mode off the whole cluster steps aside and stays empty:
+    // a non-Meziverse preset never emits tags, so placeholders would only
+    // promise scene info that can never arrive.
+    const scene = modeOn() ? lastShown?.scene || null : null;
+    if (els.sceneCluster) els.sceneCluster.hidden = !modeOn();
 
     els.date.textContent = scene?.date || '\u2014';
     els.date.title = scene?.dateRaw || '';
@@ -1216,6 +1237,15 @@ function wireActions() {
                 settings().reducedMotion = !settings().reducedMotion;
                 applyMotion();
                 saveSettings();
+                break;
+            case 'mode':
+                settings().mode = !settings().mode;
+                applyMode();
+                saveSettings();
+                // Redraw the turn so scene rows appear or vanish under the
+                // new mode, then settle the chrome to match.
+                transcript.refresh({ stick: true });
+                applyScene(lastShown);
                 break;
             case 'reset-pane':
                 applyPaneHeight(PANE_DEFAULT, true);

@@ -192,11 +192,64 @@ body.mz-open .popup { z-index: 9500 !important; }
 }
 
 .mz-brand b { font-weight: 400; }
-.mz-brand span {
+.mz-brand > span {
     font-family: var(--mz-font-ui);
     font-size: var(--mz-text-2xs);
     letter-spacing: .1em;
     color: var(--mz-text-dim);
+}
+
+/* The mode switch rides beside the wordmark: the one control that stays
+   visible exactly when everything it governs steps aside. */
+.mz-mode {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-left: 2px;
+    padding: 2px 9px;
+    border: 1px solid var(--mz-line);
+    border-radius: var(--mz-r-pill);
+    background: transparent;
+    color: var(--mz-text-dim);
+    font-family: var(--mz-font-ui);
+    font-size: var(--mz-text-2xs);
+    letter-spacing: .1em;
+    line-height: 1.4;
+    white-space: nowrap;
+    cursor: pointer;
+    transition:
+        color var(--mz-dur) var(--mz-ease),
+        border-color var(--mz-dur) var(--mz-ease),
+        background var(--mz-dur) var(--mz-ease);
+}
+
+.mz-mode:hover {
+    color: var(--mz-text);
+    border-color: var(--mz-line-strong);
+    background: color-mix(in srgb, var(--mz-text) 6%, transparent);
+}
+
+.mz-mode i {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    border: 1px solid currentColor;
+    background: transparent;
+    transition:
+        background var(--mz-dur) var(--mz-ease),
+        border-color var(--mz-dur) var(--mz-ease),
+        box-shadow var(--mz-dur) var(--mz-ease);
+}
+
+.mz-mode.is-on {
+    color: var(--mz-text);
+    border-color: color-mix(in srgb, var(--mz-accent) 35%, var(--mz-line));
+}
+
+.mz-mode.is-on i {
+    border-color: var(--mz-accent);
+    background: var(--mz-accent);
+    box-shadow: 0 0 6px color-mix(in srgb, var(--mz-accent) 55%, transparent);
 }
 
 .mz-chatname {
@@ -345,7 +398,7 @@ body.mz-open .popup { z-index: 9500 !important; }
 }
 .mz-chip .ico { width: 12px; height: 12px; }
 
-.mz-chatbar-tools { display: flex; flex: none; align-items: center; gap: 2px; }
+.mz-chatbar-tools { display: flex; flex: none; align-items: center; gap: 2px; margin-left: auto; }
 
 /* the phone lives here only where the peek is hidden */
 .mz-chatbar-phone { display: none; }
@@ -1384,7 +1437,8 @@ body.mz-open .popup { z-index: 9500 !important; }
 
     .mz-header { padding: 0 8px 0 10px; gap: 8px; }
     .mz-brand { font-size: var(--mz-text-xs); letter-spacing: .12em; }
-    .mz-brand span { display: none; }
+    .mz-brand > span { display: none; }
+    .mz-mode { padding: 1px 7px; gap: 4px; letter-spacing: .06em; }
     .mz-chatname { max-width: 52vw; font-size: var(--mz-text-2xs); }
 
     .mz-chatbar { gap: 8px; padding: 0 6px 0 10px; }

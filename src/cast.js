@@ -11,6 +11,7 @@ import { castImages, castKey, currentChatId, removeCastImage, setCastImage, uplo
 import { initials } from './scene.js';
 import { icon } from './icons.js';
 import { notify } from './notify.js';
+import { modeOn } from './settings.js';
 
 const MAX_EDGE = 1024;
 const QUALITY = 0.85;
@@ -66,6 +67,10 @@ export function mountCast(element) {
  */
 export function renderCast(scene) {
     if (!host) return;
+
+    // The cast is a scene feature: with Meziverse mode off there is nothing
+    // to cast from and no place this strip belongs.
+    if (!modeOn()) scene = null;
 
     lastScene = scene && Array.isArray(scene.present) ? scene : null;
     names = lastScene ? lastScene.present.filter(Boolean) : [];

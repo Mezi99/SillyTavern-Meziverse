@@ -10,6 +10,7 @@
 import { formatMessage } from './st.js';
 import { splitCues, stripTags } from './tags.js';
 import { describeScene, isUsableScene } from './scene.js';
+import { modeOn } from './settings.js';
 
 const OPENING_BREAKS = /^(?:\s|<br\s*\/?>)+/i;
 const CLOSING_BREAKS = /(?:\s|<br\s*\/?>)+$/i;
@@ -77,7 +78,9 @@ export function toHtml(message, index, { compact = false, persona = '' } = {}) {
 
     for (const cue of splitCues(raw)) {
         if (cue.type === 'scene') {
-            const row = sceneRow(cue.tag, { compact, persona });
+            // The tag vanishes from the prose either way; the row is a
+            // Meziverse feature and only appears while mode is on.
+            const row = modeOn() ? sceneRow(cue.tag, { compact, persona }) : '';
             if (row) parts.push(row);
             continue;
         }
