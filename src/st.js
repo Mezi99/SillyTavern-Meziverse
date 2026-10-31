@@ -83,6 +83,137 @@ export function chatMessages() {
     return Array.isArray(messages) ? messages : [];
 }
 
+/* ---------- chat-scoped cast portraits ---------- */
+
+/**
+ * The one key a character's portrait is stored under. Names are compared
+ * case-insensitively and with runs of whitespace collapsed.
+ *
+ * @param {string} name
+ * @returns {string}
+ */
+export function castKey(name) {
+    const value = typeof name === 'string' ? name : '';
+    const normalised = typeof value.normalize === 'function' ? value.normalize('NFC') : value;
+    return normalised.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+/** The open chat's portrait paths, keyed by `castKey`. Never null. */
+export function castImages() {
+    const cast = ctx()?.chatMetadata?.meziverse?.cast;
+    return cast && typeof cast === 'object' && !Array.isArray(cast) ? cast : {};
+}
+
+/** Writes one portrait path into the open chat's metadata. */
+export function setCastImage(name, path) {
+    const key = castKey(name);
+    if (!key || typeof path !== 'string' || !path.trim()) return false;
+
+    const metadata = ctx()?.chatMetadata;
+    if (!metadata || typeof metadata !== 'object') return false;
+
+    if (!metadata.meziverse || typeof metadata.meziverse !== 'object') metadata.meziverse = {};
+    if (!metadata.meziverse.cast || typeof metadata.meziverse.cast !== 'object') {
+        metadata.meziverse.cast = {};
+    }
+
+    metadata.meziverse.cast[key] = path.trim();
+    saveChatMetadata();
+    return true;
+}
+
+/** Removes one portrait path from the open chat's metadata. */
+export function removeCastImage(name) {
+    const key = castKey(name);
+    if (!key) return false;
+
+    const cast = ctx()?.chatMetadata?.meziverse?.cast;
+    if (!cast || typeof cast !== 'object' || !(key in cast)) return false;
+
+    delete cast[key];
+    saveChatMetadata();
+    return true;
+}
+
+/** Asks SillyTavern to persist the chat's metadata, debounced when it can. */
+export function saveChatMetadata() {
+    const context = ctx();
+
+    try {
+        if (typeof context?.saveMetadataDebounced === 'function') {
+            context.saveMetadataDebounced();
+            return true;
+        }
+        if (typeof context?.saveMetadata === 'function') {
+            context.saveMetadata();
+            return true;
+        }
+    } catch (error) {
+        console.warn('[Meziverse] could not save chat metadata', error);
+    }
+
+    return false;
+}
+
+/** The active persona's name, or ''. */
+export function personaName() {
+    try {
+        return String(ctx()?.name1 || '').trim();
+    } catch {
+        return '';
+    }
+}
+
+/**
+ * Uploads a prepared image into the chat's portrait folder.
+ *
+ * SillyTavern does the writing; this only hands it the bytes it already knows
+ * how to store. The returned path is the server's own path, without a leading
+ * slash; callers add one when they use it as an image source.
+ *
+ * @param {{image:string, format?:string, filename?:string}} upload base64 without the data-url prefix
+ * @returns {Promise<string|null>}
+ */
+export async function uploadImage({ image, format = 'webp', filename = 'portrait.webp' } = {}) {
+    const context = ctx();
+    if (!image) return null;
+
+    let headers = {};
+    try {
+        headers = context?.getRequestHeaders?.() || {};
+    } catch {
+        headers = {};
+    }
+
+    if (!Object.keys(headers).some(key => key.toLowerCase() === 'content-type')) {
+        headers = { ...headers, 'Content-Type': 'application/json' };
+    }
+
+    try {
+        const response = await fetch('/api/images/upload', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+                image,
+                format,
+                filename,
+                ch_name: 'meziverse',
+            }),
+        });
+
+        if (!response.ok) {
+            throw new Error(`upload failed (${response.status})`);
+        }
+
+        const data = await response.json();
+        const path = typeof data?.path === 'string' ? data.path.trim() : '';
+        return path || null;
+    } catch (error) {
+        console.warn('[Meziverse] could not upload the portrait', error);
+        return null;
+    }
+}
+
 /**
  * A message rendered the way SillyTavern renders it.
  *

@@ -10,6 +10,7 @@ import { currentChatId, on, sendUserMessage, stopGeneration, clickComposerContro
 import { settings, saveSettings } from './settings.js';
 import { injectSprite } from './icons.js';
 import { createTranscript } from './transcript.js';
+import { mountCast, refreshCastSizing, renderCast } from './cast.js';
 import { interceptToastr } from './notify.js';
 
 const VERSION = '0.7.0';
@@ -75,7 +76,7 @@ const FRAME_HTML = `
         </div>
     </header>
 
-    <div class="mz-cast" aria-hidden="true"></div>
+    <div class="mz-cast" role="group" aria-label="Cast"></div>
 
     <section class="mz-dlg" aria-label="Reading pane">
         <div class="mz-grip" role="separator" aria-orientation="horizontal" aria-label="Resize reading pane" tabindex="0"></div>
@@ -251,6 +252,11 @@ export function mount() {
     els = {
         chatName: root.querySelector('[data-mz="chatname"]'),
         chatNameText: root.querySelector('[data-mz="chatname"] b'),
+        date: root.querySelector('[data-mz="date"]'),
+        time: root.querySelector('[data-mz="time"]'),
+        place: root.querySelector('[data-mz="place"]'),
+        weather: root.querySelector('[data-mz="weather"]'),
+        cast: root.querySelector('.mz-cast'),
         prose: root.querySelector('[data-mz="prose"]'),
         speaker: root.querySelector('[data-mz="speaker"]'),
         meta: root.querySelector('[data-mz="meta"]'),
@@ -296,6 +302,8 @@ export function mount() {
         logClose: root.querySelector('[data-mz-action="close-log"]'),
     };
 
+    mountCast(els.cast);
+
     transcript = createTranscript({
         frame,
         isOpen,
@@ -323,6 +331,7 @@ export function mount() {
         swipePrev: els.swipePrev,
         swipeNext: els.swipeNext,
         swipeCount: els.swipeCount,
+        onShown: ({ scene }) => applyScene(scene),
     });
 
     desiredPane = Number(settings().paneHeight) || PANE_DEFAULT;
@@ -387,6 +396,7 @@ export function open() {
     transcript.refresh({ followLatest: true });
     desiredPane = Number(settings().paneHeight) || PANE_DEFAULT;
     applyPaneHeight(desiredPane);
+    requestAnimationFrame(refreshCastSizing);
 
     els.input?.focus({ preventScroll: true });
     syncFromSt();
@@ -610,6 +620,34 @@ function refreshChatName() {
     els.chatName.title = label;
 }
 
+/* ---------- scene header and cast ---------- */
+
+/**
+ * Puts the governing scene into the chrome: the clock, the place, the weather
+ * chip and the cast strip. `record` is transcript's `{tag, index, scene}` for
+ * the turn on screen, or null when the chat has no usable scene yet.
+ */
+function applyScene(record) {
+    const scene = record?.scene || null;
+
+    els.date.textContent = scene?.date || '\u2014';
+    els.date.title = scene?.dateRaw || '';
+    els.time.textContent = scene ? scene.time : '--:--';
+    els.time.title = scene?.time || '';
+    els.place.textContent = scene?.place || '\u2014';
+    els.place.title = scene?.placeFull || '';
+
+    if (scene?.weather) {
+        els.weather.textContent = scene.weather;
+        els.weather.hidden = false;
+    } else {
+        els.weather.textContent = '';
+        els.weather.hidden = true;
+    }
+
+    renderCast(scene);
+}
+
 /* ---------- reading pane ---------- */
 
 function cssPx(name, fallback) {
@@ -651,6 +689,8 @@ function applyPaneHeight(height, persist = false) {
         settings().paneHeight = clamped;
         saveSettings();
     }
+
+    refreshCastSizing();
 }
 
 function wirePane() {

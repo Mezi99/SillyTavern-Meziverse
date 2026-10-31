@@ -1,0 +1,9 @@
+{
+    "name": "sillytavern-meziverse",
+    "private": true,
+    "type": "module",
+    "description": "A fullscreen visual-novel scene for SillyTavern.",
+    "scripts": {
+        "test": "node --test"
+    }
+}
