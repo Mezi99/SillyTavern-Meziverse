@@ -1,0 +1,375 @@
+/* ==========================================================================
+   The tracker rails — dock buttons, glance cards, flyout panels — and the
+   shared item vocabulary every ledger entry draws with. Ported from the
+   designer's dock mockup (Block 3 + its widget block).
+   ========================================================================== */
+
+/* ---------- rail frame ---------- */
+
+/* the left dock's top edge: just under the chat bar, floating over the cast */
+#mz-root {
+    --mz-dock-top: calc(var(--mz-header-h) + var(--mz-chatbar-real, var(--mz-chatbar-h)) + 40px);
+}
+
+/* mockup CHANGE: the pane and cast are inset by the glance column only
+   (the left dock is a slim pill that floats over the cast) */
+.mz-frame.is-rails .mz-cast {
+    left: var(--mz-pane-left);
+    right: var(--mz-pane-right);
+}
+
+.mz-glance[hidden],
+.mz-fly[hidden] { display: none; }
+
+.mz-glance {
+    position: absolute;
+    z-index: var(--mz-z-rail);
+    right: var(--mz-gutter);
+    top: calc(var(--mz-header-h) + var(--mz-chatbar-real, var(--mz-chatbar-h)) + var(--mz-gutter));
+    width: var(--mz-glance-w);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.mz-g {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 9px 12px;
+    border: 1px solid var(--mz-line);
+    border-radius: var(--mz-r-lg);
+    background: color-mix(in srgb, var(--mz-bg) 72%, transparent);
+    backdrop-filter: var(--mz-blur);
+    text-align: left;
+    transition: border-color var(--mz-dur-fast);
+}
+button.mz-g:hover { border-color: var(--mz-line-strong); }
+
+.mz-g-txt { flex: 1; min-width: 0; }
+.mz-g-t,
+.mz-g-s { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mz-g-t { font: 400 var(--mz-text-md) / 1.3 var(--mz-font-prose); color: var(--mz-text); }
+.mz-g-s { font-size: var(--mz-text-xs); color: var(--mz-text-muted); }
+
+.mz-ring { position: relative; flex: none; width: 38px; height: 38px; }
+.mz-ring svg { display: block; }
+.mz-ring b {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    font: 600 10px var(--mz-font-ui);
+    font-variant-numeric: tabular-nums;
+    color: var(--mz-text-muted);
+}
+
+/* ---------- docks and flyouts ---------- */
+
+.mz-dock {
+    position: absolute;
+    z-index: var(--mz-z-rail);
+    left: var(--mz-gutter);
+    top: var(--mz-dock-top);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px;
+    border: 1px solid var(--mz-line);
+    border-radius: 26px;
+    background: color-mix(in srgb, var(--mz-bg) 72%, transparent);
+    backdrop-filter: var(--mz-blur);
+}
+.mz-dock--h {
+    position: static;
+    flex-direction: row;
+    align-self: flex-end;
+}
+
+.mz-dbtn {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    color: var(--mz-text-muted);
+    transition: color var(--mz-dur-fast), background var(--mz-dur-fast);
+}
+.mz-dbtn:hover { color: var(--mz-text); background: var(--mz-surface-2); }
+.mz-dbtn.is-on { color: var(--mz-accent); background: var(--mz-accent-soft); }
+.mz-dbtn svg { width: 19px; height: 19px; }
+
+.mz-badge {
+    position: absolute;
+    top: 1px;
+    right: 1px;
+    min-width: 15px;
+    height: 15px;
+    padding: 0 4px;
+    border-radius: var(--mz-r-pill);
+    background: var(--mz-accent);
+    color: var(--mz-bg);
+    font: 600 9.5px / 15px var(--mz-font-ui);
+    text-align: center;
+}
+
+/* one tracker at a time, opened beside its dock */
+.mz-fly {
+    position: absolute;
+    z-index: calc(var(--mz-z-rail) + 1);
+    width: 340px;
+    overflow: auto;
+    scrollbar-width: thin;
+    padding: 16px 18px 8px;
+    border: 1px solid var(--mz-line);
+    border-radius: var(--mz-r-lg);
+    background: color-mix(in srgb, var(--mz-bg) 86%, transparent);
+    backdrop-filter: var(--mz-blur);
+    box-shadow: var(--mz-shadow);
+}
+.mz-fly--l {
+    left: calc(var(--mz-gutter) + 52px + 12px);
+    top: var(--mz-dock-top);
+    bottom: calc(var(--mz-pane-h) + 2 * var(--mz-gutter));
+}
+.mz-fly--r {
+    right: calc(var(--mz-glance-w) + var(--mz-gutter) + 12px);
+    top: calc(var(--mz-header-h) + var(--mz-chatbar-real, var(--mz-chatbar-h)) + var(--mz-gutter));
+    bottom: calc(var(--mz-pane-h) + 2 * var(--mz-gutter));
+}
+
+.mz-fly-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 4px;
+}
+.mz-fly-head h2 { font: 400 22px / 1.2 var(--mz-font-prose); }
+.mz-fly-head span { font-size: var(--mz-text-xs); color: var(--mz-text-dim); }
+
+.mz-fly-body > .mz-item:first-child { border-top: 0; }
+
+/* ---------- the item vocabulary (every ledger entry draws with these) ---------- */
+
+/* an item: headline row + a clamped line; click to unfold the rest */
+.mz-item {
+    display: block;
+    width: 100%;
+    padding: 9px 0 10px;
+    border-top: 1px solid var(--mz-line);
+    cursor: pointer;
+}
+.mz-item-row { display: flex; align-items: baseline; gap: 8px; }
+.mz-item-title {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--mz-font-prose);
+    font-size: var(--mz-text-md);
+    font-weight: 400;
+    line-height: 1.3;
+    color: var(--mz-text);
+}
+.mz-item-meta {
+    flex: none;
+    font-size: var(--mz-text-2xs);
+    letter-spacing: .04em;
+    color: var(--mz-text-dim);
+    white-space: nowrap;
+}
+.mz-item-sub {
+    margin-top: 3px;
+    font-size: var(--mz-text-sm);
+    line-height: 1.45;
+    color: var(--mz-text-muted);
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+}
+.mz-item:hover .mz-item-title { color: var(--mz-accent); }
+.mz-item.is-open .mz-item-sub { -webkit-line-clamp: unset; display: block; }
+.mz-more { display: none; margin-top: 8px; }
+.mz-item.is-open .mz-more { display: block; }
+.mz-item.is-open {
+    box-shadow: inset 2px 0 0 var(--mz-accent-line);
+    padding-left: 10px;
+    margin-left: -10px;
+    width: calc(100% + 10px);
+}
+
+/* state chips: colour carries meaning, text carries it too */
+.mz-tag {
+    font-size: var(--mz-text-2xs);
+    letter-spacing: .06em;
+    padding: 1px 7px;
+    border: 1px solid var(--mz-line-strong);
+    border-radius: var(--mz-r-pill);
+    color: var(--mz-text-muted);
+    white-space: nowrap;
+}
+.mz-tag.is-live { color: var(--mz-accent); border-color: var(--mz-accent-line); }
+.mz-tag.is-warn { color: var(--mz-warn); border-color: color-mix(in srgb, var(--mz-warn) 40%, transparent); }
+.mz-tag.is-done { color: var(--mz-text-dim); }
+
+/* clock pips: the tag's own ●●●○○ */
+.mz-pips { display: inline-flex; gap: 3px; align-self: center; }
+.mz-pips i { width: 6px; height: 6px; border-radius: 50%; border: 1px solid var(--mz-text-dim); }
+.mz-pips i.on { background: var(--mz-accent); border-color: var(--mz-accent); }
+.mz-pips.is-warn i.on { background: var(--mz-warn); border-color: var(--mz-warn); }
+
+/* labelled facts (profile fields, thread outcome, hook clue) */
+.mz-kv {
+    display: grid;
+    grid-template-columns: 62px 1fr;
+    gap: 4px 10px;
+    font-size: var(--mz-text-sm);
+    line-height: 1.4;
+}
+.mz-kv dt {
+    font-size: var(--mz-text-2xs);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--mz-text-dim);
+    padding-top: 2px;
+}
+.mz-kv dd { color: var(--mz-text-muted); }
+.mz-kv dt.is-secret,
+.mz-kv dt.is-secret + dd { color: var(--mz-tone-desire); }
+
+.mz-thought {
+    margin-top: 8px;
+    padding-left: 10px;
+    border-left: 2px solid var(--mz-accent-line);
+    font: italic 300 var(--mz-text-md) / 1.45 var(--mz-font-prose);
+    color: var(--mz-text);
+}
+
+.mz-avatar {
+    --h: 200;
+    flex: none;
+    width: 26px;
+    height: 26px;
+    align-self: center;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font: 400 11px var(--mz-font-prose);
+    color: hsl(var(--h) 18% 92% / .7);
+    background: linear-gradient(180deg, hsl(var(--h) 22% 30%), hsl(var(--h) 14% 12%));
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .1);
+}
+
+/* shifts: two uncapped meters, so numerals + signed delta, no bars */
+.mz-pair { display: flex; align-items: baseline; gap: 6px; }
+.mz-pair b { font-weight: 500; }
+.mz-pair em { font-style: normal; color: var(--mz-accent); }
+.mz-meters { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 7px; }
+.mz-meter {
+    padding: 6px 9px 7px;
+    border-radius: var(--mz-r-sm);
+    background: var(--mz-surface-2);
+    box-shadow: inset 0 0 0 1px var(--mz-line);
+}
+.mz-meter .mz-label { font-size: var(--mz-text-2xs); }
+.mz-meter-n {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    font-family: var(--mz-font-prose);
+    font-size: 22px;
+    line-height: 1.15;
+    font-variant-numeric: tabular-nums;
+}
+.mz-meter.is-desire .mz-meter-n { color: var(--mz-tone-desire); }
+.mz-delta { font: 500 var(--mz-text-xs) var(--mz-font-ui); color: var(--mz-text-dim); }
+.mz-delta.is-up { color: var(--mz-ok); }
+.mz-delta.is-down { color: var(--mz-bad); }
+
+/* standing: 0-10 scale; the stakes name both ends */
+.mz-scale { display: grid; grid-template-columns: repeat(11, 1fr); gap: 2px; margin-top: 6px; }
+.mz-scale i { height: 5px; border-radius: 1px; background: var(--mz-line-strong); }
+.mz-scale i.on { background: var(--mz-accent-line); }
+.mz-scale i.at { background: var(--mz-accent); height: 9px; margin-top: -2px; }
+.mz-ends {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    font-size: var(--mz-text-xs);
+    line-height: 1.35;
+    color: var(--mz-text-dim);
+}
+.mz-ends b { display: block; font-weight: 500; color: var(--mz-text-muted); }
+.mz-ends div:last-child { text-align: right; }
+
+/* recap: a spine with the scene row's diamond */
+.mz-recap { position: relative; padding-left: 17px; }
+.mz-recap::before {
+    content: "";
+    position: absolute;
+    left: 3px;
+    top: 22px;
+    bottom: -11px;
+    width: 1px;
+    background: var(--mz-line-strong);
+}
+.mz-recap:last-child::before { display: none; }
+.mz-recap .mz-orn {
+    position: absolute;
+    left: 0;
+    top: 13px;
+    width: 7px;
+    height: 7px;
+    border: 1px solid var(--mz-accent-line);
+    background: var(--mz-accent-soft);
+    transform: rotate(45deg);
+}
+.mz-item.mz-recap.is-open { padding-left: 17px; margin-left: 0; width: 100%; }
+.mz-subtext { font-style: italic; color: var(--mz-text-dim); }
+.mz-kind {
+    font-size: var(--mz-text-2xs);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--mz-accent);
+}
+
+/* plans: the glance column's quiet list */
+.mz-plans { display: block; cursor: default; }
+.mz-plans .mz-label { display: block; margin-bottom: 5px; }
+.mz-plan-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: var(--mz-text-sm);
+    line-height: 1.6;
+}
+.mz-plan-row span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mz-plan-row span + span { flex: none; color: var(--mz-text-muted); }
+.mz-plan-row:first-of-type span + span { color: var(--mz-accent); }
+
+/* ---------- small screens: the rail becomes a bottom sheet ---------- */
+
+.mz-railbtn { display: none; }
+
+@media (max-width: 759px) {
+    .mz-railbtn:not([hidden]) { display: inline-flex; }
+
+    .mz-glance { display: none; }
+
+    .mz-fly--l,
+    .mz-fly--r {
+        /* the sheet is modal on small screens: above the veil, below the sheet */
+        z-index: calc(var(--mz-z-scrim) + 1);
+        left: var(--mz-gutter);
+        right: var(--mz-gutter);
+        top: auto;
+        bottom: var(--mz-gutter);
+        width: auto;
+        max-height: 62vh;
+        border-radius: var(--mz-r-lg);
+    }
+
+    .mz-frame.is-fly-open > .mz-veil { display: block; }
+}

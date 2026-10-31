@@ -6,11 +6,13 @@
  * only owns the chrome around it.
  */
 
-import { currentChatId, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer } from './st.js';
+import { chatMessages, currentChatId, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer } from './st.js';
 import { settings, saveSettings, modeOn } from './settings.js';
 import { injectSprite } from './icons.js';
 import { createTranscript } from './transcript.js';
 import { mountCast, refreshCastSizing, renderCast } from './cast.js';
+import { resolveLedger } from './ledger.js';
+import { closeDock, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr } from './notify.js';
 
 const VERSION = '2.1';
@@ -72,11 +74,21 @@ const FRAME_HTML = `
             <span class="mz-chip" data-mz="weather" hidden></span>
         </div>
         <div class="mz-chatbar-tools">
+            <button class="mz-ibtn mz-railbtn" type="button" title="Threads" aria-label="Threads" aria-expanded="false" data-mz-railbtn data-mz-dock="threads" hidden>${svg('threads')}</button>
             <button class="mz-ibtn" type="button" title="Chat log" aria-label="Chat log" aria-expanded="false" data-mz-action="log">${svg('list')}</button>
         </div>
     </header>
 
     <div class="mz-cast" role="group" aria-label="Cast"></div>
+
+    <div class="mz-glance" data-mz="glance" hidden></div>
+    <section class="mz-fly mz-fly--r" data-mz="fly" role="dialog" aria-modal="false" aria-label="Ledger" hidden>
+        <div class="mz-fly-head">
+            <h2 data-mz="fly-title"></h2>
+            <span data-mz="fly-sub"></span>
+        </div>
+        <div class="mz-fly-body" data-mz="fly-body"></div>
+    </section>
 
     <section class="mz-dlg" aria-label="Reading pane">
         <div class="mz-grip" role="separator" aria-orientation="horizontal" aria-label="Resize reading pane" tabindex="0"></div>
@@ -314,6 +326,7 @@ export function mount() {
     };
 
     mountCast(els.cast);
+    mountDock(root);
 
     transcript = createTranscript({
         frame,
@@ -342,7 +355,10 @@ export function mount() {
         swipePrev: els.swipePrev,
         swipeNext: els.swipeNext,
         swipeCount: els.swipeCount,
-        onShown: ({ scene }) => applyScene(scene),
+        onShown: ({ entry, scene }) => {
+            applyScene(scene);
+            applyLedger(entry);
+        },
     });
 
     desiredPane = Number(settings().paneHeight) || PANE_DEFAULT;
@@ -435,6 +451,7 @@ export function close() {
     frame.classList.remove('is-dragging', 'is-log-open');
     els.logPanel.setAttribute('aria-hidden', 'true');
     els.logButton.setAttribute('aria-expanded', 'false');
+    closeDock();
 
     document.body.style.overflow = previousOverflow ?? '';
 
@@ -661,6 +678,9 @@ function refreshChatName() {
 /** The turn on screen, kept so a mode flip can redraw the chrome at once. */
 let lastShown = null;
 
+/** The message on screen, kept for the same reason as `lastShown`. */
+let lastEntry = null;
+
 /**
  * Publishes the chat-bar's real height as `--mz-chatbar-real`. The bar grows
  * to two lines when a scene's place is long, and the cast stage anchors to its
@@ -706,6 +726,17 @@ function applyScene(record) {
 
     measureChatbar();
     renderCast(scene);
+}
+
+/**
+ * Puts the governing ledger into the tracker rail: the shown message's last
+ * complete `LEDGER` block, or the latest earlier one when it has none. The
+ * rail decides what of it is on screen; mode and the entry switches live
+ * there too.
+ */
+function applyLedger(entry) {
+    lastEntry = entry || null;
+    renderDock(lastEntry ? resolveLedger(chatMessages(), lastEntry.index) : null);
 }
 
 /* ---------- reading pane ---------- */
@@ -1229,7 +1260,8 @@ function wireActions() {
                 else enterFullscreen();
                 break;
             case 'dismiss':
-                if (transcript.isLogOpen()) transcript.closeLog();
+                if (isDockOpen()) closeDock();
+                else if (transcript.isLogOpen()) transcript.closeLog();
                 else closeSettings();
                 break;
             case 'motion':
@@ -1245,6 +1277,7 @@ function wireActions() {
                 // new mode, then settle the chrome to match.
                 transcript.refresh({ stick: true });
                 applyScene(lastShown);
+                applyLedger(lastEntry);
                 break;
             case 'reset-pane':
                 applyPaneHeight(PANE_DEFAULT, true);
@@ -1312,7 +1345,8 @@ function wireKeys() {
 
             event.preventDefault();
             event.stopPropagation();
-            if (transcript?.isLogOpen()) transcript.closeLog();
+            if (isDockOpen()) closeDock();
+            else if (transcript?.isLogOpen()) transcript.closeLog();
             else if (frame.classList.contains('is-settings-open')) closeSettings();
             else close();
             return;

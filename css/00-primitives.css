@@ -52,8 +52,9 @@
     --mz-chatbar-h: 48px;
     --mz-gutter: 16px;
 
-    --mz-rail-w: 268px;
-    --mz-rail-w-wide: 330px;
+    /* the tracker glance column; the pane is inset by it whenever the
+       tracker rails are on screen */
+    --mz-glance-w: 232px;
     --mz-dlg-gap: 20px;
 
     /* the pane is inset by whatever rails the window can afford */
@@ -99,13 +100,19 @@
     --mz-z-sheet: 20;
 }
 
-/* Tablet keeps the right rail (threads, plans) because the chat header already
-   carries the scene. Both rails need room to read; below that the pane wins. */
+/* Tablet keeps the right rail (the glance column) because the chat header
+   already carries the scene. Above that the inset goes symmetric — the left
+   dock floats over the cast, so the pane stays centred. Without the rails
+   the pane keeps the gutter, whatever is on screen. */
 @media (min-width: 760px) {
-    #mz-root { --mz-pane-right: calc(var(--mz-rail-w) + var(--mz-gutter) + var(--mz-dlg-gap)); }
+    #mz-root .mz-frame.is-rails {
+        --mz-pane-right: calc(var(--mz-glance-w) + var(--mz-gutter) + var(--mz-dlg-gap));
+    }
 }
 
 @media (min-width: 1180px) {
-    #mz-root { --mz-pane-left: calc(var(--mz-rail-w) + var(--mz-gutter) + var(--mz-dlg-gap)); }
+    #mz-root .mz-frame.is-rails {
+        --mz-pane-left: calc(var(--mz-glance-w) + var(--mz-gutter) + var(--mz-dlg-gap));
+    }
 }
 

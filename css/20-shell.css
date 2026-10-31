@@ -480,9 +480,6 @@ body.mz-open .popup { z-index: 9500 !important; }
     transition: height var(--mz-dur) var(--mz-ease), background var(--mz-dur) var(--mz-ease);
 }
 
-/* the expanded rail layout, once the trackers land */
-.mz-frame.is-rails { --mz-rail-w: var(--mz-rail-w-wide); }
-
 .mz-frame.is-dragging .mz-dlg,
 .mz-frame.is-dragging .mz-port { transition: none; }
 .mz-frame.is-dragging { cursor: ns-resize; user-select: none; }
@@ -1442,7 +1439,6 @@ body.mz-open .popup { z-index: 9500 !important; }
         --mz-pane-h-min: 190px;
         --mz-port-min-h: var(--mz-port-min-h-mobile);
         --mz-port-max-h: var(--mz-port-max-h-mobile);
-        --mz-rail-w: 0px;
     }
 
     .mz-header { padding: 0 8px 0 10px; gap: 8px; }
