@@ -2,19 +2,17 @@
 
 A fullscreen visual-novel scene for SillyTavern — built for one character card at a time.
 
-Meziverse is an extension, not a fork. It sits on top of SillyTavern and treats it as the backend: the same chat, the same character, the same generation. Open it from the wand menu or the Extensions panel, and step back into SillyTavern whenever you like.
+Meziverse is an extension, not a fork. SillyTavern stays the engine and the storage: the same chat, the same character, the same generation. Open the scene from the wand menu or the Extensions panel, step back out whenever you like.
 
-## Status
+## What it does
 
-Early. This repository currently holds the shell and the transcript:
+- **The scene** — a fullscreen frame with a reading pane showing the newest message as plain prose, and a stretchable log window for everything earlier.
+- **Every message action rides SillyTavern's own handlers** — copy, branch from any turn, hide from prompt, edit (with ✓ / 🗑 / ✕), swipe, regenerate, stop.
+- **A composer that is SillyTavern's composer** — a growing textarea mirrored with ST's own input box, plus a ☰ menu (start new chat, back to parent chat) and impersonate / continue / send buttons that click ST's own controls. Empty sends, busy gates and drafts behave exactly as in native ST.
+- **Theming** — ink + one metal (jade, amber or rose), Newsreader prose / Inter interface, adjustable narration size, interface scale, reduced motion, custom prose colours, optional ST background.
+- **Notices** — ST's toastr toasts re-render as Meziverse toasts while the scene is open.
 
-- the fullscreen frame, the Meziverse header and the chat header
-- the reading pane, showing the newest message as plain prose, with a log drawer for earlier ones
-- a drag handle that resizes the pane, remembered across chats
-- a settings sheet: theme, background, interface scale, narration size, reduced motion
-- the wand-menu entry and the Extensions-panel block
-
-The composer is a textbox that does not reach the chat yet. The phone and the trackers are on their way. Nothing is written to disk beyond a few appearance settings.
+The phone and the story trackers (Scene, Profiles, Shifts, Threads, Plans) are planned; the buttons are placeholders for now.
 
 ## Install
 
@@ -24,6 +22,11 @@ git clone https://github.com/Mezi99/SillyTavern-Meziverse
 ```
 
 Then reload SillyTavern. Meziverse appears in the wand menu (the magic-wand icon next to the message box) and in **Extensions**.
+
+## Docs
+
+- [Technical.md](Technical.md) — how it works, for future maintainers.
+- [VersionLog.md](VersionLog.md) — release history.
 
 ## Design
 
