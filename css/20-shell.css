@@ -320,17 +320,19 @@ body.mz-open .popup { z-index: 9500 !important; }
     background: color-mix(in srgb, var(--mz-bad) 12%, transparent);
 }
 
-/* ---------- chat header (48px, two lines when the place is long) ---------- */
+/* ---------- chat header (48px scene row; small screens add the
+   slim glyph strip under it) ---------- */
 .mz-chatbar {
     position: absolute;
     z-index: var(--mz-z-chatbar);
     inset: var(--mz-header-h) 0 auto 0;
     min-height: var(--mz-chatbar-h);
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    padding: 0 10px 0 16px;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    gap: 2px;
+    padding: 6px 10px 6px 16px;
     border-bottom: 1px solid var(--mz-line);
     background: linear-gradient(
         180deg,
@@ -407,11 +409,6 @@ body.mz-open .popup { z-index: 9500 !important; }
     white-space: nowrap;
 }
 .mz-chip .ico { width: 12px; height: 12px; }
-
-.mz-chatbar-tools { display: flex; flex: none; align-items: center; gap: 2px; margin-left: auto; }
-
-/* the phone lives here only where the peek is hidden */
-.mz-chatbar-phone { display: none; }
 
 /* ---------- cast ---------- */
 .mz-cast {
@@ -934,6 +931,7 @@ body.mz-open .popup { z-index: 9500 !important; }
 }
 
 /* the veil only exists while a surface is up */
+.mz-frame.is-card-open > .mz-veil,
 .mz-frame.is-settings-open > .mz-veil,
 .mz-frame.is-log-open > .mz-veil { display: block; }
 
@@ -1157,6 +1155,98 @@ body.mz-open .popup { z-index: 9500 !important; }
     padding: 18px;
     font-size: var(--mz-text-sm);
     color: var(--mz-text-dim);
+}
+
+/* ---------- the full profile card ---------- */
+
+/* A character's whole dossier on one surface above everything: the
+   avatar image as the head's backdrop where there is one, then the
+   record in theme colors. The relevant shifts join the body here. */
+.mz-card {
+    position: absolute;
+    z-index: var(--mz-z-sheet);
+    top: 50%;
+    left: 50%;
+    display: none;
+    width: min(520px, calc(100% - 64px));
+    max-height: calc(100% - 96px);
+    overflow: auto;
+    border: 1px solid var(--mz-line-strong);
+    border-radius: var(--mz-r-lg);
+    background: var(--mz-surface-solid);
+    box-shadow: var(--mz-shadow);
+    transform: translate(-50%, -50%);
+    scrollbar-width: thin;
+}
+
+.mz-frame.is-card-open .mz-card {
+    display: block;
+    animation: mz-sheet-in var(--mz-dur) var(--mz-ease);
+}
+
+.mz-card-band {
+    position: relative;
+    min-height: 138px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    padding: 20px 22px 16px;
+    overflow: hidden;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--mz-accent) 12%, transparent), transparent);
+}
+
+.mz-card-img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: 50% 18%;
+}
+
+/* the scrim hands the image over to the card */
+.mz-card-band::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--mz-surface-solid) 8%, transparent) 0%,
+        color-mix(in srgb, var(--mz-surface-solid) 55%, transparent) 58%,
+        var(--mz-surface-solid) 100%
+    );
+}
+
+.mz-card-head {
+    position: relative;
+    z-index: 1;
+}
+.mz-card-head h2 {
+    font-family: var(--mz-font-prose);
+    font-size: var(--mz-text-2xl);
+    font-weight: 400;
+    letter-spacing: .01em;
+    color: var(--mz-accent);
+}
+.mz-card-sub {
+    margin: 4px 0 0;
+    font-family: var(--mz-font-prose);
+    font-size: var(--mz-text-md);
+    line-height: 1.45;
+    color: var(--mz-text);
+}
+
+.mz-card-close {
+    position: absolute;
+    z-index: 2;
+    top: 10px;
+    right: 10px;
+}
+
+.mz-card-body {
+    display: grid;
+    gap: 12px;
+    padding: 14px 22px 22px;
 }
 
 /* ---------- settings sheet ---------- */
@@ -1447,7 +1537,7 @@ body.mz-open .popup { z-index: 9500 !important; }
     .mz-mode { padding: 1px 7px; gap: 4px; letter-spacing: .06em; }
     .mz-chatname { max-width: 52vw; font-size: var(--mz-text-2xs); }
 
-    .mz-chatbar { gap: 8px; padding: 0 6px 0 10px; }
+    .mz-chatbar { gap: 2px; padding: 4px 6px 4px 10px; }
     .mz-chatbar-left { gap: 8px; }
     .mz-clock-time { font-size: var(--mz-text-lg); }
     .mz-place b { max-width: 52vw; font-size: var(--mz-text-sm); }
@@ -1459,6 +1549,7 @@ body.mz-open .popup { z-index: 9500 !important; }
     .mz-prose { font-size: calc(var(--mz-narr-size) * .9); }
 
     .mz-sheet { width: calc(100% - 24px); max-height: calc(100% - 44px); padding: 18px 16px 16px; }
+    .mz-card { width: calc(100% - 24px); max-height: calc(100% - 44px); }
 
     /* the log window relaxes its margins the same way the sheet does */
     .mz-log { width: min(var(--mz-log-w, 720px), calc(100% - 24px)); max-height: calc(100% - 44px); }

@@ -130,7 +130,7 @@
     gap: 20px;
     width: 100%;
     height: 100%;
-    padding: 14px clamp(24px, 10vw, 160px) calc(var(--mz-pane-h) + var(--mz-gutter));
+    padding: calc(14px + var(--mz-bubble-room, 0px)) clamp(24px, 10vw, 160px) calc(var(--mz-pane-h) + var(--mz-gutter));
     overflow-x: auto;
     overflow-y: hidden;
     scrollbar-width: none;
@@ -177,26 +177,14 @@
 
 /* ---------- the plate behind an empty or broken portrait ---------- */
 
+/* No avatar, no furniture: just the initial on the poster's own ink.
+   The plate used to draw a gradient and a halo here — too much. */
 .mz-port-plate {
     position: absolute;
     inset: 0;
     display: grid;
     place-items: center;
     overflow: hidden;
-    background:
-        radial-gradient(92% 62% at 50% 4%, hsl(var(--h) 28% 40% / .95), transparent 68%),
-        linear-gradient(180deg, hsl(var(--h) 20% 24%) 0%, hsl(var(--h) 15% 9%) 78%, hsl(var(--h) 12% 6%) 100%);
-}
-
-.mz-port-halo {
-    position: absolute;
-    width: 54%;
-    aspect-ratio: 1;
-    border: 1px solid hsl(var(--h) 28% 68% / .24);
-    border-radius: 50%;
-    box-shadow:
-        inset 0 0 40px hsl(var(--h) 36% 52% / .16),
-        0 0 40px hsl(var(--h) 40% 40% / .12);
 }
 
 .mz-cast .mz-port-initial {
@@ -206,9 +194,99 @@
     font-size: calc(var(--mz-port-h) * .26);
     font-weight: 300;
     letter-spacing: .02em;
-    color: hsl(var(--h) 18% 92% / .34);
-    text-shadow: 0 1px 20px rgba(0, 0, 0, .5);
+    color: hsl(var(--h) 18% 92% / .5);
 }
+
+/* ---------- thought bubbles ---------- */
+
+/* One bubble per avatar with a thought to carry: a thought floating
+   just over the poster's top edge, its little dots trailing down to
+   them. Long thoughts clamp and open on click. */
+.mz-thought-bub {
+    position: absolute;
+    z-index: 2;
+    bottom: calc(100% - 12px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: max-content;
+    max-width: min(220px, calc(100% + 20px));
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4;
+    overflow: hidden;
+    padding: 8px 11px;
+    border: 1px solid var(--mz-line);
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--mz-bg) 86%, transparent);
+    backdrop-filter: var(--mz-blur);
+    font: italic 300 calc(var(--mz-text-sm) - 1px) / 1.45 var(--mz-font-prose);
+    color: var(--mz-text);
+    cursor: pointer;
+}
+
+.mz-thought-bub.is-open {
+    display: block;
+    -webkit-line-clamp: unset;
+    max-height: 30dvh;
+    overflow-y: auto;
+}
+
+.mz-thought-bub::after,
+.mz-thought-bub::before {
+    content: "";
+    position: absolute;
+    border: 1px solid var(--mz-line);
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--mz-bg) 86%, transparent);
+}
+.mz-thought-bub::after {
+    width: 7px;
+    height: 7px;
+    left: 44%;
+    bottom: -6px;
+}
+.mz-thought-bub::before {
+    width: 4px;
+    height: 4px;
+    left: 38%;
+    bottom: -14px;
+}
+
+.mz-cast .mz-port:hover .mz-thought-bub,
+.mz-cast .mz-port:focus-within .mz-thought-bub {
+    z-index: 3;
+    border-color: var(--mz-line-strong);
+}
+
+/* the per-avatar thought toggle, sitting with the portrait furniture:
+   revealed on hover where there is hover, always visible on touch */
+.mz-thought-btn {
+    position: absolute;
+    z-index: 3;
+    top: 8px;
+    left: 8px;
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border: 1px solid var(--mz-line);
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--mz-bg) 78%, transparent);
+    backdrop-filter: var(--mz-blur);
+    color: var(--mz-text-muted);
+    opacity: 0;
+    transition:
+        opacity var(--mz-dur-fast) var(--mz-ease),
+        color var(--mz-dur-fast) var(--mz-ease);
+}
+
+.mz-cast .mz-port:hover .mz-thought-btn,
+.mz-cast .mz-port:focus-within .mz-thought-btn,
+.mz-thought-btn:focus-visible { opacity: 1; }
+
+.mz-thought-btn:hover { color: var(--mz-accent); }
+.mz-thought-btn.is-off { color: var(--mz-text-dim); border-style: dashed; }
+.mz-thought-btn svg { width: 13px; height: 13px; }
 
 /* ---------- the portrait itself ---------- */
 
@@ -279,8 +357,9 @@
 
 .mz-port--cast.is-empty .mz-port-attach { opacity: .72; }
 
-.mz-port--cast:hover .mz-port-attach,
-.mz-port--cast:focus-within .mz-port-attach { opacity: 1; }
+/* the offer only matters where there is no portrait yet */
+.mz-port--cast.is-empty:hover .mz-port-attach,
+.mz-port--cast.is-empty:focus-within .mz-port-attach { opacity: 1; }
 
 .mz-port-attach:hover,
 .mz-port-attach:focus-visible {
@@ -398,4 +477,5 @@
 /* a touch screen has no hover: keep the tools reachable */
 @media (hover: none) {
     .mz-port-tools { opacity: 1; }
+    .mz-thought-btn { opacity: 1; }
 }

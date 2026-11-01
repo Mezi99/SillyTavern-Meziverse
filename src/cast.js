@@ -11,12 +11,18 @@ import { castImages, castKey, currentChatId, removeCastImage, setCastImage, uplo
 import { initials } from './scene.js';
 import { icon } from './icons.js';
 import { notify } from './notify.js';
-import { modeOn } from './settings.js';
+import { entryOn, modeOn } from './settings.js';
 
 const MAX_EDGE = 1024;
 const QUALITY = 0.85;
 const FALLBACK_FLOOR = 180;
 const FALLBACK_CEILING = 500;
+
+/* The headroom the cast track keeps for thought bubbles above the
+   posters. The pane's maximum yields the same amount while thoughts
+   are on stage (overlay's paneLimits), so the two never fight over
+   a short window. */
+export const BUBBLE_ROOM = 72;
 
 let host = null;
 let track = null;
@@ -27,6 +33,7 @@ let names = [];
 let lastScene = null;
 let lastSignature = '';
 let lastNames = '';
+let lastThoughts = [];
 let busyName = '';
 let busyChat = null;
 let pending = null;
@@ -104,8 +111,114 @@ export function renderCast(scene) {
     track.replaceChildren(fragment);
     if (resetScroll) track.scrollLeft = 0;
 
+    applyThoughts();
     refreshCastSizing();
     requestAnimationFrame(refreshCastSizing);
+}
+
+/**
+ * One person's avatar as the rails draw it: the chat's own portrait image
+ * when the chat has one, and just the initial letters when it has not.
+ *
+ * @param {string} name
+ * @returns {{src:string, initial:string}}
+ */
+export function castAvatar(name) {
+    return {
+        src: imageSource(castImages()[castKey(name)] || ''),
+        initial: initials(name),
+    };
+}
+
+/**
+ * Attaches the ledger's private thoughts to their posters — one thought
+ * bubble per avatar, matched by the simple, consistent name both sides
+ * carry. Reapplied whenever the ledger or the cast changes; a thought
+ * with no matching avatar simply stays unspoken.
+ *
+ * @param {object[]} profiles
+ */
+export function renderThoughts(profiles) {
+    lastThoughts = Array.isArray(profiles) ? profiles : [];
+    applyThoughts();
+}
+
+/* Thoughts hidden by their avatar's own toggle. Session-only, like the
+   rails' snapped boxes: the future mode-features menu owns persistence. */
+const hiddenThoughts = new Set();
+
+function applyThoughts() {
+    if (!host || !track) return;
+
+    const shown = modeOn() && entryOn('profiles');
+    const byName = new Map();
+
+    if (shown) {
+        for (const profile of lastThoughts) {
+            const key = textOf(profile.character).trim().toLowerCase();
+            if (key && profile.thought && !byName.has(key)) byName.set(key, profile.thought);
+        }
+    }
+
+    let anyBubble = false;
+
+    for (const figure of track.querySelectorAll('.mz-port')) {
+        const key = textOf(figure.dataset.name).trim().toLowerCase();
+        const thought = byName.get(key) || '';
+        const bubble = figure.querySelector('.mz-thought-bub');
+        const toggle = figure.querySelector('.mz-thought-btn');
+
+        // A thought with no matching avatar stays unspoken: no bubble
+        // and no toggle to bring one back.
+        if (!thought) {
+            bubble?.remove();
+            toggle?.remove();
+            continue;
+        }
+
+        const button = toggle || thoughtToggle(key);
+        if (!toggle) figure.append(button);
+
+        const hidden = hiddenThoughts.has(key);
+        button.classList.toggle('is-off', hidden);
+        button.title = hidden ? 'Show thought' : 'Hide thought';
+        button.setAttribute('aria-label', button.title);
+        button.setAttribute('aria-pressed', String(!hidden));
+
+        if (hidden) {
+            bubble?.remove();
+        } else {
+            const target = bubble || thoughtBubble();
+            if (target.textContent !== thought) target.textContent = thought;
+            if (!bubble) figure.append(target);
+            anyBubble = true;
+        }
+    }
+
+    // The bubbles are content: when any is on stage the track makes room
+    // above the posters so its own scroll never clips them.
+    track.style.setProperty('--mz-bubble-room', anyBubble ? `${BUBBLE_ROOM}px` : '0px');
+    refreshCastSizing();
+}
+
+function thoughtToggle(key) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'mz-thought-btn';
+    button.dataset.mzThought = key;
+    button.append(icon('mz-i-thought'));
+    return button;
+}
+
+function thoughtBubble() {
+    const bubble = document.createElement('div');
+    bubble.className = 'mz-thought-bub';
+    bubble.title = 'Click to read in full';
+    return bubble;
+}
+
+function textOf(value) {
+    return typeof value === 'string' ? value : '';
 }
 
 /** Fits poster height to the space above the pane and the available width. */
@@ -147,20 +260,18 @@ export function refreshCastSizing() {
 function poster(name, path) {
     const figure = document.createElement('figure');
     figure.className = 'mz-port mz-port--cast';
+    figure.dataset.name = name;
     figure.style.setProperty('--h', `${hueOf(name)}deg`);
 
     const plate = document.createElement('div');
     plate.className = 'mz-port-plate';
     plate.setAttribute('aria-hidden', 'true');
 
-    const halo = document.createElement('span');
-    halo.className = 'mz-port-halo';
-
     const monogram = document.createElement('span');
     monogram.className = 'mz-port-initial';
     monogram.textContent = initials(name);
 
-    plate.append(halo, monogram);
+    plate.append(monogram);
 
     const source = imageSource(path);
     let image = null;
@@ -214,7 +325,9 @@ function poster(name, path) {
 
     attach.append(attachLabel);
 
-    figure.append(plate, image, scrim, caption, attach);
+    figure.append(plate);
+    if (image) figure.append(image);
+    figure.append(scrim, caption, attach);
 
     if (source) {
         const tools = document.createElement('div');
@@ -254,6 +367,21 @@ function poster(name, path) {
 /* ---------- attaching a portrait ---------- */
 
 function onClick(event) {
+    const toggle = event.target.closest('[data-mz-thought]');
+    if (toggle) {
+        const key = toggle.dataset.mzThought;
+        if (hiddenThoughts.has(key)) hiddenThoughts.delete(key);
+        else hiddenThoughts.add(key);
+        applyThoughts();
+        return;
+    }
+
+    const bubble = event.target.closest('.mz-thought-bub');
+    if (bubble) {
+        bubble.classList.toggle('is-open');
+        return;
+    }
+
     const attach = event.target.closest('[data-mz-cast-attach]');
     if (attach) {
         event.preventDefault();

@@ -1,35 +1,50 @@
 /**
- * The tracker rails: an icon menu at the top of the right column, quiet
- * cards under it for the entries that have them, and one popup with the
- * full records — a bottom sheet on small screens.
+ * The tracker rails: an icon menu over each column — the People side on
+ * the left, the story side on the right — quiet cards under the menus
+ * for the entries that have them, and one popup with the full records
+ * (a bottom sheet on small screens). The left menu also carries the
+ * chat log, so the log is always within reach; on small screens one
+ * slim strip in the chat bar stands in for both menus.
  *
  * The ledger entries land one at a time, each in ENTRIES with its own
- * popup body and feature switch; entries with `boxes` also draw a glance
- * part under the menu. An entry draws only under Meziverse mode AND its
- * own switch, and only when its rows exist: with nothing to show the
- * whole rail steps aside and the pane keeps the width.
+ * side, popup body and feature switch; entries with `boxes` also draw
+ * glance cards under their menu. An entry draws only under Meziverse
+ * mode AND its own switch, and only when its rows exist: with nothing
+ * to show the column steps aside and the pane keeps the width.
  *
  * The menu buttons snap their entry's boxes, or — for popup-only entries
  * like hooks, lore and recap — open the popup. Clicking a box or card
- * opens the popup too; it closes on a click away or Esc, and clicks
- * inside it never close it, so scrolling is safe. Story text is only
- * ever set as text, never as HTML.
+ * opens the popup too (profiles open their full card instead); it all
+ * closes on a click away or Esc, and clicks inside never close it, so
+ * scrolling is safe. Story text is only ever set as text, never HTML.
  */
 
 import { icon } from './icons.js';
+import { castAvatar } from './cast.js';
 import { entryOn, modeOn } from './settings.js';
 
 const BOXES_MAX = 3;
+const PROFILES_MAX = 6;
 
 /**
- * The ledger entries. `threads` and `plans` carry glance boxes; hooks,
- * lore and recap are popup-only. The rest joins here as it lands, and
- * the future mode-features menu flips their switches in
- * `settings().entries`.
+ * The ledger entries. `profiles` is the left side's first: mini profile
+ * cards at a glance and a full card per character. `threads` and `plans`
+ * carry right-side glance boxes; hooks, lore and recap are popup-only.
+ * The rest joins here as it lands, and the future mode-features menu
+ * flips their switches in `settings().entries`.
  */
 const ENTRIES = {
+    profiles: {
+        title: 'Profiles',
+        side: 'l',
+        has: ledger => !!ledger && ledger.profiles.length > 0,
+        sub: ledger => `${ledger.profiles.length} in this scene${ledger.carried ? ` \u00b7 from turn ${ledger.turn}` : ''}`,
+        boxes: ledger => ledger.profiles.slice(0, PROFILES_MAX).map(profileBox),
+        body: ledger => ledger.profiles.map(profileRecord),
+    },
     threads: {
         title: 'Threads',
+        side: 'r',
         has: ledger => !!ledger && ledger.threads.length > 0,
         sub: ledger => `${ledger.threads.length} live${ledger.carried ? ` \u00b7 from turn ${ledger.turn}` : ''}`,
         boxes: ledger => ledger.threads.slice(0, BOXES_MAX).map(threadBox),
@@ -37,6 +52,7 @@ const ENTRIES = {
     },
     plans: {
         title: 'Plans',
+        side: 'r',
         has: ledger => !!ledger && ledger.plans.length > 0,
         sub: ledger => `${ledger.plans.length} planned${ledger.carried ? ` \u00b7 from turn ${ledger.turn}` : ''}`,
         boxes: ledger => [planCard(ledger.plans)],
@@ -44,18 +60,21 @@ const ENTRIES = {
     },
     hooks: {
         title: 'Hooks',
+        side: 'r',
         has: ledger => !!ledger && ledger.hooks.length > 0,
         sub: ledger => `${ledger.hooks.length} open${ledger.carried ? ` \u00b7 from turn ${ledger.turn}` : ''}`,
         body: ledger => ledger.hooks.map(hookRecord),
     },
     lore: {
         title: 'Lore',
+        side: 'r',
         has: ledger => !!ledger && ledger.lore.length > 0,
         sub: ledger => `${ledger.lore.length} seeds${ledger.carried ? ` \u00b7 from turn ${ledger.turn}` : ''}`,
         body: ledger => ledger.lore.map(loreRecord),
     },
     recap: {
         title: 'Story So Far',
+        side: 'r',
         has: ledger => !!ledger && ledger.recap.length > 0,
         sub: ledger => `${ledger.recap.length} moments${ledger.carried ? ` \u00b7 from turn ${ledger.turn}` : ''}`,
         body: ledger => ledger.recap.map(recapRecord),
@@ -63,12 +82,15 @@ const ENTRIES = {
 };
 
 let frame = null;
-let glance = null;
+let glanceL = null;
+let glanceR = null;
 let fly = null;
 let flyTitle = null;
 let flySub = null;
 let flyBody = null;
 let railButtons = null;
+let card = null;
+let cardBody = null;
 
 let state = null;
 let openKey = null;
@@ -78,19 +100,22 @@ let lastSignature = null;
    mode-features menu owns what should persist. */
 const hiddenParts = new Set();
 
-/** Mounts the rail inside the frame. Idempotent. */
+/** Mounts the rails inside the frame. Idempotent. */
 export function mountDock(root) {
     if (!root || frame) return;
 
     frame = root.querySelector('.mz-frame');
-    glance = root.querySelector('[data-mz="glance"]');
+    glanceL = root.querySelector('[data-mz="glance-l"]');
+    glanceR = root.querySelector('[data-mz="glance"]');
     fly = root.querySelector('[data-mz="fly"]');
     flyTitle = fly?.querySelector('[data-mz="fly-title"]');
     flySub = fly?.querySelector('[data-mz="fly-sub"]');
     flyBody = fly?.querySelector('[data-mz="fly-body"]');
     railButtons = root.querySelector('[data-mz-railbtns]');
+    card = root.querySelector('[data-mz="card"]');
+    cardBody = card?.querySelector('[data-mz="card-body"]');
 
-    if (!frame || !glance || !fly) return;
+    if (!frame || !glanceL || !glanceR || !fly || !card) return;
 
     // One listener on the document: it sees clicks inside the frame and
     // clicks on SillyTavern's own popups alike, which is exactly what
@@ -100,10 +125,11 @@ export function mountDock(root) {
 }
 
 /**
- * Draws the rail for one resolved ledger (or null when the turn has none).
- * Rebuilds only when the board changes, so streaming frames are cheap.
+ * Draws both rails for one resolved ledger (or null when the turn has
+ * none). Rebuilds only when the board changes, so streaming frames are
+ * cheap.
  *
- * @param {{threads:object[], turn:number, carried:boolean}|null} ledger
+ * @param {{threads:object[], profiles:object[], turn:number, carried:boolean}|null} ledger
  */
 export function renderDock(ledger) {
     if (!frame) return;
@@ -113,10 +139,13 @@ export function renderDock(ledger) {
     const visible = Object.keys(ENTRIES).filter(visibleNow);
     if (openKey && !visible.includes(openKey)) openKey = null;
 
-    const active = visible.length > 0;
-    frame.classList.toggle('is-rails', active);
-    if (railButtons) railButtons.hidden = !active;
-    glance.hidden = !active;
+    const leftOn = visible.some(key => ENTRIES[key].side === 'l');
+    const rightOn = visible.some(key => ENTRIES[key].side !== 'l');
+    frame.classList.toggle('is-rails-l', leftOn);
+    frame.classList.toggle('is-rails-r', rightOn);
+    glanceR.hidden = !rightOn;
+    // The left column is chrome too — its menu carries the chat log — so
+    // it never steps aside; only its cards come and go.
 
     const signature = JSON.stringify({ visible, state, hidden: [...hiddenParts] });
 
@@ -141,7 +170,19 @@ export function closeDock() {
     syncFly();
 }
 
-/* ---------- the rail ---------- */
+/** Whether one character's full profile card is open. */
+export function isCardOpen() {
+    return !!frame && frame.classList.contains('is-card-open');
+}
+
+/** Closes the full profile card, if one is open. */
+export function closeCard() {
+    if (!isCardOpen()) return;
+    frame.classList.remove('is-card-open');
+    card.setAttribute('aria-hidden', 'true');
+}
+
+/* ---------- the rails ---------- */
 
 function visibleNow(key) {
     return modeOn() && entryOn(key) && !!ENTRIES[key]?.has(state);
@@ -151,7 +192,7 @@ function visibleKeys() {
     return Object.keys(ENTRIES).filter(visibleNow);
 }
 
-/** One menu button: the entry's glyph in the shared icon menu. */
+/** One menu button: the entry's glyph in its side's icon menu. */
 function menuButton(key) {
     const button = document.createElement('button');
     button.type = 'button';
@@ -159,6 +200,23 @@ function menuButton(key) {
     button.dataset.mzDock = key;
     button.append(icon(`mz-i-${key}`));
     syncMenuButton(button, key);
+    return button;
+}
+
+/**
+ * The chat log button. It is chrome, not an entry: it lives at the head
+ * of the left menu and at the head of the small-screen strip so the log
+ * is always within reach.
+ */
+function logButton(className) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = className;
+    button.dataset.mzAction = 'log';
+    button.title = 'Chat log';
+    button.setAttribute('aria-label', button.title);
+    button.setAttribute('aria-expanded', 'false');
+    button.append(icon('mz-i-log'));
     return button;
 }
 
@@ -179,7 +237,7 @@ function syncMenuButton(button, key) {
 }
 
 function syncMenu() {
-    for (const button of glance.querySelectorAll('.mz-dbtn')) {
+    for (const button of frame.querySelectorAll('.mz-dbtn[data-mz-dock]')) {
         syncMenuButton(button, button.dataset.mzDock);
     }
 }
@@ -199,19 +257,33 @@ function railButton(key) {
 
 function buildRail() {
     const keys = visibleKeys();
-    const boxes = keys.flatMap(key => {
+    const leftKeys = keys.filter(key => ENTRIES[key].side === 'l');
+    const rightKeys = keys.filter(key => ENTRIES[key].side !== 'l');
+
+    const leftNav = document.createElement('nav');
+    leftNav.className = 'mz-dock mz-dock--h';
+    leftNav.setAttribute('aria-label', 'People');
+    leftNav.append(logButton('mz-dbtn'), ...leftKeys.map(menuButton));
+
+    glanceL.replaceChildren(leftNav, ...boxesFor(leftKeys));
+
+    const rightNav = document.createElement('nav');
+    rightNav.className = 'mz-dock mz-dock--h';
+    rightNav.setAttribute('aria-label', 'Story');
+    rightNav.append(...rightKeys.map(menuButton));
+
+    glanceR.replaceChildren(rightNav, ...boxesFor(rightKeys));
+
+    if (railButtons) {
+        railButtons.replaceChildren(logButton('mz-ibtn mz-railbtn'), ...keys.map(railButton));
+    }
+}
+
+function boxesFor(keys) {
+    return keys.flatMap(key => {
         const entry = ENTRIES[key];
         return entry.boxes && !hiddenParts.has(key) ? entry.boxes(state) : [];
     });
-
-    const nav = document.createElement('nav');
-    nav.className = 'mz-dock mz-dock--h';
-    nav.setAttribute('aria-label', 'Ledger');
-    nav.append(...keys.map(menuButton));
-
-    glance.replaceChildren(nav, ...boxes);
-
-    if (railButtons) railButtons.replaceChildren(...keys.map(railButton));
 }
 
 function toggleParts(key) {
@@ -227,7 +299,7 @@ function toggleParts(key) {
     buildRail();
     syncFly();
 
-    if (hadFocus) glance.querySelector(`[data-mz-dock="${key}"]`)?.focus();
+    if (hadFocus) frame.querySelector(`.mz-dbtn[data-mz-dock="${key}"]`)?.focus();
 }
 
 /* ---------- the popup ---------- */
@@ -254,7 +326,7 @@ function syncFly() {
     frame.classList.toggle('is-fly-open', !!openKey);
     syncMenu();
 
-    for (const button of railButtons?.querySelectorAll('.mz-railbtn') || []) {
+    for (const button of railButtons?.querySelectorAll('.mz-railbtn[data-mz-dock]') || []) {
         button.setAttribute('aria-expanded', String(openKey === button.dataset.mzDock));
     }
 }
@@ -526,6 +598,206 @@ function recapRecord(recap) {
     return item;
 }
 
+/* ---------- one profile ---------- */
+
+/**
+ * A rail box: the avatar and the base info that changes every turn —
+ * who they are, how they are. The look and the rest of the record live
+ * in the full card, one button away.
+ */
+function profileBox(profile, index) {
+    const card = document.createElement('div');
+    card.className = 'mz-g mz-prof';
+    card.dataset.mzProfile = String(index);
+
+    card.append(avatar(profile.character, 'mz-avatar'));
+
+    const txt = document.createElement('span');
+    txt.className = 'mz-g-txt';
+
+    const name = document.createElement('span');
+    name.className = 'mz-g-t mz-prof-name';
+    name.textContent = profile.character || profile.state;
+    txt.append(name);
+
+    if (profile.character && profile.state) {
+        const state = document.createElement('span');
+        state.className = 'mz-prof-state';
+        state.textContent = profile.state;
+        txt.append(state);
+    }
+
+    card.append(txt, fullProfileButton());
+    return card;
+}
+
+/** A popup record for small screens: base info, and the full card's door. */
+function profileRecord(profile, index) {
+    const item = document.createElement('div');
+    item.className = 'mz-item is-full';
+    item.dataset.mzProfile = String(index);
+
+    const row = document.createElement('div');
+    row.className = 'mz-item-row mz-item-row--title';
+
+    const title = document.createElement('span');
+    title.className = 'mz-item-title';
+    title.textContent = profile.character || profile.state;
+
+    row.append(avatar(profile.character, 'mz-avatar'), title, fullProfileButton());
+    item.append(row);
+
+    if (profile.character && profile.state) {
+        const state = document.createElement('p');
+        state.className = 'mz-item-plot';
+        state.textContent = profile.state;
+        item.append(state);
+    }
+
+    if (profile.look) {
+        const look = document.createElement('p');
+        look.className = 'mz-item-out';
+        look.textContent = profile.look;
+        item.append(look);
+    }
+
+    return item;
+}
+
+/**
+ * The full profile card: the avatar image as the head's backdrop where
+ * there is one, then everything the ledger knows about this person —
+ * the private thought included. The relevant shifts join the foot here
+ * when they land.
+ */
+function profileCard(profile) {
+    const fragment = document.createDocumentFragment();
+    const { src } = castAvatar(profile.character);
+
+    const band = document.createElement('div');
+    band.className = 'mz-card-band';
+
+    if (src) {
+        const image = document.createElement('img');
+        image.className = 'mz-card-img';
+        image.alt = '';
+        image.src = src;
+        band.append(image);
+    }
+
+    const head = document.createElement('div');
+    head.className = 'mz-card-head';
+
+    const title = document.createElement('h2');
+    title.textContent = profile.character || profile.state;
+    head.append(title);
+
+    if (profile.character && profile.state) {
+        const sub = document.createElement('p');
+        sub.className = 'mz-card-sub';
+        sub.textContent = profile.state;
+        head.append(sub);
+    }
+
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'mz-ibtn mz-card-close';
+    close.dataset.mzCardClose = '';
+    close.title = 'Close full profile';
+    close.setAttribute('aria-label', close.title);
+    close.append(icon('mz-i-close'));
+
+    band.append(head, close);
+    fragment.append(band);
+
+    const body = document.createElement('div');
+    body.className = 'mz-card-body';
+
+    body.append(profileFacts(profile));
+
+    if (profile.thought) {
+        const thought = document.createElement('p');
+        thought.className = 'mz-thought';
+        thought.textContent = profile.thought;
+        body.append(thought);
+    }
+
+    fragment.append(body);
+    return fragment;
+}
+
+/** The record as label/value pairs, in the mockup's own order. */
+function profileFacts(profile) {
+    const list = document.createElement('dl');
+    list.className = 'mz-kv';
+
+    const order = [
+        ['look', 'Look'],
+        ['next', 'Next'],
+        ['goal', 'Goal'],
+        ['ambition', 'Ambition'],
+        ['desire', 'Desire'],
+        ['secret', 'Secret'],
+    ];
+
+    for (const [key, label] of order) {
+        if (!profile[key]) continue;
+
+        const term = document.createElement('dt');
+        if (key === 'secret') term.className = 'is-secret';
+        term.textContent = label;
+
+        const value = document.createElement('dd');
+        value.textContent = profile[key];
+
+        list.append(term, value);
+    }
+
+    return list;
+}
+
+/** The small avatar: the chat's portrait image, or just the initial. */
+function avatar(name, className) {
+    const span = document.createElement('span');
+    span.className = className;
+    span.setAttribute('aria-hidden', 'true');
+
+    const { src, initial } = castAvatar(name);
+    if (src) {
+        const image = document.createElement('img');
+        image.alt = '';
+        image.src = src;
+        span.append(image);
+    } else {
+        span.textContent = initial;
+    }
+
+    return span;
+}
+
+/** The door from any profile surface into the full card. */
+function fullProfileButton() {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'mz-prof-more';
+    button.title = 'Full profile';
+    button.setAttribute('aria-label', button.title);
+    button.append(icon('mz-i-profiles'));
+    return button;
+}
+
+function openProfileCard(index) {
+    const profile = state?.profiles?.[index];
+    if (!profile || !card) return;
+
+    // One surface at a time: the card takes the stage over everything.
+    closeDock();
+    cardBody.replaceChildren(profileCard(profile));
+    frame.classList.add('is-card-open');
+    card.setAttribute('aria-hidden', 'false');
+    card.querySelector('[data-mz-card-close]')?.focus({ preventScroll: true });
+}
+
 /* ---------- input ---------- */
 
 function activate(trigger) {
@@ -547,6 +819,18 @@ function activate(trigger) {
 }
 
 function onClick(event) {
+    const cardClose = event.target.closest('[data-mz-card-close]');
+    if (cardClose) {
+        closeCard();
+        return;
+    }
+
+    const profileTrigger = event.target.closest('[data-mz-profile]');
+    if (profileTrigger) {
+        openProfileCard(Number(profileTrigger.dataset.mzProfile));
+        return;
+    }
+
     const trigger = event.target.closest('[data-mz-dock]');
     if (trigger) {
         activate(trigger);
