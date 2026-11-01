@@ -11,6 +11,10 @@ const DEFAULTS = {
     // Meziverse mode: the master switch every feature sits under. Phase 5
     // binds it to the owned preset; until then it is flipped by hand.
     mode: true,
+    // Per-entry feature switches for the ledger panels (scene info is always
+    // on under mode and gets no switch). A later menu flips these by name;
+    // a missing entry counts as on, so this list only grows.
+    entries: {},
     theme: 'ink-jade',
     background: 'none',
     reducedMotion: false,
@@ -52,6 +56,16 @@ export function settings() {
  */
 export function modeOn() {
     return settings().mode !== false;
+}
+
+/**
+ * Whether one ledger entry may draw. Every entry — threads, hooks, and the
+ * rest as they land — asks this beside `modeOn()`. The switches live in
+ * `settings().entries`, flipped by the mode-features menu when it arrives;
+ * an entry without a switch yet counts as on.
+ */
+export function entryOn(name) {
+    return settings().entries?.[name] !== false;
 }
 
 /** Ask SillyTavern to save settings on its usual debounce. */
