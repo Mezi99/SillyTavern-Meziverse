@@ -307,7 +307,7 @@
     position: absolute;
     inset: auto 0 0;
     height: 42%;
-    background: linear-gradient(180deg, transparent, rgba(6, 8, 10, .72) 62%, rgba(6, 8, 10, .9));
+    background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--mz-scrim-ink) 72%, transparent) 62%, color-mix(in srgb, var(--mz-scrim-ink) 90%, transparent));
     pointer-events: none;
 }
 
@@ -342,7 +342,7 @@
     padding: 5px 10px;
     border: 1px solid rgba(255, 255, 255, .2);
     border-radius: var(--mz-r-pill);
-    background: rgba(8, 10, 12, .34);
+    background: color-mix(in srgb, var(--mz-scrim-ink) 34%, transparent);
     backdrop-filter: blur(4px);
     color: rgba(255, 255, 255, .72);
     cursor: pointer;
@@ -364,7 +364,7 @@
 .mz-port-attach:hover,
 .mz-port-attach:focus-visible {
     border-color: hsl(var(--h) 40% 70% / .55);
-    background: rgba(8, 10, 12, .62);
+    background: color-mix(in srgb, var(--mz-scrim-ink) 62%, transparent);
     color: #fff;
 }
 
@@ -410,7 +410,7 @@
     padding: 0;
     border: 1px solid rgba(255, 255, 255, .22);
     border-radius: var(--mz-r-pill);
-    background: rgba(8, 10, 12, .48);
+    background: color-mix(in srgb, var(--mz-scrim-ink) 48%, transparent);
     backdrop-filter: blur(6px);
     color: rgba(255, 255, 255, .82);
     cursor: pointer;
@@ -418,7 +418,7 @@
 }
 
 .mz-port-tool:hover {
-    background: rgba(8, 10, 12, .72);
+    background: color-mix(in srgb, var(--mz-scrim-ink) 72%, transparent);
     color: #fff;
 }
 
@@ -438,7 +438,7 @@
     inset: 0;
     display: grid;
     place-items: center;
-    background: rgba(6, 8, 10, .55);
+    background: color-mix(in srgb, var(--mz-scrim-ink) 55%, transparent);
     backdrop-filter: blur(2px);
     font-family: var(--mz-font-ui);
     font-size: var(--mz-text-2xs);

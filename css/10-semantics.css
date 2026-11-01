@@ -26,11 +26,11 @@
 
 /* ---------- ink · jade (default) ---------- */
 #mz-root[data-mz-theme="ink-jade"] {
-    --mz-bg: #0c0e11;
-    --mz-bg-2: #111419;
-    --mz-surface: rgba(14, 17, 21, .82);
-    --mz-surface-solid: #0f1216;
-    --mz-surface-2: rgba(255, 255, 255, .025);
+    --mz-bg: #0a0e13;
+    --mz-bg-2: #0e151c;
+    --mz-surface: rgba(11, 18, 24, .84);
+    --mz-surface-solid: #0c1319;
+    --mz-surface-2: rgba(150, 196, 208, .05);
     --mz-line: rgba(255, 255, 255, .075);
     --mz-line-strong: rgba(255, 255, 255, .135);
     --mz-text: #e9e7e2;
@@ -46,12 +46,15 @@
     --mz-ok: #86c295;
     --mz-warn: #d6a966;
     --mz-bad: #cf7d76;
-    --mz-scene-1: #0a1017;
-    --mz-scene-2: #0a1218;
-    --mz-scene-3: #070a0d;
-    --mz-scene-cool: rgba(150, 196, 208, .18);
-    --mz-scene-warm: rgba(255, 190, 118, .20);
-    --mz-scene-wet: rgba(120, 170, 185, .10);
+    /* the ink the scene's scrims shade with: the same hue family as the
+       background, so the overlays tint instead of graying it out */
+    --mz-scrim-ink: #060b0f;
+    --mz-scene-1: #071118;
+    --mz-scene-2: #08131b;
+    --mz-scene-3: #050a0f;
+    --mz-scene-cool: rgba(150, 196, 208, .22);
+    --mz-scene-warm: rgba(255, 190, 118, .22);
+    --mz-scene-wet: rgba(120, 170, 185, .13);
 
     /* narration face for this theme; settings can override it */
     --mz-font-prose: "Newsreader", "Source Serif 4", Georgia, "Times New Roman", serif;
@@ -59,11 +62,11 @@
 
 /* ---------- ink · amber ---------- */
 #mz-root[data-mz-theme="ink-amber"] {
-    --mz-bg: #0e0d0b;
-    --mz-bg-2: #14120e;
-    --mz-surface: rgba(18, 16, 13, .84);
-    --mz-surface-solid: #12100d;
-    --mz-surface-2: rgba(255, 244, 226, .028);
+    --mz-bg: #120d08;
+    --mz-bg-2: #17110a;
+    --mz-surface: rgba(20, 15, 10, .86);
+    --mz-surface-solid: #151009;
+    --mz-surface-2: rgba(255, 214, 160, .05);
     --mz-line: rgba(255, 244, 226, .08);
     --mz-line-strong: rgba(255, 244, 226, .15);
     --mz-text: #ece8e0;
@@ -79,23 +82,24 @@
     --mz-ok: #9dbe8f;
     --mz-warn: #d9ac68;
     --mz-bad: #cf7d70;
-    --mz-scene-1: #121009;
-    --mz-scene-2: #13100b;
-    --mz-scene-3: #0a0806;
-    --mz-scene-cool: rgba(212, 176, 122, .14);
-    --mz-scene-warm: rgba(255, 196, 120, .26);
-    --mz-scene-wet: rgba(190, 150, 100, .10);
+    --mz-scrim-ink: #0b0704;
+    --mz-scene-1: #140e07;
+    --mz-scene-2: #16100a;
+    --mz-scene-3: #0c0804;
+    --mz-scene-cool: rgba(212, 176, 122, .17);
+    --mz-scene-warm: rgba(255, 196, 120, .30);
+    --mz-scene-wet: rgba(190, 150, 100, .13);
 
     --mz-font-prose: "Spectral", "Newsreader", Georgia, "Times New Roman", serif;
 }
 
 /* ---------- ink · rose ---------- */
 #mz-root[data-mz-theme="ink-rose"] {
-    --mz-bg: #0d0c10;
-    --mz-bg-2: #121016;
-    --mz-surface: rgba(16, 14, 19, .84);
-    --mz-surface-solid: #110f14;
-    --mz-surface-2: rgba(255, 240, 245, .026);
+    --mz-bg: #110b12;
+    --mz-bg-2: #161019;
+    --mz-surface: rgba(19, 13, 21, .86);
+    --mz-surface-solid: #140e17;
+    --mz-surface-2: rgba(255, 205, 222, .05);
     --mz-line: rgba(255, 242, 246, .08);
     --mz-line-strong: rgba(255, 242, 246, .15);
     --mz-text: #eae6e6;
@@ -111,12 +115,13 @@
     --mz-ok: #93bb9a;
     --mz-warn: #d3a973;
     --mz-bad: #d07e7e;
-    --mz-scene-1: #110d13;
-    --mz-scene-2: #120e15;
-    --mz-scene-3: #09070c;
-    --mz-scene-cool: rgba(200, 150, 165, .18);
-    --mz-scene-warm: rgba(240, 170, 150, .18);
-    --mz-scene-wet: rgba(160, 130, 150, .10);
+    --mz-scrim-ink: #09050b;
+    --mz-scene-1: #120c15;
+    --mz-scene-2: #140e17;
+    --mz-scene-3: #0a060c;
+    --mz-scene-cool: rgba(200, 150, 165, .21);
+    --mz-scene-warm: rgba(240, 170, 150, .21);
+    --mz-scene-wet: rgba(160, 130, 150, .13);
 
     --mz-font-prose: "Lora", "Newsreader", Georgia, "Times New Roman", serif;
 }

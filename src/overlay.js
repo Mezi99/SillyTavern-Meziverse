@@ -27,9 +27,9 @@ const PROSE_TOKENS = ['plain', 'q', 'em', 'strong'];
 const PROSE_KEYS = { plain: 'prosePlain', q: 'proseQ', em: 'proseEm', strong: 'proseStrong' };
 
 const THEMES = [
-    { id: 'ink-jade', name: 'Jade', swatch: 'linear-gradient(90deg, #0c0e11 0 56%, #77c2aa 56%)' },
-    { id: 'ink-amber', name: 'Amber', swatch: 'linear-gradient(90deg, #0e0d0b 0 56%, #cfaa72 56%)' },
-    { id: 'ink-rose', name: 'Rose', swatch: 'linear-gradient(90deg, #0d0c10 0 56%, #c8929c 56%)' },
+    { id: 'ink-jade', name: 'Jade', swatch: 'linear-gradient(90deg, #0a0e13 0 56%, #77c2aa 56%)' },
+    { id: 'ink-amber', name: 'Amber', swatch: 'linear-gradient(90deg, #120d08 0 56%, #cfaa72 56%)' },
+    { id: 'ink-rose', name: 'Rose', swatch: 'linear-gradient(90deg, #110b12 0 56%, #c8929c 56%)' },
 ];
 
 /* "theme" leaves the face the theme chose; the rest override it. */

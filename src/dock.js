@@ -888,10 +888,10 @@ function profileRecord(profile, index) {
 }
 
 /**
- * The full profile card: the avatar image as the head's backdrop where
- * there is one, then everything the ledger knows about this person —
- * the private thought included. The relevant shifts join the foot here
- * when they land.
+ * The full profile card: a header "scene" — the avatar figure standing
+ * in a spotlight where there is one, the name over the state over the
+ * private thought — then the record as its own little sections. The
+ * relevant shifts join the foot here when they land.
  */
 function profileCard(profile) {
     const fragment = document.createDocumentFragment();
@@ -912,14 +912,21 @@ function profileCard(profile) {
     head.className = 'mz-card-head';
 
     const title = document.createElement('h2');
-    title.textContent = profile.character || profile.state;
+    title.textContent = say(profile.character || profile.state);
     head.append(title);
 
     if (profile.character && profile.state) {
         const sub = document.createElement('p');
         sub.className = 'mz-card-sub';
-        sub.textContent = profile.state;
+        sub.textContent = say(profile.state);
         head.append(sub);
+    }
+
+    if (profile.thought) {
+        const thought = document.createElement('p');
+        thought.className = 'mz-thought';
+        thought.textContent = say(profile.thought);
+        head.append(thought);
     }
 
     const close = document.createElement('button');
@@ -935,48 +942,98 @@ function profileCard(profile) {
 
     const body = document.createElement('div');
     body.className = 'mz-card-body';
-
-    body.append(profileFacts(profile));
-
-    if (profile.thought) {
-        const thought = document.createElement('p');
-        thought.className = 'mz-thought';
-        thought.textContent = profile.thought;
-        body.append(thought);
-    }
-
+    body.append(...profileSections(profile));
     fragment.append(body);
     return fragment;
 }
 
-/** The record as label/value pairs, in the mockup's own order. */
-function profileFacts(profile) {
-    const list = document.createElement('dl');
-    list.className = 'mz-kv';
+/**
+ * The record as the mockup's whim tiles: "Right now" (the look and the
+ * next move side by side), "Wants" as a ladder (goal, ambition, desire),
+ * and the secret on its own tile below. A section with no tiles does
+ * not exist.
+ */
+function profileSections(profile) {
+    const parts = [];
 
-    const order = [
-        ['look', 'Look'],
-        ['next', 'Next'],
-        ['goal', 'Goal'],
-        ['ambition', 'Ambition'],
-        ['desire', 'Desire'],
-        ['secret', 'Secret'],
-    ];
+    const now = [
+        profile.look && whimTile('look', 'Look', profile.look, 'mz-i-eye'),
+        profile.next && whimTile('next', 'Next', profile.next, 'mz-i-next'),
+    ].filter(Boolean);
+    if (now.length) parts.push(whimSection('Right now', 'is-pair', now));
 
-    for (const [key, label] of order) {
-        if (!profile[key]) continue;
+    const wants = [
+        profile.goal && whimTile('goal', 'Goal', profile.goal, 'mz-i-plans'),
+        profile.ambition && whimTile('ambition', 'Ambition', profile.ambition, 'mz-i-lore'),
+        profile.desire && whimTile('desire', 'Desire', profile.desire, 'mz-i-desire'),
+    ].filter(Boolean);
+    if (wants.length) parts.push(whimSection('Wants', 'is-path', wants));
 
-        const term = document.createElement('dt');
-        if (key === 'secret') term.className = 'is-secret';
-        term.textContent = label;
-
-        const value = document.createElement('dd');
-        value.textContent = profile[key];
-
-        list.append(term, value);
+    if (profile.secret) {
+        const grid = document.createElement('div');
+        grid.className = 'mz-whims';
+        grid.append(whimTile('secret', 'Secret', profile.secret, 'mz-i-eye-off'));
+        parts.push(grid);
     }
 
-    return list;
+    return parts;
+}
+
+/** A titled band of tiles under hairline rules. */
+function whimSection(title, kind, tiles) {
+    const section = document.createElement('section');
+    section.className = 'mz-sec';
+
+    const head = document.createElement('h3');
+    head.className = 'mz-sec-t';
+    head.textContent = title;
+
+    const grid = document.createElement('div');
+    grid.className = `mz-whims ${kind}`;
+    grid.append(...tiles);
+
+    section.append(head, grid);
+    return section;
+}
+
+/**
+ * One fact as a tile: the icon, the small label, the value. The look
+ * reads as trait chips — a display-only split on commas; the text
+ * itself is never touched.
+ */
+function whimTile(field, label, value, symbol) {
+    const tile = document.createElement('div');
+    tile.className = 'mz-whim' + (field === 'secret' ? ' is-secret' : '');
+
+    const glyph = document.createElement('span');
+    glyph.className = 'mz-whim-ico';
+    glyph.append(icon(symbol));
+    tile.append(glyph);
+
+    const key = document.createElement('span');
+    key.className = 'mz-whim-k';
+    key.textContent = label;
+    tile.append(key);
+
+    if (field === 'look') {
+        const traits = document.createElement('span');
+        traits.className = 'mz-traits';
+        for (const part of String(value).split(/,\s*/)) {
+            if (!part) continue;
+            const chip = document.createElement('span');
+            chip.className = 'mz-trait';
+            chip.textContent = say(part);
+            traits.append(chip);
+        }
+        tile.append(traits);
+    } else {
+        const val = document.createElement('span');
+        val.className = 'mz-whim-v';
+        val.textContent = say(value);
+        tile.append(val);
+    }
+
+    return tile;
 }
 
 /** The small avatar: the chat's portrait image, or just the initial. */
