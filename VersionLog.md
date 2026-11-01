@@ -1,5 +1,34 @@
 # Meziverse — version log
 
+## 2.2.0 — 2026-11-01
+
+The second feature family — the ledger rails. The story trackers the model already writes into each reply now live on two icon menus beside the narration: story on the right, people on the left.
+
+### Ledger state
+- A tolerant read of the `LEDGER` block: recap, lore, hooks, threads, profiles, shifts, standing and plans rows, in the tag's own order (`goals` rows are collected and never rendered). The ledger is **full state per reply** — parsed, never accumulated. The last complete block of the shown message governs; a turn without one inherits the latest earlier block, labelled "from turn N". A block still streaming is not a block.
+- No row limits are enforced anywhere; display caps are slicing only. Free text is trimmed and never rewritten. `{{user}}` renders as the persona's name.
+
+### The right rail
+- **Threads** — glance boxes with the state riding the sub-line; a click opens the fly with every thread's plot, clock and outcome.
+- **Plans** — one bordered card, due over name at the name's size in the theme accent; tag order is the board, no date sorting (`due` is free text).
+- **Hooks, Lore, Story So Far** — popup-only entries from their glyphs.
+
+### The left rail
+- **The chat log** leads the menu as chrome — its glyph is always visible; the log window itself is the base reader's.
+- **Standing** — how the world sees you on 0–10 tracks: glance cards (name, `N / 10`, change chip, two-tone level bar) above the profiles, and a fly with both ends of the stakes and what moved each track. Change chips are **derived, not remembered**: each block's levels compare against the previous block, so `+1` / `−1` is exactly the movement since the ledger last spoke — correct when scrolling back, and nothing accumulates. A track new to the board wears a small `new`; an unchanged level wears nothing.
+- **Profiles** — mini cards (avatar, name, status) under six; a click opens the full-profile card with the avatar image as head backdrop, every field, and the private thought. Thought bubbles ride one per avatar by name, clamped and click-to-expand, with a per-avatar glyph toggle; a thought with no matching avatar stays unspoken.
+- **Shifts** — one line per pair that moved this turn, bond and desire on two meters. The meters are uncapped (no ceiling, no floor) and each bar's scale is the pair's own recent widest rounded up to the next hundred: 96 grows to 101 / 200, and a pair drifting back keeps the wider scale. Tones flip with the sign — bond goes wary yellow below zero, desire goes its own purple. Deltas come from the tag itself.
+
+### Cards, popups, small screens
+- Every entry pops up beside its own rail — people left, story right — riding over the narration pane. Esc closes card → popup → log → settings.
+- Below 760 px the glance columns hide, every glyph rides a slim second chat-bar line under location/date, and popups open as bottom sheets.
+
+### Notes
+- The version rides beside the wordmark ("Meziverse v2.2.0"); `manifest.json` matches.
+- Fixes along the way: entry popups open beside their own rail (the fly's side was hard-coded right), and synthetic clicks — SillyTavern fires them on the composer while the pane settles — no longer close an open popup.
+- `milestone` rows are ignored for now; the plan doc remembers the idea of firing them from the extension when a meter crosses ±100.
+- The synthetic suite stands at 87 tests.
+
 ## 2.1 — 2026-10-31
 
 The first Meziverse feature family — scene info — and the umbrella every feature now sits under: Meziverse mode.

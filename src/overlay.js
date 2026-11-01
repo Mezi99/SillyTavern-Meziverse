@@ -15,7 +15,7 @@ import { resolveLedger } from './ledger.js';
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr } from './notify.js';
 
-const VERSION = '2.1';
+const VERSION = '2.2.0';
 const PANE_DEFAULT = 300;
 const LOG_W_DEFAULT = 720;
 const LOG_H_SHARE = 0.7;

@@ -13,8 +13,9 @@ Meziverse is an extension, not a fork. SillyTavern stays the engine and the stor
 - **A composer that is SillyTavern's composer** — a growing textarea mirrored with ST's own input box, plus a ☰ menu (start new chat, back to parent chat) and impersonate / continue / send buttons that click ST's own controls. Empty sends, busy gates and drafts behave exactly as in native ST.
 - **Theming** — ink + one metal (jade, amber or rose), Newsreader prose / Inter interface, adjustable narration size, interface scale, reduced motion, custom prose colours, optional ST background.
 - **Notices** — ST's toastr toasts re-render as Meziverse toasts while the scene is open.
+- **Ledger rails** — the story trackers the model writes into each reply (`LEDGER` rows, parsed and never accumulated): threads, plans, hooks, lore and story so far on the right; standing, profiles and shifts on the left. Each entry sits behind its own icon, glance cards run down the frame, and a click opens the full record beside its own rail — full-profile cards with the private thought included. On narrow screens the glyphs ride a slim second chat-bar line and popups open as bottom sheets.
 
-The story trackers (Story, Hooks, Threads, People, Shifts, Standing & Plans) arrive next as ledger panels; the phone is still a placeholder and its buttons do nothing yet.
+The phone is still a placeholder and its buttons do nothing yet.
 
 ## Install
 

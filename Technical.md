@@ -1,6 +1,6 @@
 # Meziverse — how it works
 
-Technical notes for version 2.1. Written for whoever picks this up next — including future us.
+Technical notes for version 2.2.0. Written for whoever picks this up next — including future us.
 
 ## The one rule: Ride SillyTavern
 
@@ -23,22 +23,26 @@ src/
   overlay.js         the fullscreen chrome: headers, settings sheet, composer, menus, toasts
   transcript.js     the reading pane + log window: rendering, edit state machine, message actions
   st.js              the ONLY file that talks to SillyTavern (see below)
-  settings.js        defaults + read/write of extensionSettings.meziverse + modeOn()
+  settings.js        defaults + read/write of extensionSettings.meziverse + modeOn() / entryOn()
   notify.js          notify() helper + toastr interception while the scene is open
   tags.js            tolerant tag tokenizer + stripTags (pure: no DOM, no ST)
   scene.js           scene resolution: last-usable rule, date/time split, location levels, cast names
   prose.js           message text → styled prose + inline scene rows
-  cast.js            the cast strip: posters, per-chat portraits, upload
+  ledger.js          LEDGER parsing: row normalizers, full-state resolution, deltas (pure)
+  dock.js            the ledger rails: icon menus, glance columns, popups, cards, meters
+  cast.js            the cast strip: posters, per-chat portraits, thought bubbles, upload
   icons.js           inline SVG sprite (mz-i-* symbols)
 test/
   tags.test.js       synthetic tokenizer tests
   scene.test.js      synthetic scene tests
+  ledger.test.js     synthetic ledger tests
 css/
   00-primitives.css  colours, fonts, sizes, timings, motion — raw variables
   10-semantics.css   semantic tokens; one block per theme (ink-jade / ink-amber / ink-rose)
   20-shell.css       all chrome: frame, headers, pane, log, composer, menus, toasts, settings
-  30-story.css       scene features: scene rows, cast strip, portrait plates
-style.css            @imports the four sheets (manifest points here)
+  30-story.css       scene features: scene rows, cast strip, portrait plates, thought bubbles
+  40-dock.css        the ledger rails: menus, glance columns, popups, cards, meters
+style.css            @imports the five sheets (manifest points here)
 ```
 
 `st.js` is the seam: every touch of ST internals is supposed to live there (`ctx()`, `whenReady()`, event wiring, and wrappers like `clickComposerControl`, `clickOptionsMenu`, `stComposer`, the edit/swipe/branch/copy/hide wrappers). When ST changes an internal, there is one place to fix.
@@ -64,6 +68,19 @@ The model already emits the state of the story as in-band tags (`scene`, `LEDGER
 One `mode` flag in `settings.js` (default on) behind a single `modeOn()` accessor — the umbrella every feature family checks (`prose.js` rows, `cast.js` strip, `overlay.js` chrome). Off means a non-Meziverse preset is in play: tags are still stripped from the prose, but no decoration is drawn, the scene cluster, rows and cast step aside, and the chat-bar is left empty — placeholders would promise scene info that can never arrive.
 
 The switch rides in the header beside the wordmark as a small pill; flipping it redraws the turn at once and persists in extension settings. Phase 5 binds `modeOn()` to the owned preset — only what feeds the accessor changes, never a feature file.
+
+## The ledger rails (the second feature family)
+
+Each reply may close with a `LEDGER` block — the model's full story state as row tags (`recap`, `lore`, `hook`, `thread`, `goals`, `profile`, `shift`, `standing`, `plan`; see the plan doc's tag catalogue). Meziverse only reads it; the model writes it.
+
+- **Parsing is pure and full-state.** `ledger.js` resolves the governing ledger per turn: the last complete `LEDGER` block of the shown message; a turn without one inherits the latest earlier block, labelled "from turn N". A block still streaming is not a block — it falls back rather than showing half its rows. Rows are normalized per catalogue, trimmed and never rewritten, in the tag's own order, and **no row limits are enforced** (display caps are slicing only). `goals` rows are collected and never rendered.
+- **Deltas are derived, not remembered.** Standing levels compare against the previous ledger block (`withStandingDeltas`), so each block's signed chips are correct when scrolling back through the chat and nothing accumulates. Shift deltas are different: the tag writes this turn's movement itself (`delta` / `ddelta`), so they are read as written. The shift meters are uncapped (no ceiling, no floor), and each bar's scale is the pair's own recent widest — the total and the one before it — rounded up to the next hundred (`meterMax`), so 101 reads as 101 / 200.
+- **The rails** (`dock.js`) are one icon menu per side plus glance columns down the frame: right = threads and a single bordered PLANS card (hooks, lore and story so far are popup-only), left = the chat log first (chrome), then standing, profiles and shifts. An `ENTRIES` registry carries each entry's title, side, box cap and renderers. Nothing draws unless `modeOn() && entryOn(key)` and the entry has rows — no rows, no rail, no placeholder promises. The future mode-features menu flips the switches in `settings().entries`.
+- **Popups ride over the narration pane** and open beside their own rail — people left, story right. The fly holds every record of one entry; a profile opens as a full card (the avatar image as head backdrop, every field, the private thought; a reserved foot for relevant shifts later). Esc closes card → popup → log → settings.
+- **Text is display text**: `{{user}}` renders as the persona's name; every other value shows exactly as written, with no normalizers on free-text fields. Numbers wear signed tabular numerals; every tone comes from theme tokens.
+- **Mobile** (< 760 px): glance columns hide, every glyph rides a slim second chat-bar line under location/date, and popups open as bottom sheets.
+
+Prompt work — pushing this state back at the model — stays out until the preset phase.
 
 ## The composer
 
@@ -103,6 +120,6 @@ While the scene is open, ST's `toastr` is intercepted: `notify.js` swaps in func
 - Before shipping: `node --check` every `src/*.js` (copy to temp, rename `.mjs`), brace-balance the CSS, then push → `git pull` in the deployment clone → reload the tab and confirm the served file actually changed (a reload can silently fail in an embedded browser).
 - ST formatter output to expect: `<p>` wrapper, `<br>` newlines, `<q>`, `<em>`, `<strong>`.
 
-## The next layer (not built yet)
+## What comes next (not built yet)
 
-The **M-series** trackers — Story, Hooks, Threads, People, Shifts, Standing & Plans — arrive next as the **ledger panels**, rendered from the `LEDGER` block the model already emits (full state per reply, parsed, never accumulated). They ride the same principle: state in `chatMetadata.meziverse` (per chat, saved by ST), later injected into the prompt via `ctx().setExtensionPrompt('meziverse_state', …)` — though prompt work stays out until the preset phase. The phone is the intended UI, and its buttons are placeholders for now. See `LocalHelpFiles/Frame VN Tracker Extension (Design Spec v0.1).md` — that spec is authoritative for the M-series.
+The **inline pieces** — speech bubbles, deception (lie), omniscience (filter), memories (flashback), parallel scenes (meanwhile) — then backgrounds, then the preset phase: mode ownership, trim, Features/Style, and the prompt work (`ctx().setExtensionPrompt('meziverse_state', …)`) where the state Meziverse already parses gets pushed back at the model. Milestone firing (`shift` totals crossing ±100) is deliberately unimplemented: the idea is to detect the crossing in the extension and fire it from there rather than trust prompt memory. The phone is the intended UI, and its buttons are placeholders for now. See `LocalHelpFiles/Frame VN Tracker Extension (Design Spec v0.1).md` — that spec is authoritative for the M-series.
