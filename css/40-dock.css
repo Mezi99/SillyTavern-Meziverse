@@ -342,37 +342,7 @@ button.mz-g--quiet:hover .mz-g-t { color: var(--mz-accent); }
     box-shadow: inset 0 0 0 1px var(--mz-line);
 }
 
-/* shifts: two uncapped meters, so numerals + signed delta, no bars */
-.mz-pair { display: flex; align-items: baseline; gap: 6px; }
-.mz-pair b { font-weight: 500; }
-.mz-pair em { font-style: normal; color: var(--mz-accent); }
-.mz-meters { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 7px; }
-.mz-meter {
-    padding: 6px 9px 7px;
-    border-radius: var(--mz-r-sm);
-    background: var(--mz-surface-2);
-    box-shadow: inset 0 0 0 1px var(--mz-line);
-}
-.mz-meter .mz-label { font-size: var(--mz-text-2xs); }
-.mz-meter-n {
-    display: flex;
-    align-items: baseline;
-    gap: 7px;
-    font-family: var(--mz-font-prose);
-    font-size: 22px;
-    line-height: 1.15;
-    font-variant-numeric: tabular-nums;
-}
-.mz-meter.is-desire .mz-meter-n { color: var(--mz-tone-desire); }
-.mz-delta { font: 500 var(--mz-text-xs) var(--mz-font-ui); color: var(--mz-text-dim); }
-.mz-delta.is-up { color: var(--mz-ok); }
-.mz-delta.is-down { color: var(--mz-bad); }
-
-/* standing: 0-10 scale; the stakes name both ends */
-.mz-scale { display: grid; grid-template-columns: repeat(11, 1fr); gap: 2px; margin-top: 6px; }
-.mz-scale i { height: 5px; border-radius: 1px; background: var(--mz-line-strong); }
-.mz-scale i.on { background: var(--mz-accent-line); }
-.mz-scale i.at { background: var(--mz-accent); height: 9px; margin-top: -2px; }
+/* standing: the stakes name both ends */
 .mz-ends {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -444,24 +414,23 @@ button.mz-g--quiet:hover .mz-g-t { color: var(--mz-accent); }
     white-space: nowrap;
 }
 
-/* standing tracks: the name over the level bar, the number and the
-   change on the name's line. The bar is a track of ten whose tone
+/* standing tracks, quiet like the threads: the name with its change
+   bubble over the level bar, the level pinned at the right — always
+   the same spot, chip or no chip. The bar is a track of ten whose tone
    turns at the halfway mark — below five is the bad end of the stakes */
 .mz-stand {
     display: block;
-    padding: 9px 12px 11px;
     cursor: pointer;
 }
-.mz-stand:hover { border-color: var(--mz-line-strong); }
 .mz-stand-row {
     display: flex;
     align-items: baseline;
     gap: 8px;
 }
 .mz-stand-name {
-    flex: 1;
+    flex: 0 1 auto;
     min-width: 0;
-    color: var(--mz-accent);
+    color: var(--mz-text);
 }
 .mz-stand-level {
     flex: none;
@@ -474,6 +443,13 @@ button.mz-g--quiet:hover .mz-g-t { color: var(--mz-accent); }
     font: 500 var(--mz-text-xs) var(--mz-font-ui);
     font-variant-numeric: tabular-nums;
     color: var(--mz-text-muted);
+}
+/* on the rail the level wears the theme's colour and pins right; in
+   the fly it keeps the record's quiet grey */
+.mz-g .mz-stand-num {
+    flex: none;
+    margin-left: auto;
+    color: var(--mz-accent);
 }
 .mz-stand-bar {
     display: block;
@@ -503,6 +479,23 @@ button.mz-g--quiet:hover .mz-g-t { color: var(--mz-accent); }
 .mz-delta.is-down { color: var(--mz-bad); }
 .mz-delta.is-new { font-style: italic; }
 
+/* the change bubble: the mockup's notification badge — the colour on
+   the pill, the signed number white inside */
+.mz-delta-b {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 5px;
+    border-radius: var(--mz-r-pill);
+    background: color-mix(in srgb, var(--mz-ok) 22%, transparent);
+    color: var(--mz-text);
+    font: 600 var(--mz-text-2xs) / 1 var(--mz-font-ui);
+    font-variant-numeric: tabular-nums;
+}
+.mz-delta-b.is-down { background: color-mix(in srgb, var(--mz-bad) 22%, transparent); }
+
 /* the stakes' two ends: what 0 costs, what 10 buys */
 .mz-ends {
     display: grid;
@@ -520,21 +513,20 @@ button.mz-g--quiet:hover .mz-g-t { color: var(--mz-accent); }
 }
 .mz-ends div:last-child { text-align: right; }
 
-/* shifts: the pair over its two meters — bond and desire, each a slim
-   bar with the total and this turn's move. The bar's full width is the
-   pair's own recent widest (the total and the one before it, rounded
-   up to the next hundred), so the meters run past 100 uncapped. The
-   tone flips with the sign: a bond below zero goes wary yellow, a
-   desire below zero goes its own purple */
+/* shifts, quiet like every meter row: the pair over its two meters —
+   bond and desire, each a glyph and a slim bar with the change bubble
+   in a fixed slot. The bar's full width is the pair's own recent
+   widest (the total and the one before it, rounded up to the next
+   hundred), so the meters run past 100 uncapped. The tone flips with
+   the sign: a bond below zero goes wary yellow, a desire below zero
+   goes its own purple */
 .mz-shift {
     display: block;
-    padding: 9px 12px 11px;
     cursor: pointer;
 }
-.mz-shift:hover { border-color: var(--mz-line-strong); }
 .mz-shift-pair {
     display: block;
-    color: var(--mz-accent);
+    color: var(--mz-text);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -544,6 +536,18 @@ button.mz-g--quiet:hover .mz-g-t { color: var(--mz-accent); }
     align-items: center;
     gap: 8px;
     margin-top: 6px;
+}
+.mz-meter-ic {
+    flex: none;
+    width: 14px;
+    height: 14px;
+    color: var(--mz-text-dim);
+}
+.mz-meter-slot {
+    flex: none;
+    width: 30px;
+    display: flex;
+    justify-content: flex-end;
 }
 .mz-meter-l {
     flex: none;

@@ -672,6 +672,28 @@ function deltaChip(value) {
     return chip;
 }
 
+/**
+ * The change bubble: the mockup's notification badge — the colour on
+ * the pill, the signed number white inside. A track new to the board
+ * keeps its small italic word instead; an unchanged meter wears
+ * nothing.
+ */
+function deltaBubble(value) {
+    const chip = document.createElement('span');
+
+    if (value === 'new') {
+        chip.className = 'mz-delta is-new';
+        chip.textContent = 'new';
+        return chip;
+    }
+
+    if (typeof value !== 'number' || value === 0) return null;
+
+    chip.className = 'mz-delta-b' + (value > 0 ? ' is-up' : ' is-down');
+    chip.textContent = value > 0 ? `+${value}` : `−${Math.abs(value)}`;
+    return chip;
+}
+
 /** The level and its change on one line, right of the name. */
 function levelLine(standing) {
     const wrap = document.createElement('span');
@@ -690,13 +712,14 @@ function levelLine(standing) {
 }
 
 /**
- * A rail box: the track's name and its level as a bar, the number and
- * the change beside it. The rest of the record lives in the fly.
+ * A rail box: the track's name with its change beside it, the level
+ * pinned at the right — always the same spot, chip or no chip — and
+ * the bar beneath. The rest of the record lives in the fly.
  */
 function standingBox(standing) {
     const card = document.createElement('button');
     card.type = 'button';
-    card.className = 'mz-g mz-stand';
+    card.className = 'mz-g mz-g--quiet mz-stand';
     card.dataset.mzDock = 'standing';
 
     const txt = document.createElement('span');
@@ -708,10 +731,19 @@ function standingBox(standing) {
     const name = document.createElement('span');
     name.className = 'mz-g-t mz-stand-name';
     name.textContent = say(standing.name || standing.track);
+    row.append(name);
 
-    row.append(name, levelLine(standing));
+    const chip = deltaBubble(standing.delta);
+    if (chip) row.append(chip);
+
+    if (standing.level !== null) {
+        const num = document.createElement('span');
+        num.className = 'mz-stand-num';
+        num.textContent = `${standing.level} / 10`;
+        row.append(num);
+    }
+
     txt.append(row);
-
     if (standing.level !== null) txt.append(levelBar(standing));
 
     card.append(txt);
@@ -991,22 +1023,37 @@ function openProfileCard(index) {
 
 /* ---------- one shift ---------- */
 
+/** A meter total as display text: `+101 / 200`, signed and scaled. */
+function meterNum(total, max) {
+    const sign = total > 0 ? '+' : total < 0 ? '−' : '';
+    return `${sign}${Math.abs(total)} / ${max}`;
+}
+
 /**
- * One meter of a pair: the label, the slim bar, the total and this
- * turn's move. The bar's full width is the pair's own recent widest —
- * the total and the one before it — rounded up to the next hundred,
- * so 101 reads as 101 / 200 and nothing caps the meters. The tone
- * flips with the sign: a bond spent below zero goes wary yellow, a
- * desire below zero goes its own purple.
+ * One meter of a pair. On the rail: the glyph, the slim bar taking all
+ * the room the totals used to hold, and the change bubble in a fixed
+ * slot — so the bar never grows or shrinks with the chip — with the
+ * total on hover. In the fly: the word, the bar, the total and the
+ * change, all of it on one line.
+ *
+ * The bar's full width is the pair's own recent widest — the total and
+ * the one before it — rounded up to the next hundred, so 101 reads as
+ * 101 / 200 and nothing caps the meters. The tone flips with the sign:
+ * a bond spent below zero goes wary yellow, a desire below zero goes
+ * its own purple.
  */
-function meterStrip(kind, total, delta) {
+function meterStrip(kind, total, delta, full) {
     const strip = document.createElement('div');
     strip.className = 'mz-meter' + (kind === 'desire' ? ' is-desire' : '');
 
-    const label = document.createElement('span');
-    label.className = 'mz-meter-l';
-    label.textContent = kind;
-    strip.append(label);
+    if (full) {
+        const label = document.createElement('span');
+        label.className = 'mz-meter-l';
+        label.textContent = kind;
+        strip.append(label);
+    } else {
+        strip.append(icon(kind === 'desire' ? 'mz-i-desire' : 'mz-i-bond', 'mz-meter-ic'));
+    }
 
     if (total !== null) {
         const max = meterMax(total, delta);
@@ -1019,15 +1066,28 @@ function meterStrip(kind, total, delta) {
         bar.append(fill);
         strip.append(bar);
 
-        const num = document.createElement('span');
-        num.className = 'mz-meter-num';
-        const sign = total > 0 ? '+' : total < 0 ? '−' : '';
-        num.textContent = `${sign}${Math.abs(total)} / ${max}`;
-        strip.append(num);
+        if (full) {
+            const num = document.createElement('span');
+            num.className = 'mz-meter-num';
+            num.textContent = meterNum(total, max);
+            strip.append(num);
+        } else {
+            strip.title = `${kind} ${meterNum(total, max)}`;
+        }
     }
 
-    const chip = deltaChip(delta);
-    if (chip) strip.append(chip);
+    if (full) {
+        const chip = deltaChip(delta);
+        if (chip) strip.append(chip);
+    } else {
+        const slot = document.createElement('span');
+        slot.className = 'mz-meter-slot';
+
+        const bubble = deltaBubble(delta);
+        if (bubble) slot.append(bubble);
+        strip.append(slot);
+    }
+
     return strip;
 }
 
@@ -1044,7 +1104,7 @@ function pairLine(shift) {
 function shiftBox(shift) {
     const card = document.createElement('button');
     card.type = 'button';
-    card.className = 'mz-g mz-shift';
+    card.className = 'mz-g mz-g--quiet mz-shift';
     card.dataset.mzDock = 'shifts';
 
     const txt = document.createElement('span');
@@ -1088,8 +1148,8 @@ function shiftRecord(shift) {
     const meters = document.createElement('div');
     meters.className = 'mz-meters';
     meters.append(
-        meterStrip('bond', shift.bondTotal, shift.delta),
-        meterStrip('desire', shift.desireTotal, shift.ddelta),
+        meterStrip('bond', shift.bondTotal, shift.delta, true),
+        meterStrip('desire', shift.desireTotal, shift.ddelta, true),
     );
     item.append(meters);
 
