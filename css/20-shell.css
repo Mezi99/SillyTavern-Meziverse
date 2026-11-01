@@ -131,7 +131,11 @@ body.mz-open .popup { z-index: 9500 !important; }
 .mz-frame.is-bg-st .mz-bg {
     background-color: var(--mz-bg);
     background-image:
-        linear-gradient(180deg, rgba(6, 8, 10, .42), rgba(6, 8, 10, .74)),
+        linear-gradient(
+            180deg,
+            color-mix(in srgb, var(--mz-scrim-ink) 42%, transparent),
+            color-mix(in srgb, var(--mz-scrim-ink) 74%, transparent)
+        ),
         var(--mz-st-bg, none);
     background-position: center, center;
     background-size: cover, cover;
@@ -146,9 +150,9 @@ body.mz-open .popup { z-index: 9500 !important; }
     z-index: 1;
     pointer-events: none;
     background:
-        linear-gradient(180deg, rgba(6, 8, 10, .82) 0%, rgba(6, 8, 10, .12) 18%, transparent 42%),
-        linear-gradient(0deg, rgba(6, 8, 10, .78) 0%, rgba(6, 8, 10, .10) 42%, transparent 62%),
-        radial-gradient(120% 90% at 50% 46%, transparent 42%, rgba(4, 5, 7, .55) 100%);
+        linear-gradient(180deg, color-mix(in srgb, var(--mz-scrim-ink) 82%, transparent) 0%, color-mix(in srgb, var(--mz-scrim-ink) 12%, transparent) 18%, transparent 42%),
+        linear-gradient(0deg, color-mix(in srgb, var(--mz-scrim-ink) 78%, transparent) 0%, color-mix(in srgb, var(--mz-scrim-ink) 10%, transparent) 42%, transparent 62%),
+        radial-gradient(120% 90% at 50% 46%, transparent 42%, color-mix(in srgb, var(--mz-scrim-ink) 55%, transparent) 100%);
 }
 
 /* ---------- meziverse header (34px) ---------- */
@@ -1159,95 +1163,427 @@ body.mz-open .popup { z-index: 9500 !important; }
 
 /* ---------- the full profile card ---------- */
 
-/* A character's whole dossier on one surface above everything: the
-   avatar image as the head's backdrop where there is one, then the
-   record in theme colors. The relevant shifts join the body here. */
+/* A character's whole dossier on one surface above everything: a header
+   "scene" — the avatar figure standing in a spotlight where there is
+   one, the name over the state over the private thought — then the
+   record as its own little tiles. Everything in the card is Inter: the
+   prose font is re-pointed here. */
 .mz-card {
+    --mz-font-prose: var(--mz-font-ui);
     position: absolute;
     z-index: var(--mz-z-sheet);
     top: 50%;
     left: 50%;
     display: none;
-    width: min(520px, calc(100% - 64px));
+    width: min(540px, calc(100% - 64px));
     max-height: calc(100% - 96px);
     overflow: auto;
     border: 1px solid var(--mz-line-strong);
     border-radius: var(--mz-r-lg);
     background: var(--mz-surface-solid);
-    box-shadow: var(--mz-shadow);
+    box-shadow: 0 44px 110px -30px rgba(0, 0, 0, .92), inset 0 1px 0 rgba(255, 255, 255, .08);
     transform: translate(-50%, -50%);
     scrollbar-width: thin;
 }
 
 .mz-frame.is-card-open .mz-card {
     display: block;
-    animation: mz-sheet-in var(--mz-dur) var(--mz-ease);
+    animation: mz-card-in .5s cubic-bezier(.2, .9, .25, 1.1) both;
 }
 
+@keyframes mz-card-in {
+    from { opacity: 0; transform: translate(-50%, calc(-50% + 18px)) scale(.96); }
+    to { opacity: 1; transform: translate(-50%, -50%); }
+}
+
+/* THE SCENE. No avatar image: a quiet text header (name, state, thought).
+   With one: the figure stands on the right in a spotlight, the text on
+   the left. */
 .mz-card-band {
     position: relative;
-    min-height: 138px;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-end;
-    padding: 20px 22px 16px;
+    display: block;
+    min-height: 0;
+    padding: 34px 32px 6px;
     overflow: hidden;
-    background: linear-gradient(180deg, color-mix(in srgb, var(--mz-accent) 12%, transparent), transparent);
+    background: radial-gradient(90% 130% at 12% -10%, color-mix(in srgb, var(--mz-accent) 15%, transparent), transparent 70%);
+}
+
+.mz-card-band::after { background: none; }
+
+.mz-card-band:has(.mz-card-img) {
+    min-height: 318px;
+    padding-bottom: 30px;
+    background:
+        radial-gradient(52% 80% at 79% 30%, color-mix(in srgb, var(--mz-accent) 22%, transparent), transparent 72%),
+        radial-gradient(80% 120% at 8% -10%, color-mix(in srgb, var(--mz-accent) 9%, transparent), transparent 70%);
+}
+
+/* the scrim hands the figure over to the card */
+.mz-card-band:has(.mz-card-img)::after {
+    background:
+        linear-gradient(90deg, var(--mz-surface-solid), color-mix(in srgb, var(--mz-surface-solid) 78%, transparent) 36%, transparent 66%),
+        linear-gradient(180deg, transparent 66%, var(--mz-surface-solid));
 }
 
 .mz-card-img {
     position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    object-position: 50% 18%;
+    inset: auto;
+    top: -14px;
+    right: -6px;
+    width: auto;
+    height: 450px;
+    max-width: none;
+    object-fit: contain;
+    object-position: 100% 0;
+    filter: drop-shadow(0 12px 28px rgba(0, 0, 0, .5));
+    -webkit-mask-image: linear-gradient(180deg, #000 56%, transparent 94%);
+    mask-image: linear-gradient(180deg, #000 56%, transparent 94%);
+    animation: mz-card-fig .8s .1s var(--mz-ease) both;
 }
 
-/* the scrim hands the image over to the card */
-.mz-card-band::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(
-        180deg,
-        color-mix(in srgb, var(--mz-surface-solid) 8%, transparent) 0%,
-        color-mix(in srgb, var(--mz-surface-solid) 55%, transparent) 58%,
-        var(--mz-surface-solid) 100%
-    );
+@keyframes mz-card-fig {
+    from { opacity: 0; transform: translateX(28px) scale(.98); }
 }
 
 .mz-card-head {
     position: relative;
     z-index: 1;
 }
-.mz-card-head h2 {
-    font-family: var(--mz-font-prose);
-    font-size: var(--mz-text-2xl);
-    font-weight: 400;
-    letter-spacing: .01em;
-    color: var(--mz-accent);
+
+.mz-card-band:has(.mz-card-img) .mz-card-head {
+    max-width: min(318px, 62%);
 }
-.mz-card-sub {
-    margin: 4px 0 0;
-    font-family: var(--mz-font-prose);
-    font-size: var(--mz-text-md);
-    line-height: 1.45;
+
+.mz-card-head h2 {
+    margin: 0;
+    font: 600 32px/1.05 var(--mz-font-ui);
+    letter-spacing: -.025em;
     color: var(--mz-text);
+    animation: mz-card-up .5s .1s var(--mz-ease) both;
+}
+
+.mz-card-sub {
+    display: block;
+    margin: 10px 0 0;
+    max-width: 36ch;
+    font: 400 14px/1.5 var(--mz-font-ui);
+    letter-spacing: -.005em;
+    color: color-mix(in srgb, var(--mz-text) 78%, transparent);
+    animation: mz-card-up .5s .18s var(--mz-ease) both;
+}
+
+/* a quiet live dot: this is how they are right now */
+.mz-card-sub::before {
+    content: "";
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    margin: 0 9px 2px 0;
+    border-radius: 50%;
+    background: var(--mz-accent);
+    animation: mz-card-pulse 2.6s ease-out infinite;
+}
+
+@keyframes mz-card-pulse {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--mz-accent) 55%, transparent); }
+    70%, 100% { box-shadow: 0 0 0 7px transparent; }
+}
+
+@keyframes mz-card-up {
+    from { opacity: 0; transform: translateY(8px); }
+}
+
+/* the thought: forms like a spoken bubble — trail, bloom, waving dots,
+   words — then floats gently. The trail only exists when there is a
+   figure to lead to. */
+.mz-card-head .mz-thought {
+    --mz-th-fill: color-mix(in srgb, var(--mz-surface-solid) 96%, transparent);
+    --mz-th-ring: var(--mz-accent-line);
+    position: relative;
+    display: block;
+    width: fit-content;
+    max-width: 100%;
+    margin: 20px 0 0;
+    padding: 12px 17px 13px;
+    border: 1px solid var(--mz-accent-line);
+    border-radius: 22px;
+    font: 400 13.5px/1.5 var(--mz-font-ui);
+    letter-spacing: -.005em;
+    text-wrap: pretty;
+    color: var(--mz-text);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, .08), transparent 46%),
+        color-mix(in srgb, var(--mz-bg) 70%, transparent);
+    backdrop-filter: var(--mz-blur);
+    box-shadow: 0 14px 30px -16px rgba(0, 0, 0, .85), inset 0 1px 0 rgba(255, 255, 255, .1);
+    transform-origin: 14% 100%;
+    animation:
+        mz-th-bloom .5s .55s cubic-bezier(.34, 1.5, .5, 1) both,
+        mz-th-ink .45s 1.3s both,
+        mz-th-float 6.5s ease-in-out 2.1s infinite,
+        mz-th-glow 4.5s ease-in-out 2.1s infinite;
+}
+
+@keyframes mz-th-bloom {
+    from { opacity: 0; transform: scale(.4); }
+    to { opacity: 1; transform: none; }
+}
+
+@keyframes mz-th-ink {
+    from { color: transparent; }
+}
+
+.mz-card-head .mz-thought::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 4px;
+    height: 4px;
+    margin: -2px 0 0 -20px;
+    border-radius: 50%;
+    color: var(--mz-text-muted);
+    pointer-events: none;
+    box-shadow: 9px 0 0 0 currentColor, 18px 0 0 0 currentColor, 27px 0 0 0 currentColor;
+    animation: mz-th-dots 1.15s .7s both;
+}
+
+@keyframes mz-th-dots {
+    0% { opacity: 0; box-shadow: 9px 0 0 0 currentColor, 18px 0 0 0 currentColor, 27px 0 0 0 currentColor; }
+    12% { opacity: 1; }
+    30% { box-shadow: 9px -3px 0 0 currentColor, 18px 0 0 0 currentColor, 27px 0 0 0 currentColor; }
+    50% { box-shadow: 9px 0 0 0 currentColor, 18px -3px 0 0 currentColor, 27px 0 0 0 currentColor; }
+    70% { box-shadow: 9px 0 0 0 currentColor, 18px 0 0 0 currentColor, 27px -3px 0 0 currentColor; }
+    88% { opacity: 1; box-shadow: 9px 0 0 0 currentColor, 18px 0 0 0 currentColor, 27px 0 0 0 currentColor; }
+    100% { opacity: 0; }
+}
+
+/* the trail only exists when there is a figure to lead to */
+.mz-card-band:has(.mz-card-img) .mz-thought::after {
+    content: "";
+    position: absolute;
+    left: 100%;
+    top: 3px;
+    width: 10px;
+    height: 10px;
+    margin-left: 5px;
+    border-radius: 50%;
+    border: 1px solid var(--mz-th-ring);
+    background: var(--mz-th-fill);
+    box-shadow: 14px -7px 0 -2px var(--mz-th-fill), 14px -7px 0 -1px var(--mz-th-ring), 26px -16px 0 -3px var(--mz-th-fill), 26px -16px 0 -2px var(--mz-th-ring);
+    animation: mz-th-trail .7s .2s var(--mz-ease) both, mz-th-trail-idle 3.6s 1.4s ease-in-out infinite;
+}
+
+@keyframes mz-th-trail {
+    0% {
+        background-color: transparent;
+        border-color: transparent;
+        box-shadow: 14px -7px 0 -9px var(--mz-th-fill), 14px -7px 0 -9px var(--mz-th-ring), 26px -16px 0 -9px var(--mz-th-fill), 26px -16px 0 -9px var(--mz-th-ring);
+    }
+    35% {
+        background-color: transparent;
+        border-color: transparent;
+        box-shadow: 14px -7px 0 -3px var(--mz-th-fill), 14px -7px 0 -2px var(--mz-th-ring), 26px -16px 0 -9px var(--mz-th-fill), 26px -16px 0 -9px var(--mz-th-ring);
+    }
+    70% {
+        background-color: transparent;
+        border-color: transparent;
+        box-shadow: 14px -7px 0 -2px var(--mz-th-fill), 14px -7px 0 -1px var(--mz-th-ring), 26px -16px 0 -3px var(--mz-th-fill), 26px -16px 0 -2px var(--mz-th-ring);
+    }
+    100% {
+        background-color: var(--mz-th-fill);
+        border-color: var(--mz-th-ring);
+        box-shadow: 14px -7px 0 -2px var(--mz-th-fill), 14px -7px 0 -1px var(--mz-th-ring), 26px -16px 0 -3px var(--mz-th-fill), 26px -16px 0 -2px var(--mz-th-ring);
+    }
+}
+
+@keyframes mz-th-trail-idle {
+    0%, 100% { box-shadow: 14px -7px 0 -2px var(--mz-th-fill), 14px -7px 0 -1px var(--mz-th-ring), 26px -16px 0 -3px var(--mz-th-fill), 26px -16px 0 -2px var(--mz-th-ring); }
+    25% { box-shadow: 14px -7px 0 -2px var(--mz-th-fill), 14px -7px 0 -1px var(--mz-th-ring), 26px -16px 0 -2px var(--mz-th-fill), 26px -16px 0 -1px var(--mz-th-ring); }
+    50% { box-shadow: 14px -7px 0 -.5px var(--mz-th-fill), 14px -7px 0 .5px var(--mz-th-ring), 26px -16px 0 -3px var(--mz-th-fill), 26px -16px 0 -2px var(--mz-th-ring); }
+}
+
+@keyframes mz-th-float {
+    50% { translate: 0 -3px; }
+}
+
+@keyframes mz-th-glow {
+    0%, 100% { box-shadow: 0 14px 30px -16px rgba(0, 0, 0, .85), inset 0 1px 0 rgba(255, 255, 255, .1), 0 0 0 0 transparent; }
+    50% { box-shadow: 0 14px 30px -16px rgba(0, 0, 0, .85), inset 0 1px 0 rgba(255, 255, 255, .1), 0 0 24px -6px var(--mz-accent); }
 }
 
 .mz-card-close {
     position: absolute;
-    z-index: 2;
-    top: 10px;
-    right: 10px;
+    z-index: 3;
+    top: 16px;
+    right: 16px;
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--mz-line);
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--mz-bg) 55%, transparent);
+    backdrop-filter: var(--mz-blur);
+    transition: transform .3s var(--mz-ease);
 }
 
+.mz-card-close:hover { transform: rotate(90deg); }
+
+/* the record */
 .mz-card-body {
     display: grid;
-    gap: 12px;
-    padding: 14px 22px 22px;
+    gap: 18px;
+    padding: 20px 30px 30px;
 }
+
+/* body: titled sections, then tiles */
+.mz-sec {
+    display: grid;
+    gap: 9px;
+}
+
+.mz-sec-t {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    font: 500 var(--mz-text-2xs)/1 var(--mz-font-ui);
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--mz-text-dim);
+}
+
+.mz-sec-t::before,
+.mz-sec-t::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--mz-line-strong));
+}
+.mz-sec-t::after { transform: scaleX(-1); }
+
+.mz-whims {
+    display: grid;
+    gap: 8px;
+}
+.mz-whims.is-pair { grid-template-columns: 1fr 1fr; }
+
+.mz-whim {
+    position: relative;
+    display: grid;
+    grid-template-columns: 34px 1fr;
+    gap: 3px 12px;
+    align-items: start;
+    padding: 11px 14px;
+    border-radius: 20px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, .05), rgba(255, 255, 255, .01)), var(--mz-surface-2);
+    box-shadow: inset 0 0 0 1px var(--mz-line);
+    transition: transform .25s var(--mz-ease), box-shadow .25s var(--mz-ease);
+    animation: mz-fact-in .5s var(--mz-ease) both;
+}
+
+.mz-whim:hover {
+    transform: translateY(-2px);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--mz-accent) 35%, transparent), 0 14px 26px -16px rgba(0, 0, 0, .8);
+}
+
+.mz-whims.is-pair .mz-whim { grid-template-columns: 1fr; }
+.mz-whims.is-pair .mz-whim-ico { display: none; }
+
+.mz-whim-ico {
+    grid-row: span 2;
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    color: var(--mz-accent);
+    background: color-mix(in srgb, var(--mz-accent) 14%, transparent);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18);
+    transition: background .25s, color .25s;
+}
+
+.mz-whim:hover .mz-whim-ico {
+    background: var(--mz-accent);
+    color: var(--mz-bg);
+}
+
+.mz-whim-ico .ico { width: 17px; height: 17px; }
+
+.mz-whim-k {
+    align-self: end;
+    font: 500 var(--mz-text-2xs)/1 var(--mz-font-ui);
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--mz-text-dim);
+}
+
+.mz-whim-v {
+    font: 400 13.5px/1.5 var(--mz-font-ui);
+    letter-spacing: -.005em;
+    color: color-mix(in srgb, var(--mz-text) 92%, transparent);
+}
+.mz-whims.is-pair .mz-whim-v { font-size: 13px; }
+
+/* wants read as a ladder: each tile hangs from the one above */
+.mz-whims.is-path .mz-whim:not(:last-child)::after {
+    content: "";
+    position: absolute;
+    left: 30px;
+    top: 100%;
+    width: 1px;
+    height: 8px;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--mz-accent) 45%, transparent), transparent);
+}
+
+/* look as trait chips */
+.mz-traits {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 3px;
+}
+
+.mz-trait {
+    padding: 3px 10px;
+    border-radius: var(--mz-r-pill);
+    font: 400 12px/1.3 var(--mz-font-ui);
+    color: var(--mz-text);
+    background: color-mix(in srgb, var(--mz-accent) 10%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--mz-accent) 26%, transparent);
+    animation: mz-chip-in .4s var(--mz-ease) both;
+}
+
+@keyframes mz-chip-in {
+    from { opacity: 0; transform: scale(.85); }
+}
+
+.mz-traits .mz-trait:nth-child(2) { animation-delay: .34s; }
+.mz-traits .mz-trait:nth-child(3) { animation-delay: .4s; }
+.mz-traits .mz-trait:nth-child(n+4) { animation-delay: .46s; }
+
+/* the secret wears the desire tone */
+.mz-whim.is-secret {
+    background: color-mix(in srgb, var(--mz-tone-desire) 9%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--mz-tone-desire) 24%, transparent);
+}
+
+.mz-whim.is-secret .mz-whim-ico {
+    color: var(--mz-tone-desire);
+    background: color-mix(in srgb, var(--mz-tone-desire) 18%, transparent);
+}
+
+.mz-whim.is-secret .mz-whim-v { font-style: italic; }
+
+@keyframes mz-fact-in {
+    from { opacity: 0; transform: translateY(8px); }
+}
+
+.mz-sec:nth-child(1) .mz-whim:nth-child(1) { animation-delay: .2s; }
+.mz-sec:nth-child(1) .mz-whim:nth-child(2) { animation-delay: .26s; }
+.mz-sec:nth-child(2) .mz-whim:nth-child(1) { animation-delay: .32s; }
+.mz-sec:nth-child(2) .mz-whim:nth-child(2) { animation-delay: .38s; }
+.mz-sec:nth-child(2) .mz-whim:nth-child(3) { animation-delay: .44s; }
+.mz-card-body > .mz-whims .mz-whim { animation-delay: .5s; }
 
 /* ---------- settings sheet ---------- */
 .mz-sheet {

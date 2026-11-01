@@ -672,6 +672,28 @@ function deltaChip(value) {
     return chip;
 }
 
+/**
+ * The change bubble: the mockup's notification badge — the colour on
+ * the pill, the signed number white inside. A track new to the board
+ * keeps its small italic word instead; an unchanged meter wears
+ * nothing.
+ */
+function deltaBubble(value) {
+    const chip = document.createElement('span');
+
+    if (value === 'new') {
+        chip.className = 'mz-delta is-new';
+        chip.textContent = 'new';
+        return chip;
+    }
+
+    if (typeof value !== 'number' || value === 0) return null;
+
+    chip.className = 'mz-delta-b' + (value > 0 ? ' is-up' : ' is-down');
+    chip.textContent = value > 0 ? `+${value}` : `−${Math.abs(value)}`;
+    return chip;
+}
+
 /** The level and its change on one line, right of the name. */
 function levelLine(standing) {
     const wrap = document.createElement('span');
@@ -690,13 +712,14 @@ function levelLine(standing) {
 }
 
 /**
- * A rail box: the track's name and its level as a bar, the number and
- * the change beside it. The rest of the record lives in the fly.
+ * A rail box: the track's name with its change beside it, the level
+ * pinned at the right — always the same spot, chip or no chip — and
+ * the bar beneath. The rest of the record lives in the fly.
  */
 function standingBox(standing) {
     const card = document.createElement('button');
     card.type = 'button';
-    card.className = 'mz-g mz-stand';
+    card.className = 'mz-g mz-g--quiet mz-stand';
     card.dataset.mzDock = 'standing';
 
     const txt = document.createElement('span');
@@ -708,10 +731,19 @@ function standingBox(standing) {
     const name = document.createElement('span');
     name.className = 'mz-g-t mz-stand-name';
     name.textContent = say(standing.name || standing.track);
+    row.append(name);
 
-    row.append(name, levelLine(standing));
+    const chip = deltaBubble(standing.delta);
+    if (chip) row.append(chip);
+
+    if (standing.level !== null) {
+        const num = document.createElement('span');
+        num.className = 'mz-stand-num';
+        num.textContent = `${standing.level} / 10`;
+        row.append(num);
+    }
+
     txt.append(row);
-
     if (standing.level !== null) txt.append(levelBar(standing));
 
     card.append(txt);
@@ -856,10 +888,10 @@ function profileRecord(profile, index) {
 }
 
 /**
- * The full profile card: the avatar image as the head's backdrop where
- * there is one, then everything the ledger knows about this person —
- * the private thought included. The relevant shifts join the foot here
- * when they land.
+ * The full profile card: a header "scene" — the avatar figure standing
+ * in a spotlight where there is one, the name over the state over the
+ * private thought — then the record as its own little sections. The
+ * relevant shifts join the foot here when they land.
  */
 function profileCard(profile) {
     const fragment = document.createDocumentFragment();
@@ -880,14 +912,21 @@ function profileCard(profile) {
     head.className = 'mz-card-head';
 
     const title = document.createElement('h2');
-    title.textContent = profile.character || profile.state;
+    title.textContent = say(profile.character || profile.state);
     head.append(title);
 
     if (profile.character && profile.state) {
         const sub = document.createElement('p');
         sub.className = 'mz-card-sub';
-        sub.textContent = profile.state;
+        sub.textContent = say(profile.state);
         head.append(sub);
+    }
+
+    if (profile.thought) {
+        const thought = document.createElement('p');
+        thought.className = 'mz-thought';
+        thought.textContent = say(profile.thought);
+        head.append(thought);
     }
 
     const close = document.createElement('button');
@@ -903,48 +942,98 @@ function profileCard(profile) {
 
     const body = document.createElement('div');
     body.className = 'mz-card-body';
-
-    body.append(profileFacts(profile));
-
-    if (profile.thought) {
-        const thought = document.createElement('p');
-        thought.className = 'mz-thought';
-        thought.textContent = profile.thought;
-        body.append(thought);
-    }
-
+    body.append(...profileSections(profile));
     fragment.append(body);
     return fragment;
 }
 
-/** The record as label/value pairs, in the mockup's own order. */
-function profileFacts(profile) {
-    const list = document.createElement('dl');
-    list.className = 'mz-kv';
+/**
+ * The record as the mockup's whim tiles: "Right now" (the look and the
+ * next move side by side), "Wants" as a ladder (goal, ambition, desire),
+ * and the secret on its own tile below. A section with no tiles does
+ * not exist.
+ */
+function profileSections(profile) {
+    const parts = [];
 
-    const order = [
-        ['look', 'Look'],
-        ['next', 'Next'],
-        ['goal', 'Goal'],
-        ['ambition', 'Ambition'],
-        ['desire', 'Desire'],
-        ['secret', 'Secret'],
-    ];
+    const now = [
+        profile.look && whimTile('look', 'Look', profile.look, 'mz-i-eye'),
+        profile.next && whimTile('next', 'Next', profile.next, 'mz-i-next'),
+    ].filter(Boolean);
+    if (now.length) parts.push(whimSection('Right now', 'is-pair', now));
 
-    for (const [key, label] of order) {
-        if (!profile[key]) continue;
+    const wants = [
+        profile.goal && whimTile('goal', 'Goal', profile.goal, 'mz-i-plans'),
+        profile.ambition && whimTile('ambition', 'Ambition', profile.ambition, 'mz-i-lore'),
+        profile.desire && whimTile('desire', 'Desire', profile.desire, 'mz-i-desire'),
+    ].filter(Boolean);
+    if (wants.length) parts.push(whimSection('Wants', 'is-path', wants));
 
-        const term = document.createElement('dt');
-        if (key === 'secret') term.className = 'is-secret';
-        term.textContent = label;
-
-        const value = document.createElement('dd');
-        value.textContent = profile[key];
-
-        list.append(term, value);
+    if (profile.secret) {
+        const grid = document.createElement('div');
+        grid.className = 'mz-whims';
+        grid.append(whimTile('secret', 'Secret', profile.secret, 'mz-i-eye-off'));
+        parts.push(grid);
     }
 
-    return list;
+    return parts;
+}
+
+/** A titled band of tiles under hairline rules. */
+function whimSection(title, kind, tiles) {
+    const section = document.createElement('section');
+    section.className = 'mz-sec';
+
+    const head = document.createElement('h3');
+    head.className = 'mz-sec-t';
+    head.textContent = title;
+
+    const grid = document.createElement('div');
+    grid.className = `mz-whims ${kind}`;
+    grid.append(...tiles);
+
+    section.append(head, grid);
+    return section;
+}
+
+/**
+ * One fact as a tile: the icon, the small label, the value. The look
+ * reads as trait chips — a display-only split on commas; the text
+ * itself is never touched.
+ */
+function whimTile(field, label, value, symbol) {
+    const tile = document.createElement('div');
+    tile.className = 'mz-whim' + (field === 'secret' ? ' is-secret' : '');
+
+    const glyph = document.createElement('span');
+    glyph.className = 'mz-whim-ico';
+    glyph.append(icon(symbol));
+    tile.append(glyph);
+
+    const key = document.createElement('span');
+    key.className = 'mz-whim-k';
+    key.textContent = label;
+    tile.append(key);
+
+    if (field === 'look') {
+        const traits = document.createElement('span');
+        traits.className = 'mz-traits';
+        for (const part of String(value).split(/,\s*/)) {
+            if (!part) continue;
+            const chip = document.createElement('span');
+            chip.className = 'mz-trait';
+            chip.textContent = say(part);
+            traits.append(chip);
+        }
+        tile.append(traits);
+    } else {
+        const val = document.createElement('span');
+        val.className = 'mz-whim-v';
+        val.textContent = say(value);
+        tile.append(val);
+    }
+
+    return tile;
 }
 
 /** The small avatar: the chat's portrait image, or just the initial. */
@@ -991,22 +1080,37 @@ function openProfileCard(index) {
 
 /* ---------- one shift ---------- */
 
+/** A meter total as display text: `+101 / 200`, signed and scaled. */
+function meterNum(total, max) {
+    const sign = total > 0 ? '+' : total < 0 ? '−' : '';
+    return `${sign}${Math.abs(total)} / ${max}`;
+}
+
 /**
- * One meter of a pair: the label, the slim bar, the total and this
- * turn's move. The bar's full width is the pair's own recent widest —
- * the total and the one before it — rounded up to the next hundred,
- * so 101 reads as 101 / 200 and nothing caps the meters. The tone
- * flips with the sign: a bond spent below zero goes wary yellow, a
- * desire below zero goes its own purple.
+ * One meter of a pair. On the rail: the glyph, the slim bar taking all
+ * the room the totals used to hold, and the change bubble in a fixed
+ * slot — so the bar never grows or shrinks with the chip — with the
+ * total on hover. In the fly: the word, the bar, the total and the
+ * change, all of it on one line.
+ *
+ * The bar's full width is the pair's own recent widest — the total and
+ * the one before it — rounded up to the next hundred, so 101 reads as
+ * 101 / 200 and nothing caps the meters. The tone flips with the sign:
+ * a bond spent below zero goes wary yellow, a desire below zero goes
+ * its own purple.
  */
-function meterStrip(kind, total, delta) {
+function meterStrip(kind, total, delta, full) {
     const strip = document.createElement('div');
     strip.className = 'mz-meter' + (kind === 'desire' ? ' is-desire' : '');
 
-    const label = document.createElement('span');
-    label.className = 'mz-meter-l';
-    label.textContent = kind;
-    strip.append(label);
+    if (full) {
+        const label = document.createElement('span');
+        label.className = 'mz-meter-l';
+        label.textContent = kind;
+        strip.append(label);
+    } else {
+        strip.append(icon(kind === 'desire' ? 'mz-i-desire' : 'mz-i-bond', 'mz-meter-ic'));
+    }
 
     if (total !== null) {
         const max = meterMax(total, delta);
@@ -1019,15 +1123,28 @@ function meterStrip(kind, total, delta) {
         bar.append(fill);
         strip.append(bar);
 
-        const num = document.createElement('span');
-        num.className = 'mz-meter-num';
-        const sign = total > 0 ? '+' : total < 0 ? '−' : '';
-        num.textContent = `${sign}${Math.abs(total)} / ${max}`;
-        strip.append(num);
+        if (full) {
+            const num = document.createElement('span');
+            num.className = 'mz-meter-num';
+            num.textContent = meterNum(total, max);
+            strip.append(num);
+        } else {
+            strip.title = `${kind} ${meterNum(total, max)}`;
+        }
     }
 
-    const chip = deltaChip(delta);
-    if (chip) strip.append(chip);
+    if (full) {
+        const chip = deltaChip(delta);
+        if (chip) strip.append(chip);
+    } else {
+        const slot = document.createElement('span');
+        slot.className = 'mz-meter-slot';
+
+        const bubble = deltaBubble(delta);
+        if (bubble) slot.append(bubble);
+        strip.append(slot);
+    }
+
     return strip;
 }
 
@@ -1044,7 +1161,7 @@ function pairLine(shift) {
 function shiftBox(shift) {
     const card = document.createElement('button');
     card.type = 'button';
-    card.className = 'mz-g mz-shift';
+    card.className = 'mz-g mz-g--quiet mz-shift';
     card.dataset.mzDock = 'shifts';
 
     const txt = document.createElement('span');
@@ -1088,8 +1205,8 @@ function shiftRecord(shift) {
     const meters = document.createElement('div');
     meters.className = 'mz-meters';
     meters.append(
-        meterStrip('bond', shift.bondTotal, shift.delta),
-        meterStrip('desire', shift.desireTotal, shift.ddelta),
+        meterStrip('bond', shift.bondTotal, shift.delta, true),
+        meterStrip('desire', shift.desireTotal, shift.ddelta, true),
     );
     item.append(meters);
 

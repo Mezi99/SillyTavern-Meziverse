@@ -20,7 +20,7 @@ const DEFAULTS = {
     reducedMotion: false,
     uiScale: 1,
     narrSize: 18.5,
-    narrFont: 'theme',
+    narrFont: 'inter',
     proseColors: 'theme',
     prosePlain: '#e9e7e2',
     proseQ: '#77c2aa',
