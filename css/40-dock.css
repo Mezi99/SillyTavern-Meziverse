@@ -6,16 +6,22 @@
 
 /* ---------- rail frame ---------- */
 
-/* the left dock's top edge: just under the chat bar, floating over the cast */
-#mz-root {
-    --mz-dock-top: calc(var(--mz-header-h) + var(--mz-chatbar-real, var(--mz-chatbar-h)) + 40px);
+/* mockup CHANGE: the pane and cast are inset by whichever glance column
+   is on screen (the menus float over the cast at the gutters) */
+.mz-frame.is-rails-l .mz-cast {
+    left: var(--mz-pane-left);
 }
 
-/* mockup CHANGE: the pane and cast are inset by the glance column only
-   (the left dock is a slim pill that floats over the cast) */
-.mz-frame.is-rails .mz-cast {
-    left: var(--mz-pane-left);
+.mz-frame.is-rails-r .mz-cast {
     right: var(--mz-pane-right);
+}
+
+@media (min-width: 1180px) {
+    .mz-frame.is-rails-l .mz-cast,
+    .mz-frame.is-rails-r .mz-cast {
+        left: var(--mz-pane-left);
+        right: var(--mz-pane-right);
+    }
 }
 
 .mz-glance[hidden],
@@ -27,10 +33,25 @@
     right: var(--mz-gutter);
     top: calc(var(--mz-header-h) + var(--mz-chatbar-real, var(--mz-chatbar-h)) + var(--mz-gutter));
     width: var(--mz-glance-w);
+    max-height: calc(100% - var(--mz-header-h) - var(--mz-chatbar-real, var(--mz-chatbar-h)) - var(--mz-pane-h) - 2 * var(--mz-gutter));
     display: flex;
     flex-direction: column;
     gap: 8px;
+    overflow-y: auto;
+    scrollbar-width: thin;
 }
+
+/* the left column mirrors the right — and stays on stage even without
+   cards, because its menu carries the chat log. Only the cards come and
+   go, so the column lets clicks through where it is empty. */
+.mz-glance--l {
+    right: auto;
+    left: var(--mz-gutter);
+    pointer-events: none;
+}
+
+.mz-glance--l > * { pointer-events: auto; }
+.mz-glance--l .mz-dock--h { align-self: flex-start; }
 
 .mz-g {
     display: flex;
@@ -79,13 +100,11 @@ button.mz-g--quiet:hover .mz-g-t { color: var(--mz-accent); }
 
 /* ---------- docks and flyouts ---------- */
 
+/* the icon menu: one pill of round buttons at the top of a glance
+   column, flowing with the column's own cards */
 .mz-dock {
-    position: absolute;
-    z-index: var(--mz-z-rail);
-    left: var(--mz-gutter);
-    top: var(--mz-dock-top);
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     gap: 4px;
     padding: 6px;
     border: 1px solid var(--mz-line);
@@ -94,8 +113,6 @@ button.mz-g--quiet:hover .mz-g-t { color: var(--mz-accent); }
     backdrop-filter: var(--mz-blur);
 }
 .mz-dock--h {
-    position: static;
-    flex-direction: row;
     align-self: flex-end;
 }
 
@@ -144,9 +161,9 @@ button.mz-g--quiet:hover .mz-g-t { color: var(--mz-accent); }
     box-shadow: var(--mz-shadow);
 }
 .mz-fly--l {
-    left: calc(var(--mz-gutter) + 52px + 12px);
-    top: var(--mz-dock-top);
-    max-height: calc(100% - var(--mz-dock-top) - var(--mz-gutter));
+    left: calc(var(--mz-glance-w) + var(--mz-gutter) + 12px);
+    top: calc(var(--mz-header-h) + var(--mz-chatbar-real, var(--mz-chatbar-h)) + var(--mz-gutter));
+    max-height: calc(100% - var(--mz-header-h) - var(--mz-chatbar-real, var(--mz-chatbar-h)) - 2 * var(--mz-gutter));
 }
 .mz-fly--r {
     right: calc(var(--mz-glance-w) + var(--mz-gutter) + 12px);
@@ -291,8 +308,9 @@ button.mz-g--quiet:hover .mz-g-t { color: var(--mz-accent); }
     color: var(--mz-text);
 }
 
+/* the small avatar: the chat's portrait image where there is one, and
+   just the initial where there is not — no plate, no glow */
 .mz-avatar {
-    --h: 200;
     flex: none;
     width: 26px;
     height: 26px;
@@ -300,10 +318,17 @@ button.mz-g--quiet:hover .mz-g-t { color: var(--mz-accent); }
     border-radius: 50%;
     display: grid;
     place-items: center;
+    overflow: hidden;
     font: 400 11px var(--mz-font-prose);
-    color: hsl(var(--h) 18% 92% / .7);
-    background: linear-gradient(180deg, hsl(var(--h) 22% 30%), hsl(var(--h) 14% 12%));
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .1);
+    color: var(--mz-text-muted);
+}
+
+.mz-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 1px var(--mz-line);
 }
 
 /* shifts: two uncapped meters, so numerals + signed delta, no bars */
@@ -408,12 +433,55 @@ button.mz-g--quiet:hover .mz-g-t { color: var(--mz-accent); }
     white-space: nowrap;
 }
 
+/* mini profiles: who they are, how they are, how they look — the base
+   info changes every turn, so it stays out on the rail */
+.mz-prof {
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    cursor: pointer;
+}
+.mz-prof:hover { border-color: var(--mz-line-strong); }
+.mz-prof .mz-avatar { width: 30px; height: 30px; margin-top: 2px; }
+.mz-prof-name { color: var(--mz-accent); }
+.mz-prof-state,
+.mz-prof-look {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.mz-prof-state { margin-top: 2px; font-size: var(--mz-text-xs); color: var(--mz-text); }
+.mz-prof-look { margin-top: 1px; font-size: var(--mz-text-2xs); color: var(--mz-text-muted); }
+
+.mz-prof-more {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    margin-top: 2px;
+    border-radius: 50%;
+    color: var(--mz-text-muted);
+    transition: color var(--mz-dur-fast), background var(--mz-dur-fast);
+}
+.mz-prof-more:hover { color: var(--mz-accent); background: var(--mz-accent-soft); }
+.mz-prof-more svg { width: 15px; height: 15px; }
+
 /* ---------- small screens: the rail becomes a bottom sheet ---------- */
 
 .mz-railbtns { display: none; }
 
 @media (max-width: 759px) {
-    .mz-railbtns:not([hidden]) { display: inline-flex; gap: 2px; }
+    .mz-railbtns {
+        display: flex;
+        align-items: center;
+        justify-content: safe center;
+        gap: 2px;
+        overflow-x: auto;
+        scrollbar-width: none;
+    }
+    .mz-railbtns::-webkit-scrollbar { display: none; }
 
     .mz-glance { display: none; }
 

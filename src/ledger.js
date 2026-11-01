@@ -231,12 +231,48 @@ export function normalizeHooks(rows) {
 }
 
 /**
+ * The profile rows of a ledger, in the tag's own order. Every field is
+ * free text — the ledger only carries it. A row naming nothing is
+ * dropped: no character and no state, like a lone subtext on recap.
+ *
+ * @param {Array<object>} rows
+ * @returns {Array<object>}
+ */
+export function normalizeProfiles(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+    const profiles = [];
+
+    for (const row of list) {
+        if (!row || row.name !== 'profile' || !row.closed) continue;
+
+        const attrs = row.attrs || {};
+        const character = text(attrs.character).trim();
+        const state = text(attrs.state).trim();
+        if (!character && !state) continue;
+
+        profiles.push({
+            character,
+            state,
+            look: text(attrs.look).trim(),
+            secret: text(attrs.secret).trim(),
+            next: text(attrs.next).trim(),
+            goal: text(attrs.goal).trim(),
+            ambition: text(attrs.ambition).trim(),
+            desire: text(attrs.desire).trim(),
+            thought: text(attrs.thought).trim(),
+        });
+    }
+
+    return profiles;
+}
+
+/**
  * The ledger that governs a turn: the last complete block of the shown
  * message, or the most recent earlier one when the shown message has none.
  *
  * @param {object[]} messages SillyTavern's chat array
  * @param {number} at the shown message's index
- * @returns {{rows:object[], threads:object[], index:number, turn:number, carried:boolean}|null}
+ * @returns {{rows:object[], threads:object[], plans:object[], hooks:object[], lore:object[], recap:object[], profiles:object[], index:number, turn:number, carried:boolean}|null}
  */
 export function resolveLedger(messages, at) {
     const list = Array.isArray(messages) ? messages : [];
@@ -256,6 +292,7 @@ export function resolveLedger(messages, at) {
             hooks: normalizeHooks(rows),
             lore: normalizeLore(rows),
             recap: normalizeRecap(rows),
+            profiles: normalizeProfiles(rows),
             index: i,
             turn: i + 1,
             carried: i !== index,

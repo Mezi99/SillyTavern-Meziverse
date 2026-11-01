@@ -100,19 +100,25 @@
     --mz-z-sheet: 20;
 }
 
-/* Tablet keeps the right rail (the glance column) because the chat header
-   already carries the scene. Above that the inset goes symmetric — the left
-   dock floats over the cast, so the pane stays centred. Without the rails
-   the pane keeps the gutter, whatever is on screen. */
+/* Tablet keeps the rails' glance columns because the chat header already
+   carries the scene. Above that the inset goes symmetric whenever any
+   rail is on stage, so the pane stays centred. Without the rails the
+   pane keeps the gutter, whatever is on screen. */
 @media (min-width: 760px) {
-    #mz-root .mz-frame.is-rails {
+    #mz-root .mz-frame.is-rails-r {
         --mz-pane-right: calc(var(--mz-glance-w) + var(--mz-gutter) + var(--mz-dlg-gap));
+    }
+
+    #mz-root .mz-frame.is-rails-l {
+        --mz-pane-left: calc(var(--mz-glance-w) + var(--mz-gutter) + var(--mz-dlg-gap));
     }
 }
 
 @media (min-width: 1180px) {
-    #mz-root .mz-frame.is-rails {
+    #mz-root .mz-frame.is-rails-l,
+    #mz-root .mz-frame.is-rails-r {
         --mz-pane-left: calc(var(--mz-glance-w) + var(--mz-gutter) + var(--mz-dlg-gap));
+        --mz-pane-right: calc(var(--mz-glance-w) + var(--mz-gutter) + var(--mz-dlg-gap));
     }
 }
 

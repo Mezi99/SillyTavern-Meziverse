@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ledgerRows, normalizeHookState, normalizeHooks, normalizeLore, normalizePlans, normalizeRecap, normalizeState, normalizeThreads, parseClock, resolveLedger, sortThreads } from '../src/ledger.js';
+import { ledgerRows, normalizeHookState, normalizeHooks, normalizeLore, normalizePlans, normalizeProfiles, normalizeRecap, normalizeState, normalizeThreads, parseClock, resolveLedger, sortThreads } from '../src/ledger.js';
 import { stripTags } from '../src/tags.js';
 
 const msg = mes => ({ mes });
@@ -322,6 +322,67 @@ test('resolveLedger carries hooks, lore and recap of the governing ledger', () =
     assert.equal(ledger.recap[0].era, 'Day 1');
     assert.equal(ledger.lore[0].kind, 'rule');
     assert.equal(ledger.hooks[0].question, 'Who knocked?');
+});
+
+test('normalizeProfiles reads every field as free text', () => {
+    const rows = ledgerRows(msg(LEDGER(
+        '<profile character="Eli" state="terrified, heart pounding" look="dark green hoodie" secret="sketchbook full of Jin" next="present the portfolio" goal="win the sponsorship" ambition="art college" desire="to be seen as an artist" thought="I am in a museum of cold people."/>',
+    )));
+    const [profile] = normalizeProfiles(rows);
+
+    assert.deepEqual(profile, {
+        character: 'Eli',
+        state: 'terrified, heart pounding',
+        look: 'dark green hoodie',
+        secret: 'sketchbook full of Jin',
+        next: 'present the portfolio',
+        goal: 'win the sponsorship',
+        ambition: 'art college',
+        desire: 'to be seen as an artist',
+        thought: 'I am in a museum of cold people.',
+    });
+});
+
+test('profile fields are trimmed but never rewritten', () => {
+    const rows = ledgerRows(msg(LEDGER(
+        '<profile character="  Eli  " state=" Cold Fury. "/>',
+    )));
+    const [profile] = normalizeProfiles(rows);
+
+    assert.equal(profile.character, 'Eli');
+    assert.equal(profile.state, 'Cold Fury.');
+});
+
+test('a profile row that names nothing is dropped', () => {
+    const rows = ledgerRows(msg(LEDGER(
+        '<profile thought="Only a whisper"/>',
+        '<profile look="a green hoodie"/>',
+        '<profile character="Eli"/>',
+        '<profile state="waiting"/>',
+    )));
+
+    assert.deepEqual(normalizeProfiles(rows).map(p => p.character || p.state), ['Eli', 'waiting']);
+});
+
+test('profile rows keep the tag order', () => {
+    const rows = ledgerRows(msg(LEDGER(
+        '<profile character="Mike" state="driving"/>',
+        '<profile character="Eli" state="shaking"/>',
+        '<profile character="Hoon" state="assessing"/>',
+    )));
+
+    assert.deepEqual(normalizeProfiles(rows).map(p => p.character), ['Mike', 'Eli', 'Hoon']);
+});
+
+test('resolveLedger carries the profiles of the governing ledger', () => {
+    const chat = [msg(LEDGER(
+        '<profile character="Eli" state="shaking" thought="Do not faint."/>',
+        THREAD('Debt'),
+    ))];
+
+    const ledger = resolveLedger(chat, 0);
+    assert.equal(ledger.profiles[0].character, 'Eli');
+    assert.equal(ledger.profiles[0].thought, 'Do not faint.');
 });
 
 test('the ledger never leaks into the prose', () => {

@@ -10,9 +10,9 @@ import { chatMessages, currentChatId, on, sendUserMessage, stopGeneration, click
 import { settings, saveSettings, modeOn } from './settings.js';
 import { injectSprite } from './icons.js';
 import { createTranscript } from './transcript.js';
-import { mountCast, refreshCastSizing, renderCast } from './cast.js';
+import { mountCast, refreshCastSizing, renderCast, renderThoughts, BUBBLE_ROOM } from './cast.js';
 import { resolveLedger } from './ledger.js';
-import { closeDock, isDockOpen, mountDock, renderDock } from './dock.js';
+import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr } from './notify.js';
 
 const VERSION = '2.1';
@@ -73,14 +73,12 @@ const FRAME_HTML = `
             </div>
             <span class="mz-chip" data-mz="weather" hidden></span>
         </div>
-        <div class="mz-chatbar-tools">
-            <div class="mz-railbtns" data-mz-railbtns hidden></div>
-            <button class="mz-ibtn" type="button" title="Chat log" aria-label="Chat log" aria-expanded="false" data-mz-action="log">${svg('list')}</button>
-        </div>
+        <div class="mz-railbtns" data-mz-railbtns></div>
     </header>
 
     <div class="mz-cast" role="group" aria-label="Cast"></div>
 
+    <div class="mz-glance mz-glance--l" data-mz="glance-l"></div>
     <div class="mz-glance" data-mz="glance" hidden></div>
     <section class="mz-fly mz-fly--r" data-mz="fly" role="dialog" aria-modal="false" aria-label="Ledger" hidden>
         <div class="mz-fly-head">
@@ -139,6 +137,10 @@ const FRAME_HTML = `
     </section>
 
     <div class="mz-veil" data-mz-action="dismiss"></div>
+
+    <section class="mz-card" data-mz="card" role="dialog" aria-modal="true" aria-label="Full profile" aria-hidden="true">
+        <div class="mz-card-frame" data-mz="card-body"></div>
+    </section>
 
     <section class="mz-sheet" role="dialog" aria-modal="false" aria-labelledby="mz-sheet-title" aria-hidden="true">
         <header class="mz-sheet-head">
@@ -254,6 +256,25 @@ let desiredPane = PANE_DEFAULT;
 let dragStart = null;
 let resizeQueued = false;
 
+/**
+ * The log has more than one door now — the left menu and the small-screen
+ * strip — and the strip's buttons are drawn as the rails render. This
+ * stands in for the single button transcript expects and speaks to
+ * whichever log buttons exist at the moment.
+ */
+function logButtonAdapter() {
+    return {
+        setAttribute(name, value) {
+            for (const button of root.querySelectorAll('[data-mz-action="log"]')) {
+                button.setAttribute(name, value);
+            }
+        },
+        focus(options) {
+            root.querySelector('[data-mz-action="log"]')?.focus(options);
+        },
+    };
+}
+
 /** Builds the hidden root and wires everything that does not need the chat. */
 export function mount() {
     if (document.getElementById('mz-root')) return;
@@ -321,7 +342,7 @@ export function mount() {
         logGripH: root.querySelector('.mz-log-grip-h'),
         logGripW: root.querySelector('.mz-log-grip-w'),
         logList: root.querySelector('[data-mz="log-list"]'),
-        logButton: root.querySelector('[data-mz-action="log"]'),
+        logButton: logButtonAdapter(),
         logClose: root.querySelector('[data-mz-action="close-log"]'),
     };
 
@@ -451,6 +472,7 @@ export function close() {
     frame.classList.remove('is-dragging', 'is-log-open');
     els.logPanel.setAttribute('aria-hidden', 'true');
     els.logButton.setAttribute('aria-expanded', 'false');
+    closeCard();
     closeDock();
 
     document.body.style.overflow = previousOverflow ?? '';
@@ -736,7 +758,9 @@ function applyScene(record) {
  */
 function applyLedger(entry) {
     lastEntry = entry || null;
-    renderDock(lastEntry ? resolveLedger(chatMessages(), lastEntry.index) : null);
+    const ledger = lastEntry ? resolveLedger(chatMessages(), lastEntry.index) : null;
+    renderDock(ledger);
+    renderThoughts(ledger ? ledger.profiles : []);
 }
 
 /* ---------- reading pane ---------- */
@@ -755,7 +779,10 @@ function paneLimits() {
     const portMin = cssPx('--mz-port-min-h', 180);
     const header = root.querySelector('.mz-header')?.offsetHeight || 34;
     const chatbar = root.querySelector('.mz-chatbar')?.offsetHeight || 48;
-    const max = Math.max(min, frame.clientHeight - header - chatbar - portMin - 28);
+    // Thoughts on stage take their cut from the pane's maximum, so the
+    // bubbles above the posters can never be squeezed off the window.
+    const bubbles = root.querySelector('.mz-thought-bub') ? BUBBLE_ROOM : 0;
+    const max = Math.max(min, frame.clientHeight - header - chatbar - portMin - bubbles - 28);
     return { min, max };
 }
 
@@ -1121,6 +1148,7 @@ function wireComposer() {
 /* ---------- actions ---------- */
 
 function openSettings() {
+    closeCard();
     transcript.closeLog(false);
     frame.classList.add('is-settings-open');
     els.sheet.setAttribute('aria-hidden', 'false');
@@ -1213,6 +1241,7 @@ function wireActions() {
                 closeSettings();
                 break;
             case 'log':
+                closeCard();
                 if (frame.classList.contains('is-settings-open')) closeSettings();
                 transcript.openLog();
                 break;
@@ -1260,7 +1289,8 @@ function wireActions() {
                 else enterFullscreen();
                 break;
             case 'dismiss':
-                if (isDockOpen()) closeDock();
+                if (isCardOpen()) closeCard();
+                else if (isDockOpen()) closeDock();
                 else if (transcript.isLogOpen()) transcript.closeLog();
                 else closeSettings();
                 break;
@@ -1345,7 +1375,8 @@ function wireKeys() {
 
             event.preventDefault();
             event.stopPropagation();
-            if (isDockOpen()) closeDock();
+            if (isCardOpen()) closeCard();
+            else if (isDockOpen()) closeDock();
             else if (transcript?.isLogOpen()) transcript.closeLog();
             else if (frame.classList.contains('is-settings-open')) closeSettings();
             else close();
