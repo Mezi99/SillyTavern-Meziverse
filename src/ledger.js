@@ -267,12 +267,119 @@ export function normalizeProfiles(rows) {
 }
 
 /**
+ * A standing's level. The tag writes 0–10; the number is clamped for
+ * the bar and unreadable input is null — the row still renders, it just
+ * carries no bar or number.
+ *
+ * @param {string} value
+ * @returns {number|null}
+ */
+export function parseLevel(value) {
+    const raw = text(value).trim();
+    if (!/^-?\d+$/.test(raw)) return null;
+    return Math.max(0, Math.min(10, Number(raw)));
+}
+
+/**
+ * The standing rows of a ledger, in the tag's own order: how some part
+ * of the world sees {{user}}, on a 0–10 track with both ends named.
+ * Everything but the level is free text.
+ *
+ * @param {Array<object>} rows
+ * @returns {Array<{name:string, track:string, state:string, level:number|null, stakes:string, cause:string}>}
+ */
+export function normalizeStanding(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+    const standing = [];
+
+    for (const row of list) {
+        if (!row || row.name !== 'standing' || !row.closed) continue;
+
+        const attrs = row.attrs || {};
+        const name = text(attrs.name).trim();
+        const track = text(attrs.track).trim();
+        const state = text(attrs.state).trim();
+        if (!name && !track && !state) continue;
+
+        standing.push({
+            name,
+            track,
+            state,
+            level: parseLevel(attrs.level),
+            stakes: text(attrs.stakes).trim(),
+            cause: text(attrs.cause).trim(),
+        });
+    }
+
+    return standing;
+}
+
+/**
+ * Reads the stakes line: `at 0: … ; at 10: …`, both ends named. A line
+ * that does not pair up is not stakes — the caller shows it as written.
+ *
+ * @param {string} value
+ * @returns {{zero:string, ten:string}|null}
+ */
+export function parseStakes(value) {
+    const raw = text(value).trim();
+    const hit = /^at\s*0:\s*(.+?)\s*[,;]\s*at\s*10:\s*(.+)$/is.exec(raw);
+    if (!hit) return null;
+
+    return { zero: hit[1].trim(), ten: hit[2].trim() };
+}
+
+function standingKey(track) {
+    return (track.name || track.track).trim().toLowerCase();
+}
+
+/**
+ * The change chips: how each level moved since the ledger last spoke.
+ * A track the previous block did not carry is `new`; a level that did
+ * not move is 0, and an unreadable pair simply has no change. This is
+ * derived per block, never remembered — the ledger stays full state.
+ *
+ * @param {Array<object>} standing this block's rows
+ * @param {Array<object>} previous the block before it
+ * @returns {Array<object>} the same rows with a `delta` on each
+ */
+export function withStandingDeltas(standing, previous) {
+    const list = Array.isArray(standing) ? standing : [];
+
+    const before = new Map();
+    for (const track of (Array.isArray(previous) ? previous : [])) {
+        const key = standingKey(track);
+        if (key && !before.has(key)) before.set(key, track.level);
+    }
+
+    return list.map(track => {
+        const prev = before.get(standingKey(track));
+
+        let delta = null;
+        if (prev === undefined) delta = 'new';
+        else if (prev !== null && track.level !== null) delta = track.level - prev;
+
+        return { ...track, delta };
+    });
+}
+
+/** The rows of the closest complete block before `from`, or null. */
+function previousRows(list, from) {
+    for (let i = from - 1; i >= 0; i -= 1) {
+        const rows = ledgerRows(list[i]);
+        if (rows) return rows;
+    }
+
+    return null;
+}
+
+/**
  * The ledger that governs a turn: the last complete block of the shown
  * message, or the most recent earlier one when the shown message has none.
  *
  * @param {object[]} messages SillyTavern's chat array
  * @param {number} at the shown message's index
- * @returns {{rows:object[], threads:object[], plans:object[], hooks:object[], lore:object[], recap:object[], profiles:object[], index:number, turn:number, carried:boolean}|null}
+ * @returns {{rows:object[], threads:object[], plans:object[], hooks:object[], lore:object[], recap:object[], profiles:object[], standing:object[], index:number, turn:number, carried:boolean}|null}
  */
 export function resolveLedger(messages, at) {
     const list = Array.isArray(messages) ? messages : [];
@@ -285,6 +392,8 @@ export function resolveLedger(messages, at) {
         const rows = ledgerRows(list[i]);
         if (!rows) continue;
 
+        const before = previousRows(list, i);
+
         return {
             rows,
             threads: sortThreads(normalizeThreads(rows)),
@@ -293,6 +402,7 @@ export function resolveLedger(messages, at) {
             lore: normalizeLore(rows),
             recap: normalizeRecap(rows),
             profiles: normalizeProfiles(rows),
+            standing: withStandingDeltas(normalizeStanding(rows), before ? normalizeStanding(before) : []),
             index: i,
             turn: i + 1,
             carried: i !== index,

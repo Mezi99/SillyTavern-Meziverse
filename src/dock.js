@@ -22,18 +22,29 @@
 import { icon } from './icons.js';
 import { castAvatar } from './cast.js';
 import { entryOn, modeOn } from './settings.js';
+import { parseStakes } from './ledger.js';
+import { personaName } from './st.js';
 
 const BOXES_MAX = 3;
 const PROFILES_MAX = 6;
 
 /**
- * The ledger entries. `profiles` is the left side's first: mini profile
- * cards at a glance and a full card per character. `threads` and `plans`
- * carry right-side glance boxes; hooks, lore and recap are popup-only.
- * The rest joins here as it lands, and the future mode-features menu
- * flips their switches in `settings().entries`.
+ * The ledger entries. `standing` leads the left side — how the world
+ * sees you, above the profiles — and `profiles` follows: mini profile
+ * cards at a glance and a full card per character. `threads` and
+ * `plans` carry right-side glance boxes; hooks, lore and recap are
+ * popup-only. The rest joins here as it lands, and the future
+ * mode-features menu flips their switches in `settings().entries`.
  */
 const ENTRIES = {
+    standing: {
+        title: 'Standing',
+        side: 'l',
+        has: ledger => !!ledger && ledger.standing.length > 0,
+        sub: ledger => `${ledger.standing.length} tracks${ledger.carried ? ` \u00b7 from turn ${ledger.turn}` : ''}`,
+        boxes: ledger => ledger.standing.slice(0, BOXES_MAX).map(standingBox),
+        body: ledger => ledger.standing.map(standingRecord),
+    },
     profiles: {
         title: 'Profiles',
         side: 'l',
@@ -129,7 +140,7 @@ export function mountDock(root) {
  * none). Rebuilds only when the board changes, so streaming frames are
  * cheap.
  *
- * @param {{threads:object[], profiles:object[], turn:number, carried:boolean}|null} ledger
+ * @param {{threads:object[], profiles:object[], standing:object[], turn:number, carried:boolean}|null} ledger
  */
 export function renderDock(ledger) {
     if (!frame) return;
@@ -593,6 +604,167 @@ function recapRecord(recap) {
         subtext.className = 'mz-item-out';
         subtext.textContent = `Subtext: ${recap.subtext}`;
         item.append(subtext);
+    }
+
+    return item;
+}
+
+/* ---------- one standing ---------- */
+
+/** Story text as display text: `{{user}}` is the persona's own name. */
+function say(value) {
+    const raw = String(value ?? '');
+    const name = personaName();
+    return name ? raw.replace(/\{\{\s*user\s*\}\}/gi, name) : raw;
+}
+
+/**
+ * The level bar: a track of ten, filled to the level. The tone turns at
+ * the halfway mark — below five is the bad end of the stakes.
+ */
+function levelBar(standing) {
+    const bar = document.createElement('span');
+    bar.className = 'mz-stand-bar ' + (standing.level >= 5 ? 'is-high' : 'is-low');
+
+    const fill = document.createElement('i');
+    fill.style.width = `${standing.level * 10}%`;
+    bar.append(fill);
+    return bar;
+}
+
+/**
+ * The change chip: `+2` or `−1` since the ledger last spoke, or the
+ * small `new` of a track the board has not seen before. An unchanged
+ * level wears nothing.
+ */
+function deltaChip(standing) {
+    const chip = document.createElement('span');
+
+    if (standing.delta === 'new') {
+        chip.className = 'mz-delta is-new';
+        chip.textContent = 'new';
+        return chip;
+    }
+
+    if (typeof standing.delta !== 'number' || standing.delta === 0) return null;
+
+    chip.className = 'mz-delta' + (standing.delta > 0 ? ' is-up' : ' is-down');
+    chip.textContent = standing.delta > 0 ? `+${standing.delta}` : `\u2212${Math.abs(standing.delta)}`;
+    return chip;
+}
+
+/** The level and its change on one line, right of the name. */
+function levelLine(standing) {
+    const wrap = document.createElement('span');
+    wrap.className = 'mz-stand-level';
+
+    if (standing.level !== null) {
+        const num = document.createElement('span');
+        num.className = 'mz-stand-num';
+        num.textContent = `${standing.level} / 10`;
+        wrap.append(num);
+    }
+
+    const chip = deltaChip(standing);
+    if (chip) wrap.append(chip);
+    return wrap;
+}
+
+/**
+ * A rail box: the track's name and its level as a bar, the number and
+ * the change beside it. The rest of the record lives in the fly.
+ */
+function standingBox(standing) {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'mz-g mz-stand';
+    card.dataset.mzDock = 'standing';
+
+    const txt = document.createElement('span');
+    txt.className = 'mz-g-txt';
+
+    const row = document.createElement('span');
+    row.className = 'mz-stand-row';
+
+    const name = document.createElement('span');
+    name.className = 'mz-g-t mz-stand-name';
+    name.textContent = say(standing.name || standing.track);
+
+    row.append(name, levelLine(standing));
+    txt.append(row);
+
+    if (standing.level !== null) txt.append(levelBar(standing));
+
+    card.append(txt);
+    return card;
+}
+
+/**
+ * A popup record: the track with its level and change, then who sees
+ * {{user}} and how — both ends of the stakes and what moved it.
+ */
+function standingRecord(standing) {
+    const item = document.createElement('div');
+    item.className = 'mz-item is-full';
+
+    const row = document.createElement('div');
+    row.className = 'mz-item-row mz-item-row--title';
+
+    const title = document.createElement('span');
+    title.className = 'mz-item-title';
+    title.textContent = say(standing.name || standing.track);
+
+    row.append(title, levelLine(standing));
+    item.append(row);
+
+    if (standing.level !== null) item.append(levelBar(standing));
+
+    if (standing.track) {
+        const track = document.createElement('p');
+        track.className = 'mz-item-plot';
+        track.textContent = say(standing.track);
+        item.append(track);
+    }
+
+    if (standing.state) {
+        const state = document.createElement('p');
+        state.className = 'mz-item-out';
+        state.textContent = `Now: ${say(standing.state)}`;
+        item.append(state);
+    }
+
+    const stakes = parseStakes(standing.stakes);
+
+    if (stakes) {
+        const ends = document.createElement('div');
+        ends.className = 'mz-ends';
+
+        for (const [end, value] of [['0', stakes.zero], ['10', stakes.ten]]) {
+            const col = document.createElement('div');
+            const b = document.createElement('b');
+            b.textContent = end;
+            col.append(b, say(value));
+            ends.append(col);
+        }
+
+        item.append(ends);
+    } else if (standing.stakes) {
+        const line = document.createElement('p');
+        line.className = 'mz-item-out';
+        line.textContent = `Stakes: ${say(standing.stakes)}`;
+        item.append(line);
+    }
+
+    if (standing.cause) {
+        const cause = document.createElement('p');
+        cause.className = 'mz-item-sub mz-subtext';
+
+        const label = document.createElement('span');
+        label.className = 'mz-item-lbl';
+        label.textContent = 'Cause:';
+
+        cause.append(label, ` ${say(standing.cause)}`);
+        item.append(cause);
     }
 
     return item;

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ledgerRows, normalizeHookState, normalizeHooks, normalizeLore, normalizePlans, normalizeProfiles, normalizeRecap, normalizeState, normalizeThreads, parseClock, resolveLedger, sortThreads } from '../src/ledger.js';
+import { ledgerRows, normalizeHookState, normalizeHooks, normalizeLore, normalizePlans, normalizeProfiles, normalizeRecap, normalizeStanding, normalizeState, normalizeThreads, parseClock, parseLevel, parseStakes, resolveLedger, sortThreads, withStandingDeltas } from '../src/ledger.js';
 import { stripTags } from '../src/tags.js';
 
 const msg = mes => ({ mes });
@@ -394,4 +394,147 @@ test('the ledger never leaks into the prose', () => {
     assert.ok(!clean.includes('Debt'));
     assert.ok(clean.includes('The door opened.'));
     assert.ok(clean.includes('He stepped inside.'));
+});
+
+const STANDING = (over = {}) => {
+    const attrs = {
+        name: 'Harbour trust',
+        track: 'the harbour sees {{user}} as one of its own',
+        state: 'rumours at the chandlery',
+        level: '6',
+        stakes: 'at 0: run out of town; at 10: harbour daughter',
+        cause: 'the washed-ashore page',
+        ...over,
+    };
+    return '<standing ' + Object.entries(attrs).map(([key, value]) => `${key}="${value}"`).join(' ') + '/>';
+};
+
+test('normalizeStanding keeps the tag\u2019s words exactly as written', () => {
+    const rows = ledgerRows(msg(LEDGER(STANDING())));
+    const [standing] = normalizeStanding(rows);
+
+    assert.deepEqual(standing, {
+        name: 'Harbour trust',
+        track: 'the harbour sees {{user}} as one of its own',
+        state: 'rumours at the chandlery',
+        level: 6,
+        stakes: 'at 0: run out of town; at 10: harbour daughter',
+        cause: 'the washed-ashore page',
+    });
+});
+
+test('parseLevel clamps to the 0\u201310 track and refuses the rest', () => {
+    assert.equal(parseLevel('7'), 7);
+    assert.equal(parseLevel(' 12 '), 10);
+    assert.equal(parseLevel('-3'), 0);
+    assert.equal(parseLevel('0'), 0);
+    assert.equal(parseLevel('7.5'), null);
+    assert.equal(parseLevel('high'), null);
+    assert.equal(parseLevel(''), null);
+});
+
+test('parseStakes reads both ends and refuses a line that does not pair', () => {
+    assert.deepEqual(parseStakes('at 0: run out of town; at 10: harbour daughter'),
+        { zero: 'run out of town', ten: 'harbour daughter' });
+    assert.deepEqual(parseStakes('at 0: run out of town, at 10: harbour daughter'),
+        { zero: 'run out of town', ten: 'harbour daughter' });
+    assert.deepEqual(parseStakes('AT 0:  nothing left ; AT 10:  the world '),
+        { zero: 'nothing left', ten: 'the world' });
+    assert.equal(parseStakes('at 0: only one end named'), null);
+    assert.equal(parseStakes(''), null);
+});
+
+test('a standing row that names nothing is dropped', () => {
+    const rows = ledgerRows(msg(LEDGER(
+        '<standing cause="the page surfaced"/>',
+        '<standing level="4"/>',
+        '<standing track="the town watches {{user}}"/>',
+    )));
+
+    assert.deepEqual(normalizeStanding(rows).map(s => s.track), ['the town watches {{user}}']);
+});
+
+test('standing rows keep the tag order', () => {
+    const rows = ledgerRows(msg(LEDGER(
+        STANDING({ name: 'Harbour trust', level: '6' }),
+        STANDING({ name: 'Crew respect', level: '3' }),
+        STANDING({ name: 'Town talk', level: '8' }),
+    )));
+
+    assert.deepEqual(normalizeStanding(rows).map(s => s.name), ['Harbour trust', 'Crew respect', 'Town talk']);
+});
+
+test('withStandingDeltas reads the movement since the previous block', () => {
+    const previous = normalizeStanding(ledgerRows(msg(LEDGER(
+        STANDING({ name: 'Harbour trust', level: '6' }),
+        STANDING({ name: 'Crew respect', level: '3' }),
+        STANDING({ name: 'Town talk', level: '8' }),
+    ))));
+    const standing = normalizeStanding(ledgerRows(msg(LEDGER(
+        STANDING({ name: 'Harbour trust', level: '7' }),
+        STANDING({ name: 'Crew respect', level: '3' }),
+        STANDING({ name: 'Town talk', level: '' }),
+        STANDING({ name: 'Newcomer eyes', level: '2' }),
+    ))));
+
+    const deltas = Object.fromEntries(withStandingDeltas(standing, previous).map(s => [s.name, s.delta]));
+    assert.deepEqual(deltas, {
+        'Harbour trust': 1,
+        'Crew respect': 0,
+        'Town talk': null,
+        'Newcomer eyes': 'new',
+    });
+});
+
+test('withStandingDeltas matches tracks by name, case and all', () => {
+    const previous = normalizeStanding(ledgerRows(msg(LEDGER(STANDING({ name: 'harbour TRUST', level: '4' })))));
+    const standing = normalizeStanding(ledgerRows(msg(LEDGER(STANDING({ name: 'Harbour trust', level: '5' })))));
+
+    assert.equal(withStandingDeltas(standing, previous)[0].delta, 1);
+});
+
+test('withStandingDeltas has nothing to say without a previous block', () => {
+    const standing = normalizeStanding(ledgerRows(msg(LEDGER(STANDING({ level: '6' })))));
+    assert.equal(withStandingDeltas(standing, [])[0].delta, 'new');
+    assert.equal(withStandingDeltas(standing, null)[0].delta, 'new');
+});
+
+test('resolveLedger derives the deltas against the block before', () => {
+    const chat = [
+        msg(LEDGER(STANDING({ name: 'Harbour trust', level: '6' }))),
+        msg('plain narration, no ledger'),
+        msg(LEDGER(STANDING({ name: 'Harbour trust', level: '7' }))),
+    ];
+
+    const now = resolveLedger(chat, 2);
+    assert.equal(now.standing[0].delta, 1);
+    assert.equal(now.carried, false);
+
+    // The turn without a block carries the earlier one — chips and all.
+    const carried = resolveLedger(chat, 1);
+    assert.equal(carried.standing[0].delta, 'new');
+    assert.equal(carried.carried, true);
+    assert.equal(carried.turn, 1);
+});
+
+test('a track that left the board and came back is new again', () => {
+    const chat = [
+        msg(LEDGER(STANDING({ name: 'Harbour trust', level: '6' }))),
+        msg(LEDGER(STANDING({ name: 'Crew respect', level: '3' }))),
+        msg(LEDGER(STANDING({ name: 'Harbour trust', level: '4' }))),
+    ];
+
+    assert.equal(resolveLedger(chat, 2).standing[0].delta, 'new');
+});
+
+test('resolveLedger carries the standing of the governing ledger', () => {
+    const chat = [msg(LEDGER(
+        STANDING({ name: 'Harbour trust', level: '6' }),
+        THREAD('Debt'),
+    ))];
+
+    const ledger = resolveLedger(chat, 0);
+    assert.equal(ledger.standing[0].name, 'Harbour trust');
+    assert.equal(ledger.standing[0].level, 6);
+    assert.equal(ledger.standing[0].stakes, 'at 0: run out of town; at 10: harbour daughter');
 });
