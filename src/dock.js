@@ -22,18 +22,31 @@
 import { icon } from './icons.js';
 import { castAvatar } from './cast.js';
 import { entryOn, modeOn } from './settings.js';
+import { meterMax, parseStakes } from './ledger.js';
+import { personaName } from './st.js';
 
 const BOXES_MAX = 3;
 const PROFILES_MAX = 6;
+const SHIFTS_MAX = 6;
 
 /**
- * The ledger entries. `profiles` is the left side's first: mini profile
- * cards at a glance and a full card per character. `threads` and `plans`
- * carry right-side glance boxes; hooks, lore and recap are popup-only.
- * The rest joins here as it lands, and the future mode-features menu
- * flips their switches in `settings().entries`.
+ * The ledger entries. `standing` leads the left side — how the world
+ * sees you, above the profiles — and `profiles` follows: mini profile
+ * cards at a glance and a full card per character. `shifts` sits under
+ * them: the pairs that moved this turn. `threads` and `plans` carry
+ * right-side glance boxes; hooks, lore and recap are popup-only. The
+ * rest joins here as it lands, and the future mode-features menu flips
+ * their switches in `settings().entries`.
  */
 const ENTRIES = {
+    standing: {
+        title: 'Standing',
+        side: 'l',
+        has: ledger => !!ledger && ledger.standing.length > 0,
+        sub: ledger => `${ledger.standing.length} tracks${ledger.carried ? ` \u00b7 from turn ${ledger.turn}` : ''}`,
+        boxes: ledger => ledger.standing.slice(0, BOXES_MAX).map(standingBox),
+        body: ledger => ledger.standing.map(standingRecord),
+    },
     profiles: {
         title: 'Profiles',
         side: 'l',
@@ -41,6 +54,14 @@ const ENTRIES = {
         sub: ledger => `${ledger.profiles.length} in this scene${ledger.carried ? ` \u00b7 from turn ${ledger.turn}` : ''}`,
         boxes: ledger => ledger.profiles.slice(0, PROFILES_MAX).map(profileBox),
         body: ledger => ledger.profiles.map(profileRecord),
+    },
+    shifts: {
+        title: 'Shifts',
+        side: 'l',
+        has: ledger => !!ledger && ledger.shifts.length > 0,
+        sub: ledger => `${ledger.shifts.length} changed this turn${ledger.carried ? ` \u00b7 from turn ${ledger.turn}` : ''}`,
+        boxes: ledger => ledger.shifts.slice(0, SHIFTS_MAX).map(shiftBox),
+        body: ledger => ledger.shifts.map(shiftRecord),
     },
     threads: {
         title: 'Threads',
@@ -129,7 +150,7 @@ export function mountDock(root) {
  * none). Rebuilds only when the board changes, so streaming frames are
  * cheap.
  *
- * @param {{threads:object[], profiles:object[], turn:number, carried:boolean}|null} ledger
+ * @param {{threads:object[], profiles:object[], standing:object[], turn:number, carried:boolean}|null} ledger
  */
 export function renderDock(ledger) {
     if (!frame) return;
@@ -324,6 +345,15 @@ function syncFly() {
 
     fly.hidden = !openKey;
     frame.classList.toggle('is-fly-open', !!openKey);
+
+    // The popup opens beside its own rail: people on the left, story
+    // on the right.
+    if (openKey) {
+        const left = ENTRIES[openKey]?.side === 'l';
+        fly.classList.toggle('mz-fly--l', left);
+        fly.classList.toggle('mz-fly--r', !left);
+    }
+
     syncMenu();
 
     for (const button of railButtons?.querySelectorAll('.mz-railbtn[data-mz-dock]') || []) {
@@ -598,6 +628,167 @@ function recapRecord(recap) {
     return item;
 }
 
+/* ---------- one standing ---------- */
+
+/** Story text as display text: `{{user}}` is the persona's own name. */
+function say(value) {
+    const raw = String(value ?? '');
+    const name = personaName();
+    return name ? raw.replace(/\{\{\s*user\s*\}\}/gi, name) : raw;
+}
+
+/**
+ * The level bar: a track of ten, filled to the level. The tone turns at
+ * the halfway mark — below five is the bad end of the stakes.
+ */
+function levelBar(standing) {
+    const bar = document.createElement('span');
+    bar.className = 'mz-stand-bar ' + (standing.level >= 5 ? 'is-high' : 'is-low');
+
+    const fill = document.createElement('i');
+    fill.style.width = `${standing.level * 10}%`;
+    bar.append(fill);
+    return bar;
+}
+
+/**
+ * The change chip: `+2` or `−1` since the ledger last spoke, or the
+ * small `new` of a track the board has not seen before. An unchanged
+ * meter wears nothing.
+ */
+function deltaChip(value) {
+    const chip = document.createElement('span');
+
+    if (value === 'new') {
+        chip.className = 'mz-delta is-new';
+        chip.textContent = 'new';
+        return chip;
+    }
+
+    if (typeof value !== 'number' || value === 0) return null;
+
+    chip.className = 'mz-delta' + (value > 0 ? ' is-up' : ' is-down');
+    chip.textContent = value > 0 ? `+${value}` : `\u2212${Math.abs(value)}`;
+    return chip;
+}
+
+/** The level and its change on one line, right of the name. */
+function levelLine(standing) {
+    const wrap = document.createElement('span');
+    wrap.className = 'mz-stand-level';
+
+    if (standing.level !== null) {
+        const num = document.createElement('span');
+        num.className = 'mz-stand-num';
+        num.textContent = `${standing.level} / 10`;
+        wrap.append(num);
+    }
+
+    const chip = deltaChip(standing.delta);
+    if (chip) wrap.append(chip);
+    return wrap;
+}
+
+/**
+ * A rail box: the track's name and its level as a bar, the number and
+ * the change beside it. The rest of the record lives in the fly.
+ */
+function standingBox(standing) {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'mz-g mz-stand';
+    card.dataset.mzDock = 'standing';
+
+    const txt = document.createElement('span');
+    txt.className = 'mz-g-txt';
+
+    const row = document.createElement('span');
+    row.className = 'mz-stand-row';
+
+    const name = document.createElement('span');
+    name.className = 'mz-g-t mz-stand-name';
+    name.textContent = say(standing.name || standing.track);
+
+    row.append(name, levelLine(standing));
+    txt.append(row);
+
+    if (standing.level !== null) txt.append(levelBar(standing));
+
+    card.append(txt);
+    return card;
+}
+
+/**
+ * A popup record: the track with its level and change, then who sees
+ * {{user}} and how — both ends of the stakes and what moved it.
+ */
+function standingRecord(standing) {
+    const item = document.createElement('div');
+    item.className = 'mz-item is-full';
+
+    const row = document.createElement('div');
+    row.className = 'mz-item-row mz-item-row--title';
+
+    const title = document.createElement('span');
+    title.className = 'mz-item-title';
+    title.textContent = say(standing.name || standing.track);
+
+    row.append(title, levelLine(standing));
+    item.append(row);
+
+    if (standing.level !== null) item.append(levelBar(standing));
+
+    if (standing.track) {
+        const track = document.createElement('p');
+        track.className = 'mz-item-plot';
+        track.textContent = say(standing.track);
+        item.append(track);
+    }
+
+    if (standing.state) {
+        const state = document.createElement('p');
+        state.className = 'mz-item-out';
+        state.textContent = `Now: ${say(standing.state)}`;
+        item.append(state);
+    }
+
+    const stakes = parseStakes(standing.stakes);
+
+    if (stakes) {
+        const ends = document.createElement('div');
+        ends.className = 'mz-ends';
+
+        for (const [end, value] of [['0', stakes.zero], ['10', stakes.ten]]) {
+            const col = document.createElement('div');
+            const b = document.createElement('b');
+            b.textContent = end;
+            col.append(b, say(value));
+            ends.append(col);
+        }
+
+        item.append(ends);
+    } else if (standing.stakes) {
+        const line = document.createElement('p');
+        line.className = 'mz-item-out';
+        line.textContent = `Stakes: ${say(standing.stakes)}`;
+        item.append(line);
+    }
+
+    if (standing.cause) {
+        const cause = document.createElement('p');
+        cause.className = 'mz-item-sub mz-subtext';
+
+        const label = document.createElement('span');
+        label.className = 'mz-item-lbl';
+        label.textContent = 'Cause:';
+
+        cause.append(label, ` ${say(standing.cause)}`);
+        item.append(cause);
+    }
+
+    return item;
+}
+
 /* ---------- one profile ---------- */
 
 /**
@@ -798,6 +989,132 @@ function openProfileCard(index) {
     card.querySelector('[data-mz-card-close]')?.focus({ preventScroll: true });
 }
 
+/* ---------- one shift ---------- */
+
+/**
+ * One meter of a pair: the label, the slim bar, the total and this
+ * turn's move. The bar's full width is the pair's own recent widest —
+ * the total and the one before it — rounded up to the next hundred,
+ * so 101 reads as 101 / 200 and nothing caps the meters. The tone
+ * flips with the sign: a bond spent below zero goes wary yellow, a
+ * desire below zero goes its own purple.
+ */
+function meterStrip(kind, total, delta) {
+    const strip = document.createElement('div');
+    strip.className = 'mz-meter' + (kind === 'desire' ? ' is-desire' : '');
+
+    const label = document.createElement('span');
+    label.className = 'mz-meter-l';
+    label.textContent = kind;
+    strip.append(label);
+
+    if (total !== null) {
+        const max = meterMax(total, delta);
+
+        const bar = document.createElement('span');
+        bar.className = 'mz-meter-bar' + (total < 0 ? ' is-neg' : '');
+
+        const fill = document.createElement('i');
+        fill.style.width = `${Math.min(100, Math.abs(total) / max * 100)}%`;
+        bar.append(fill);
+        strip.append(bar);
+
+        const num = document.createElement('span');
+        num.className = 'mz-meter-num';
+        const sign = total > 0 ? '+' : total < 0 ? '−' : '';
+        num.textContent = `${sign}${Math.abs(total)} / ${max}`;
+        strip.append(num);
+    }
+
+    const chip = deltaChip(delta);
+    if (chip) strip.append(chip);
+    return strip;
+}
+
+/** The pair as display text: `from → toward`, whichever side exists. */
+function pairLine(shift) {
+    return [say(shift.from), say(shift.toward)].filter(Boolean).join(' → ');
+}
+
+/**
+ * A rail box: the pair and its two meters — bond and desire, each a
+ * slim bar with the total and this turn's move. The rest of the
+ * record lives in the fly.
+ */
+function shiftBox(shift) {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'mz-g mz-shift';
+    card.dataset.mzDock = 'shifts';
+
+    const txt = document.createElement('span');
+    txt.className = 'mz-g-txt';
+
+    const pair = document.createElement('span');
+    pair.className = 'mz-g-t mz-shift-pair';
+    pair.textContent = pairLine(shift);
+
+    txt.append(pair, meterStrip('bond', shift.bondTotal, shift.delta), meterStrip('desire', shift.desireTotal, shift.ddelta));
+    card.append(txt);
+    return card;
+}
+
+/**
+ * A popup record, squeezed from the mockup: the pair with its bond
+ * type, the two meters side by side, then the state of the pair and
+ * what moved each meter — one tight foot instead of stacked panels.
+ */
+function shiftRecord(shift) {
+    const item = document.createElement('div');
+    item.className = 'mz-item is-full';
+
+    const row = document.createElement('div');
+    row.className = 'mz-item-row mz-item-row--title';
+
+    const title = document.createElement('span');
+    title.className = 'mz-item-title';
+    title.textContent = pairLine(shift);
+    row.append(title);
+
+    if (shift.bond) {
+        const bond = document.createElement('span');
+        bond.className = 'mz-item-meta';
+        bond.textContent = say(shift.bond);
+        row.append(bond);
+    }
+
+    item.append(row);
+
+    const meters = document.createElement('div');
+    meters.className = 'mz-meters';
+    meters.append(
+        meterStrip('bond', shift.bondTotal, shift.delta),
+        meterStrip('desire', shift.desireTotal, shift.ddelta),
+    );
+    item.append(meters);
+
+    if (shift.status) {
+        const state = document.createElement('p');
+        state.className = 'mz-item-out';
+        state.textContent = `Now: ${say(shift.status)}`;
+        item.append(state);
+    }
+
+    if (shift.cause) {
+        const cause = document.createElement('p');
+        cause.className = 'mz-item-sub mz-subtext';
+
+        const label = document.createElement('span');
+        label.className = 'mz-item-lbl';
+        label.textContent = 'Cause:';
+
+        cause.append(label, ` ${say(shift.cause)}`);
+        item.append(cause);
+    }
+
+    return item;
+}
+
 /* ---------- input ---------- */
 
 function activate(trigger) {
@@ -837,9 +1154,10 @@ function onClick(event) {
         return;
     }
 
-    // A click anywhere else closes the popup. Clicks inside it never do,
-    // so touching, scrolling or selecting within it is safe.
-    if (openKey && !fly.contains(event.target)) closeDock();
+    // A click anywhere else closes the popup — a real one. Scripts
+    // fire synthetic clicks (SillyTavern does, on the composer) and
+    // carry no intent to dismiss anything.
+    if (openKey && event.isTrusted && !fly.contains(event.target)) closeDock();
 }
 
 function onKeyDown(event) {

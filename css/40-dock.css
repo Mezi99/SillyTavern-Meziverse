@@ -209,10 +209,13 @@ button.mz-g--quiet:hover .mz-g-t { color: var(--mz-accent); }
 }
 .mz-item-meta {
     flex: none;
+    max-width: 100%;
     font-size: var(--mz-text-2xs);
     letter-spacing: .04em;
     color: var(--mz-text-dim);
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .mz-item-sub {
     margin-top: 3px;
@@ -228,7 +231,11 @@ button.mz-g--quiet:hover .mz-g-t { color: var(--mz-accent); }
 .mz-item.is-open .mz-item-sub { -webkit-line-clamp: unset; display: block; }
 
 /* a full record shows everything at once: the pill beside the name, then
-   plot and outcome tightly stacked — no unfolding, no foot line */
+   plot and outcome tightly stacked — no unfolding, no foot line. The row
+   wraps before it lets a long side label crush the name */
+.mz-item-row--title {
+    flex-wrap: wrap;
+}
 .mz-item-row--title .mz-item-title { flex: 0 1 auto; }
 .mz-item-row--title .mz-tag { flex: none; }
 .mz-item-row--title .mz-pips { margin-left: auto; }
@@ -436,6 +443,159 @@ button.mz-g--quiet:hover .mz-g-t { color: var(--mz-accent); }
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+
+/* standing tracks: the name over the level bar, the number and the
+   change on the name's line. The bar is a track of ten whose tone
+   turns at the halfway mark — below five is the bad end of the stakes */
+.mz-stand {
+    display: block;
+    padding: 9px 12px 11px;
+    cursor: pointer;
+}
+.mz-stand:hover { border-color: var(--mz-line-strong); }
+.mz-stand-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+.mz-stand-name {
+    flex: 1;
+    min-width: 0;
+    color: var(--mz-accent);
+}
+.mz-stand-level {
+    flex: none;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-left: auto;
+}
+.mz-stand-num {
+    font: 500 var(--mz-text-xs) var(--mz-font-ui);
+    font-variant-numeric: tabular-nums;
+    color: var(--mz-text-muted);
+}
+.mz-stand-bar {
+    display: block;
+    height: 5px;
+    margin-top: 7px;
+    border-radius: var(--mz-r-pill);
+    background: var(--mz-line-strong);
+    overflow: hidden;
+}
+.mz-stand-bar i {
+    display: block;
+    height: 100%;
+    border-radius: var(--mz-r-pill);
+}
+.mz-stand-bar.is-high i { background: var(--mz-ok); }
+.mz-stand-bar.is-low i { background: var(--mz-bad); }
+.mz-item .mz-stand-bar { margin: 9px 0 3px; }
+
+/* the change since the ledger last spoke: always signed, and a small
+   `new` for a track the board has not seen before */
+.mz-delta {
+    font: 500 var(--mz-text-xs) var(--mz-font-ui);
+    font-variant-numeric: tabular-nums;
+    color: var(--mz-text-dim);
+}
+.mz-delta.is-up { color: var(--mz-ok); }
+.mz-delta.is-down { color: var(--mz-bad); }
+.mz-delta.is-new { font-style: italic; }
+
+/* the stakes' two ends: what 0 costs, what 10 buys */
+.mz-ends {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 8px;
+    font-size: var(--mz-text-xs);
+    line-height: 1.35;
+    color: var(--mz-text-dim);
+}
+.mz-ends b {
+    display: block;
+    font-weight: 500;
+    color: var(--mz-text-muted);
+}
+.mz-ends div:last-child { text-align: right; }
+
+/* shifts: the pair over its two meters — bond and desire, each a slim
+   bar with the total and this turn's move. The bar's full width is the
+   pair's own recent widest (the total and the one before it, rounded
+   up to the next hundred), so the meters run past 100 uncapped. The
+   tone flips with the sign: a bond below zero goes wary yellow, a
+   desire below zero goes its own purple */
+.mz-shift {
+    display: block;
+    padding: 9px 12px 11px;
+    cursor: pointer;
+}
+.mz-shift:hover { border-color: var(--mz-line-strong); }
+.mz-shift-pair {
+    display: block;
+    color: var(--mz-accent);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.mz-meter {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+}
+.mz-meter-l {
+    flex: none;
+    width: 42px;
+    font: 500 var(--mz-text-2xs) / 1 var(--mz-font-ui);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--mz-text-dim);
+}
+.mz-meter-bar {
+    flex: 1;
+    min-width: 36px;
+    height: 4px;
+    border-radius: var(--mz-r-pill);
+    background: var(--mz-line-strong);
+    overflow: hidden;
+}
+.mz-meter-bar i {
+    display: block;
+    height: 100%;
+    border-radius: var(--mz-r-pill);
+    background: var(--mz-ok);
+}
+.mz-meter-bar.is-neg i { background: var(--mz-warn); }
+.mz-meter.is-desire .mz-meter-bar i { background: var(--mz-tone-desire); }
+.mz-meter.is-desire .mz-meter-bar.is-neg i { background: var(--mz-tone-desire-low); }
+.mz-meter-num {
+    flex: none;
+    font: 500 var(--mz-text-xs) var(--mz-font-ui);
+    font-variant-numeric: tabular-nums;
+    color: var(--mz-text-muted);
+}
+
+/* in the fly the two meters share one row — the mockup's boxed meters
+   ate the vertical space when many pairs moved */
+.mz-meters {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 2px 12px;
+    margin: 8px 0 3px;
+}
+.mz-meters .mz-meter {
+    gap: 5px;
+    min-width: 0;
+    margin-top: 0;
+}
+.mz-meters .mz-meter-l {
+    width: 36px;
+    letter-spacing: .02em;
+}
+.mz-meters .mz-meter-bar { min-width: 12px; }
+.mz-meters .mz-meter-num { font-size: var(--mz-text-2xs); }
 
 /* mini profiles: who they are, how they are, how they look — the base
    info changes every turn, so it stays out on the rail */
