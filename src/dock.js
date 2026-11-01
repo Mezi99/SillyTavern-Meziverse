@@ -335,6 +335,15 @@ function syncFly() {
 
     fly.hidden = !openKey;
     frame.classList.toggle('is-fly-open', !!openKey);
+
+    // The popup opens beside its own rail: people on the left, story
+    // on the right.
+    if (openKey) {
+        const left = ENTRIES[openKey]?.side === 'l';
+        fly.classList.toggle('mz-fly--l', left);
+        fly.classList.toggle('mz-fly--r', !left);
+    }
+
     syncMenu();
 
     for (const button of railButtons?.querySelectorAll('.mz-railbtn[data-mz-dock]') || []) {
