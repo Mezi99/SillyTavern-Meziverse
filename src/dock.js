@@ -22,19 +22,21 @@
 import { icon } from './icons.js';
 import { castAvatar } from './cast.js';
 import { entryOn, modeOn } from './settings.js';
-import { parseStakes } from './ledger.js';
+import { meterMax, parseStakes } from './ledger.js';
 import { personaName } from './st.js';
 
 const BOXES_MAX = 3;
 const PROFILES_MAX = 6;
+const SHIFTS_MAX = 6;
 
 /**
  * The ledger entries. `standing` leads the left side — how the world
  * sees you, above the profiles — and `profiles` follows: mini profile
- * cards at a glance and a full card per character. `threads` and
- * `plans` carry right-side glance boxes; hooks, lore and recap are
- * popup-only. The rest joins here as it lands, and the future
- * mode-features menu flips their switches in `settings().entries`.
+ * cards at a glance and a full card per character. `shifts` sits under
+ * them: the pairs that moved this turn. `threads` and `plans` carry
+ * right-side glance boxes; hooks, lore and recap are popup-only. The
+ * rest joins here as it lands, and the future mode-features menu flips
+ * their switches in `settings().entries`.
  */
 const ENTRIES = {
     standing: {
@@ -52,6 +54,14 @@ const ENTRIES = {
         sub: ledger => `${ledger.profiles.length} in this scene${ledger.carried ? ` \u00b7 from turn ${ledger.turn}` : ''}`,
         boxes: ledger => ledger.profiles.slice(0, PROFILES_MAX).map(profileBox),
         body: ledger => ledger.profiles.map(profileRecord),
+    },
+    shifts: {
+        title: 'Shifts',
+        side: 'l',
+        has: ledger => !!ledger && ledger.shifts.length > 0,
+        sub: ledger => `${ledger.shifts.length} changed this turn${ledger.carried ? ` \u00b7 from turn ${ledger.turn}` : ''}`,
+        boxes: ledger => ledger.shifts.slice(0, SHIFTS_MAX).map(shiftBox),
+        body: ledger => ledger.shifts.map(shiftRecord),
     },
     threads: {
         title: 'Threads',
@@ -644,21 +654,21 @@ function levelBar(standing) {
 /**
  * The change chip: `+2` or `−1` since the ledger last spoke, or the
  * small `new` of a track the board has not seen before. An unchanged
- * level wears nothing.
+ * meter wears nothing.
  */
-function deltaChip(standing) {
+function deltaChip(value) {
     const chip = document.createElement('span');
 
-    if (standing.delta === 'new') {
+    if (value === 'new') {
         chip.className = 'mz-delta is-new';
         chip.textContent = 'new';
         return chip;
     }
 
-    if (typeof standing.delta !== 'number' || standing.delta === 0) return null;
+    if (typeof value !== 'number' || value === 0) return null;
 
-    chip.className = 'mz-delta' + (standing.delta > 0 ? ' is-up' : ' is-down');
-    chip.textContent = standing.delta > 0 ? `+${standing.delta}` : `\u2212${Math.abs(standing.delta)}`;
+    chip.className = 'mz-delta' + (value > 0 ? ' is-up' : ' is-down');
+    chip.textContent = value > 0 ? `+${value}` : `\u2212${Math.abs(value)}`;
     return chip;
 }
 
@@ -674,7 +684,7 @@ function levelLine(standing) {
         wrap.append(num);
     }
 
-    const chip = deltaChip(standing);
+    const chip = deltaChip(standing.delta);
     if (chip) wrap.append(chip);
     return wrap;
 }
@@ -977,6 +987,132 @@ function openProfileCard(index) {
     frame.classList.add('is-card-open');
     card.setAttribute('aria-hidden', 'false');
     card.querySelector('[data-mz-card-close]')?.focus({ preventScroll: true });
+}
+
+/* ---------- one shift ---------- */
+
+/**
+ * One meter of a pair: the label, the slim bar, the total and this
+ * turn's move. The bar's full width is the pair's own recent widest —
+ * the total and the one before it — rounded up to the next hundred,
+ * so 101 reads as 101 / 200 and nothing caps the meters. The tone
+ * flips with the sign: a bond spent below zero goes wary yellow, a
+ * desire below zero goes its own purple.
+ */
+function meterStrip(kind, total, delta) {
+    const strip = document.createElement('div');
+    strip.className = 'mz-meter' + (kind === 'desire' ? ' is-desire' : '');
+
+    const label = document.createElement('span');
+    label.className = 'mz-meter-l';
+    label.textContent = kind;
+    strip.append(label);
+
+    if (total !== null) {
+        const max = meterMax(total, delta);
+
+        const bar = document.createElement('span');
+        bar.className = 'mz-meter-bar' + (total < 0 ? ' is-neg' : '');
+
+        const fill = document.createElement('i');
+        fill.style.width = `${Math.min(100, Math.abs(total) / max * 100)}%`;
+        bar.append(fill);
+        strip.append(bar);
+
+        const num = document.createElement('span');
+        num.className = 'mz-meter-num';
+        const sign = total > 0 ? '+' : total < 0 ? '−' : '';
+        num.textContent = `${sign}${Math.abs(total)} / ${max}`;
+        strip.append(num);
+    }
+
+    const chip = deltaChip(delta);
+    if (chip) strip.append(chip);
+    return strip;
+}
+
+/** The pair as display text: `from → toward`, whichever side exists. */
+function pairLine(shift) {
+    return [say(shift.from), say(shift.toward)].filter(Boolean).join(' → ');
+}
+
+/**
+ * A rail box: the pair and its two meters — bond and desire, each a
+ * slim bar with the total and this turn's move. The rest of the
+ * record lives in the fly.
+ */
+function shiftBox(shift) {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'mz-g mz-shift';
+    card.dataset.mzDock = 'shifts';
+
+    const txt = document.createElement('span');
+    txt.className = 'mz-g-txt';
+
+    const pair = document.createElement('span');
+    pair.className = 'mz-g-t mz-shift-pair';
+    pair.textContent = pairLine(shift);
+
+    txt.append(pair, meterStrip('bond', shift.bondTotal, shift.delta), meterStrip('desire', shift.desireTotal, shift.ddelta));
+    card.append(txt);
+    return card;
+}
+
+/**
+ * A popup record, squeezed from the mockup: the pair with its bond
+ * type, the two meters side by side, then the state of the pair and
+ * what moved each meter — one tight foot instead of stacked panels.
+ */
+function shiftRecord(shift) {
+    const item = document.createElement('div');
+    item.className = 'mz-item is-full';
+
+    const row = document.createElement('div');
+    row.className = 'mz-item-row mz-item-row--title';
+
+    const title = document.createElement('span');
+    title.className = 'mz-item-title';
+    title.textContent = pairLine(shift);
+    row.append(title);
+
+    if (shift.bond) {
+        const bond = document.createElement('span');
+        bond.className = 'mz-item-meta';
+        bond.textContent = say(shift.bond);
+        row.append(bond);
+    }
+
+    item.append(row);
+
+    const meters = document.createElement('div');
+    meters.className = 'mz-meters';
+    meters.append(
+        meterStrip('bond', shift.bondTotal, shift.delta),
+        meterStrip('desire', shift.desireTotal, shift.ddelta),
+    );
+    item.append(meters);
+
+    if (shift.status) {
+        const state = document.createElement('p');
+        state.className = 'mz-item-out';
+        state.textContent = `Now: ${say(shift.status)}`;
+        item.append(state);
+    }
+
+    if (shift.cause) {
+        const cause = document.createElement('p');
+        cause.className = 'mz-item-sub mz-subtext';
+
+        const label = document.createElement('span');
+        label.className = 'mz-item-lbl';
+        label.textContent = 'Cause:';
+
+        cause.append(label, ` ${say(shift.cause)}`);
+        item.append(cause);
+    }
+
+    return item;
 }
 
 /* ---------- input ---------- */

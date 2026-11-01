@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ledgerRows, normalizeHookState, normalizeHooks, normalizeLore, normalizePlans, normalizeProfiles, normalizeRecap, normalizeStanding, normalizeState, normalizeThreads, parseClock, parseLevel, parseStakes, resolveLedger, sortThreads, withStandingDeltas } from '../src/ledger.js';
+import { ledgerRows, meterMax, normalizeHookState, normalizeHooks, normalizeLore, normalizePlans, normalizeProfiles, normalizeRecap, normalizeShifts, normalizeStanding, normalizeState, normalizeThreads, parseClock, parseLevel, parseMeter, parseStakes, resolveLedger, sortThreads, withStandingDeltas } from '../src/ledger.js';
 import { stripTags } from '../src/tags.js';
 
 const msg = mes => ({ mes });
@@ -537,4 +537,117 @@ test('resolveLedger carries the standing of the governing ledger', () => {
     assert.equal(ledger.standing[0].name, 'Harbour trust');
     assert.equal(ledger.standing[0].level, 6);
     assert.equal(ledger.standing[0].stakes, 'at 0: run out of town; at 10: harbour daughter');
+});
+
+const SHIFT = (over = {}) => {
+    const attrs = {
+        from: 'Mike',
+        toward: 'Jin',
+        bond: 'friends',
+        status: 'steady, quietly',
+        delta: '+2',
+        bondTotal: '47',
+        ddelta: '-1',
+        desireTotal: '12',
+        cause: 'he stayed through the storm',
+        ...over,
+    };
+    return '<shift ' + Object.entries(attrs).map(([key, value]) => `${key}="${value}"`).join(' ') + '/>';
+};
+
+test('normalizeShifts keeps the tag\u2019s words exactly as written', () => {
+    const rows = ledgerRows(msg(LEDGER(SHIFT())));
+    const [shift] = normalizeShifts(rows);
+
+    assert.deepEqual(shift, {
+        from: 'Mike',
+        toward: 'Jin',
+        bond: 'friends',
+        status: 'steady, quietly',
+        delta: 2,
+        bondTotal: 47,
+        ddelta: -1,
+        desireTotal: 12,
+        cause: 'he stayed through the storm',
+    });
+});
+
+test('parseMeter keeps the sign and refuses the rest \u2014 no ceiling, no floor', () => {
+    assert.equal(parseMeter('5'), 5);
+    assert.equal(parseMeter('+5'), 5);
+    assert.equal(parseMeter('-3'), -3);
+    assert.equal(parseMeter('0'), 0);
+    assert.equal(parseMeter('240'), 240);
+    assert.equal(parseMeter('-150'), -150);
+    assert.equal(parseMeter('7.5'), null);
+    assert.equal(parseMeter('high'), null);
+    assert.equal(parseMeter(''), null);
+});
+
+test('meterMax grows the scale by the hundred and never below 100', () => {
+    assert.equal(meterMax(96, 0), 100);
+    assert.equal(meterMax(101, 5), 200);
+    assert.equal(meterMax(250, 10), 300);
+    assert.equal(meterMax(500, 0), 500);
+    assert.equal(meterMax(null, null), 100);
+});
+
+test('meterMax measures the pair\u2019s recent widest, not just the total', () => {
+    // A pair drifting back over a boundary keeps its wider scale.
+    assert.equal(meterMax(96, -5), 200);
+    assert.equal(meterMax(-101, -5), 200);
+    assert.equal(meterMax(-47, 3), 100);
+});
+
+test('a shift row that names no pair is dropped', () => {
+    const rows = ledgerRows(msg(LEDGER(
+        SHIFT({ from: '', toward: '' }),
+        SHIFT({ from: '', toward: 'Jin' }),
+        SHIFT({ from: 'Mike', toward: '' }),
+    )));
+
+    assert.deepEqual(normalizeShifts(rows).map(s => [s.from, s.toward]), [['', 'Jin'], ['Mike', '']]);
+});
+
+test('shift rows keep the tag order', () => {
+    const rows = ledgerRows(msg(LEDGER(
+        SHIFT({ from: 'Anna' }),
+        SHIFT({ from: 'Tyler' }),
+        SHIFT({ from: 'Megan' }),
+    )));
+
+    assert.deepEqual(normalizeShifts(rows).map(s => s.from), ['Anna', 'Tyler', 'Megan']);
+});
+
+test('an unreadable meter number is null, and the pair still renders', () => {
+    const rows = ledgerRows(msg(LEDGER(SHIFT({ bondTotal: 'warm', ddelta: '', delta: '+1' }))));
+    const [shift] = normalizeShifts(rows);
+
+    assert.equal(shift.bondTotal, null);
+    assert.equal(shift.ddelta, null);
+    assert.equal(shift.delta, 1);
+    assert.equal(shift.from, 'Mike');
+});
+
+test('milestone rows are not shift rows \u2014 ignored for now', () => {
+    const rows = ledgerRows(msg(LEDGER(
+        SHIFT(),
+        '<milestone from="Mike" toward="Jin" mark="+100" act="He said it plainly" type="bond"/>',
+    )));
+
+    assert.equal(normalizeShifts(rows).length, 1);
+});
+
+test('resolveLedger carries the shifts of the governing ledger as written', () => {
+    const chat = [
+        msg(LEDGER(SHIFT({ delta: '+1', bondTotal: '99' }))),
+        msg(LEDGER(SHIFT({ delta: '+2', bondTotal: '101' }))),
+    ];
+
+    // The delta comes from the tag \u2014 no derivation against the block
+    // before, unlike standing.
+    const now = resolveLedger(chat, 1);
+    assert.equal(now.shifts[0].delta, 2);
+    assert.equal(now.shifts[0].bondTotal, 101);
+    assert.equal(now.carried, false);
 });

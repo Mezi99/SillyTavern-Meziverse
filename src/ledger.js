@@ -267,6 +267,78 @@ export function normalizeProfiles(rows) {
 }
 
 /**
+ * A meter total or movement. The shift meters have no ceiling and no
+ * floor — 240 and −150 are as legal as 5 — so the number is signed
+ * and never clamped. Unreadable input is null: the pair still renders,
+ * it just carries no bar or chip on that meter.
+ *
+ * @param {string} value
+ * @returns {number|null}
+ */
+export function parseMeter(value) {
+    const raw = text(value).trim();
+    if (!/^[+-]?\d+$/.test(raw)) return null;
+    return Number(raw);
+}
+
+/**
+ * A meter bar's scale: the widest the pair has recently been — the
+ * total and the total before this turn's movement — rounded up to the
+ * next hundred, never below 100. The meters are uncapped, so 101 shows
+ * as 101 / 200; and a pair drifting back over a boundary (101 → 96)
+ * keeps its wider scale instead of snapping shut.
+ *
+ * @param {number|null} total this turn's total
+ * @param {number|null} delta this turn's movement
+ * @returns {number} the bar's full width, 100 at the least
+ */
+export function meterMax(total, delta) {
+    const now = Math.abs(total ?? 0);
+    const was = Math.abs((total ?? 0) - (delta ?? 0));
+    return Math.max(100, Math.ceil(Math.max(now, was) / 100) * 100);
+}
+
+/**
+ * The shift rows of a ledger, in the tag's own order: one line per
+ * pair that moved this turn, how an NPC feels toward someone — bond
+ * and desire on two meters each. `from` is always an NPC; `toward`
+ * may be anyone, {{user}} included. Everything but the four numbers
+ * is free text.
+ *
+ * @param {Array<object>} rows
+ * @returns {Array<{from:string, toward:string, bond:string, status:string, delta:number|null, bondTotal:number|null, ddelta:number|null, desireTotal:number|null, cause:string}>}
+ */
+export function normalizeShifts(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+    const shifts = [];
+
+    for (const row of list) {
+        if (!row || row.name !== 'shift' || !row.closed) continue;
+
+        const attrs = row.attrs || {};
+        const from = text(attrs.from).trim();
+        const toward = text(attrs.toward).trim();
+        if (!from && !toward) continue;
+
+        // The tag parser lowercases attribute names — `bondtotal` is
+        // the tag's `bondTotal`.
+        shifts.push({
+            from,
+            toward,
+            bond: text(attrs.bond).trim(),
+            status: text(attrs.status).trim(),
+            delta: parseMeter(attrs.delta),
+            bondTotal: parseMeter(attrs.bondtotal),
+            ddelta: parseMeter(attrs.ddelta),
+            desireTotal: parseMeter(attrs.desiretotal),
+            cause: text(attrs.cause).trim(),
+        });
+    }
+
+    return shifts;
+}
+
+/**
  * A standing's level. The tag writes 0–10; the number is clamped for
  * the bar and unreadable input is null — the row still renders, it just
  * carries no bar or number.
@@ -379,7 +451,7 @@ function previousRows(list, from) {
  *
  * @param {object[]} messages SillyTavern's chat array
  * @param {number} at the shown message's index
- * @returns {{rows:object[], threads:object[], plans:object[], hooks:object[], lore:object[], recap:object[], profiles:object[], standing:object[], index:number, turn:number, carried:boolean}|null}
+ * @returns {{rows:object[], threads:object[], plans:object[], hooks:object[], lore:object[], recap:object[], profiles:object[], shifts:object[], standing:object[], index:number, turn:number, carried:boolean}|null}
  */
 export function resolveLedger(messages, at) {
     const list = Array.isArray(messages) ? messages : [];
@@ -402,6 +474,7 @@ export function resolveLedger(messages, at) {
             lore: normalizeLore(rows),
             recap: normalizeRecap(rows),
             profiles: normalizeProfiles(rows),
+            shifts: normalizeShifts(rows),
             standing: withStandingDeltas(normalizeStanding(rows), before ? normalizeStanding(before) : []),
             index: i,
             turn: i + 1,
