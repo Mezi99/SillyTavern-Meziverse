@@ -212,14 +212,14 @@
     max-width: min(220px, calc(100% + 20px));
     display: -webkit-box;
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
+    -webkit-line-clamp: 4;
     overflow: hidden;
     padding: 8px 11px;
     border: 1px solid var(--mz-line);
     border-radius: 14px;
     background: color-mix(in srgb, var(--mz-bg) 86%, transparent);
     backdrop-filter: var(--mz-blur);
-    font: italic 300 var(--mz-text-sm) / 1.45 var(--mz-font-prose);
+    font: italic 300 calc(var(--mz-text-sm) - 1px) / 1.45 var(--mz-font-prose);
     color: var(--mz-text);
     cursor: pointer;
 }
@@ -257,6 +257,36 @@
     z-index: 3;
     border-color: var(--mz-line-strong);
 }
+
+/* the per-avatar thought toggle, sitting with the portrait furniture:
+   revealed on hover where there is hover, always visible on touch */
+.mz-thought-btn {
+    position: absolute;
+    z-index: 3;
+    top: 8px;
+    left: 8px;
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border: 1px solid var(--mz-line);
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--mz-bg) 78%, transparent);
+    backdrop-filter: var(--mz-blur);
+    color: var(--mz-text-muted);
+    opacity: 0;
+    transition:
+        opacity var(--mz-dur-fast) var(--mz-ease),
+        color var(--mz-dur-fast) var(--mz-ease);
+}
+
+.mz-cast .mz-port:hover .mz-thought-btn,
+.mz-cast .mz-port:focus-within .mz-thought-btn,
+.mz-thought-btn:focus-visible { opacity: 1; }
+
+.mz-thought-btn:hover { color: var(--mz-accent); }
+.mz-thought-btn.is-off { color: var(--mz-text-dim); border-style: dashed; }
+.mz-thought-btn svg { width: 13px; height: 13px; }
 
 /* ---------- the portrait itself ---------- */
 
@@ -327,8 +357,9 @@
 
 .mz-port--cast.is-empty .mz-port-attach { opacity: .72; }
 
-.mz-port--cast:hover .mz-port-attach,
-.mz-port--cast:focus-within .mz-port-attach { opacity: 1; }
+/* the offer only matters where there is no portrait yet */
+.mz-port--cast.is-empty:hover .mz-port-attach,
+.mz-port--cast.is-empty:focus-within .mz-port-attach { opacity: 1; }
 
 .mz-port-attach:hover,
 .mz-port-attach:focus-visible {
@@ -446,4 +477,5 @@
 /* a touch screen has no hover: keep the tools reachable */
 @media (hover: none) {
     .mz-port-tools { opacity: 1; }
+    .mz-thought-btn { opacity: 1; }
 }

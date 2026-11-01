@@ -143,6 +143,10 @@ export function renderThoughts(profiles) {
     applyThoughts();
 }
 
+/* Thoughts hidden by their avatar's own toggle. Session-only, like the
+   rails' snapped boxes: the future mode-features menu owns persistence. */
+const hiddenThoughts = new Set();
+
 function applyThoughts() {
     if (!host || !track) return;
 
@@ -159,16 +163,35 @@ function applyThoughts() {
     let anyBubble = false;
 
     for (const figure of track.querySelectorAll('.mz-port')) {
-        const thought = byName.get(textOf(figure.dataset.name).trim().toLowerCase()) || '';
+        const key = textOf(figure.dataset.name).trim().toLowerCase();
+        const thought = byName.get(key) || '';
         const bubble = figure.querySelector('.mz-thought-bub');
+        const toggle = figure.querySelector('.mz-thought-btn');
 
-        if (thought) {
+        // A thought with no matching avatar stays unspoken: no bubble
+        // and no toggle to bring one back.
+        if (!thought) {
+            bubble?.remove();
+            toggle?.remove();
+            continue;
+        }
+
+        const button = toggle || thoughtToggle(key);
+        if (!toggle) figure.append(button);
+
+        const hidden = hiddenThoughts.has(key);
+        button.classList.toggle('is-off', hidden);
+        button.title = hidden ? 'Show thought' : 'Hide thought';
+        button.setAttribute('aria-label', button.title);
+        button.setAttribute('aria-pressed', String(!hidden));
+
+        if (hidden) {
+            bubble?.remove();
+        } else {
             const target = bubble || thoughtBubble();
             if (target.textContent !== thought) target.textContent = thought;
             if (!bubble) figure.append(target);
             anyBubble = true;
-        } else if (bubble) {
-            bubble.remove();
         }
     }
 
@@ -176,6 +199,15 @@ function applyThoughts() {
     // above the posters so its own scroll never clips them.
     track.style.setProperty('--mz-bubble-room', anyBubble ? `${BUBBLE_ROOM}px` : '0px');
     refreshCastSizing();
+}
+
+function thoughtToggle(key) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'mz-thought-btn';
+    button.dataset.mzThought = key;
+    button.append(icon('mz-i-thought'));
+    return button;
 }
 
 function thoughtBubble() {
@@ -335,6 +367,15 @@ function poster(name, path) {
 /* ---------- attaching a portrait ---------- */
 
 function onClick(event) {
+    const toggle = event.target.closest('[data-mz-thought]');
+    if (toggle) {
+        const key = toggle.dataset.mzThought;
+        if (hiddenThoughts.has(key)) hiddenThoughts.delete(key);
+        else hiddenThoughts.add(key);
+        applyThoughts();
+        return;
+    }
+
     const bubble = event.target.closest('.mz-thought-bub');
     if (bubble) {
         bubble.classList.toggle('is-open');

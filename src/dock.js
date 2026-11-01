@@ -602,8 +602,8 @@ function recapRecord(recap) {
 
 /**
  * A rail box: the avatar and the base info that changes every turn —
- * who they are, how they are, how they look. The full record is one
- * button away.
+ * who they are, how they are. The look and the rest of the record live
+ * in the full card, one button away.
  */
 function profileBox(profile, index) {
     const card = document.createElement('div');
@@ -625,13 +625,6 @@ function profileBox(profile, index) {
         state.className = 'mz-prof-state';
         state.textContent = profile.state;
         txt.append(state);
-    }
-
-    if (profile.look) {
-        const look = document.createElement('span');
-        look.className = 'mz-prof-look';
-        look.textContent = profile.look;
-        txt.append(look);
     }
 
     card.append(txt, fullProfileButton());
