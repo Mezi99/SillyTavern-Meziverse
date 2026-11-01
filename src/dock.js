@@ -1154,9 +1154,10 @@ function onClick(event) {
         return;
     }
 
-    // A click anywhere else closes the popup. Clicks inside it never do,
-    // so touching, scrolling or selecting within it is safe.
-    if (openKey && !fly.contains(event.target)) closeDock();
+    // A click anywhere else closes the popup — a real one. Scripts
+    // fire synthetic clicks (SillyTavern does, on the composer) and
+    // carry no intent to dismiss anything.
+    if (openKey && event.isTrusted && !fly.contains(event.target)) closeDock();
 }
 
 function onKeyDown(event) {
