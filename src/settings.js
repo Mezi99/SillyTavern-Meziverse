@@ -17,6 +17,12 @@ const DEFAULTS = {
     entries: {},
     theme: 'ink-jade',
     background: 'none',
+    bgAuto: false,
+    bgEveryN: 3,
+    bgContextReplies: 2,
+    bgStyle: 'anime style, visual novel background art, detailed environment, cinematic lighting',
+    bgNegative: 'people, characters, crowd, portrait, text, watermark, logo, signature, blurry, low quality',
+    bgSize: 'landscape',
     reducedMotion: false,
     // How the inline cue popovers open: on hover and tap, or tap only.
     cuePopovers: 'both',
@@ -62,6 +68,11 @@ export function settings() {
  */
 export function modeOn() {
     return settings().mode !== false;
+}
+
+/** Whether automatic background generation is on. */
+export function bgAutoOn() {
+    return settings().bgAuto === true;
 }
 
 /**

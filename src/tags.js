@@ -122,6 +122,55 @@ export function stripTags(mes) {
     return out;
 }
 
+/**
+ * The message with every catalogue tag except complete `<scene>` tags removed.
+ *
+ * Keeps the scene tags in place so the background watcher sees the location
+ * structure alongside the prose, while hidden blocks, cues and ledger noise go.
+ */
+export function stripNonSceneTags(mes) {
+    const text = typeof mes === 'string' ? mes : '';
+    const tags = parseTags(text);
+
+    let out = '';
+    let cursor = 0;
+
+    for (const tag of tags) {
+        if (tag.start < cursor) continue;
+        out += text.slice(cursor, tag.start);
+
+        if (tag.name === 'scene' && tag.closed) {
+            out += text.slice(tag.start, tag.end);
+            cursor = tag.end;
+            continue;
+        }
+
+        if (HIDDEN.has(tag.name)) {
+            if (!tag.closed) {
+                cursor = text.length;
+                break;
+            }
+            cursor = tag.end;
+            continue;
+        }
+
+        if (KEEP.has(tag.name)) {
+            out += tag.body ?? '';
+            cursor = tag.end;
+            continue;
+        }
+
+        cursor = tag.end;
+        if (!tag.closed) {
+            cursor = text.length;
+            break;
+        }
+    }
+
+    out += text.slice(cursor);
+    return out;
+}
+
 /** Every complete `<scene>` tag, in the order it appears. */
 export function scenesOf(tags) {
     if (!Array.isArray(tags)) return [];

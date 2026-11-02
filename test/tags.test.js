@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseMessage, parseTags, scenesOf, splitCues, stripTags } from '../src/tags.js';
+import { parseMessage, parseTags, scenesOf, splitCues, stripNonSceneTags, stripTags } from '../src/tags.js';
 
 const scene = attrs => `<scene ${attrs} />`;
 
@@ -236,4 +236,30 @@ test('parseMessage caches on identity and rereads when mes changes', () => {
 test('parseMessage tolerates missing or non-object messages', () => {
     assert.deepEqual(parseMessage(null), { mes: '', tags: [] });
     assert.deepEqual(parseMessage({}), { mes: '', tags: [] });
+});
+
+test('stripNonSceneTags keeps complete scene tags and removes every other tag', () => {
+    const mes = [
+        '<think>internal</think>',
+        '<scene date="9:40 PM" location="Old Town | Pier 9" weather="Rain" />',
+        'Rain on the planks. <speech character="Mara">"Stay close."</speech>',
+        '<lie character="Mara" type="omitting" />',
+        '<meanwhile event="A boat leaves" />',
+        '<flashback character="Mara" when="1999">Secret memory</flashback>',
+        '<scene location="Old Town | Warehouse" />',
+        'Inside the door.',
+        '<LEDGER><recap era="1" fact="arrived" /></LEDGER>',
+    ].join('\n');
+
+    const stripped = stripNonSceneTags(mes);
+    assert.equal(stripped.includes('<scene date="9:40 PM" location="Old Town | Pier 9" weather="Rain" />'), true);
+    assert.equal(stripped.includes('<scene location="Old Town | Warehouse" />'), true);
+    assert.equal(stripped.includes('"Stay close."'), true);
+    assert.equal(stripped.includes('Rain on the planks.'), true);
+    assert.equal(stripped.includes('Inside the door.'), true);
+    assert.equal(stripped.includes('<think>'), false);
+    assert.equal(stripped.includes('<lie'), false);
+    assert.equal(stripped.includes('<meanwhile'), false);
+    assert.equal(stripped.includes('Secret memory'), false);
+    assert.equal(stripped.includes('<LEDGER>'), false);
 });
