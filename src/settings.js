@@ -17,6 +17,11 @@ const DEFAULTS = {
     entries: {},
     theme: 'ink-jade',
     background: 'none',
+    // Location backgrounds: an image generated from the story's place by
+    // SillyTavern's Image Generation. Auto works in both modes - mode ON
+    // follows the scene tags, mode OFF is paced by bgEveryN - while the brush
+    // button always fires on demand. Names start with bg so they never
+    // collide with the scene's own `background` mirror above.
     bgAuto: false,
     bgEveryN: 3,
     bgContextReplies: 2,
@@ -70,7 +75,7 @@ export function modeOn() {
     return settings().mode !== false;
 }
 
-/** Whether automatic background generation is on. */
+/** Whether automatic background generation is on. The brush needs no gate. */
 export function bgAutoOn() {
     return settings().bgAuto === true;
 }

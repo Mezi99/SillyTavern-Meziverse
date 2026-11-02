@@ -1,17 +1,27 @@
 /**
- * Location backgrounds — state, cache, scene-grouped excerpt building, and
- * watcher reply parsing.
+ * Location backgrounds: the per-chat place cache, and the pure decisions the
+ * background chain makes with it.
  *
- * The pure helpers at the top do not touch the DOM or SillyTavern and are
- * tested directly in `test/backgrounds.test.js`. Runtime wiring (ST glue and
- * triggers) plugs in on top of them.
+ * Pure like scene.js - the store is a plain object that lives in
+ * `chatMetadata.meziverse.bg` (SillyTavern persists it for us), and nothing
+ * here touches the DOM, the network, or SillyTavern itself. On top of this
+ * layer the runtime chain adds three things: the watcher LLM call that
+ * verifies whether the place actually changed and writes image prompts, image
+ * generation through SillyTavern's Image Generation, and setting the result as
+ * the chat background.
+ *
+ * One rule shapes everything below: string comparison is only a skip-gate,
+ * never the change-detector. Tags are free text written by an LLM - "Pier 9"
+ * and "Pier No9" may be the same place - so an exact key match skips the
+ * watcher for free, while any difference is verified by meaning before a new
+ * image is ever generated.
  */
 
-import { parseTags, stripNonSceneTags, stripTags } from './tags.js';
-import { describeScene, describeScenes, isUsableScene, splitLocation } from './scene.js';
+import { splitLocation } from './scene.js';
 
 export const BG_STORE_VERSION = 1;
 
+/** The size passed to Image Generation when bgSize is 'landscape'. */
 export const LANDSCAPE_SIZE = Object.freeze({
     width: 1216,
     height: 832,
@@ -21,9 +31,10 @@ export const LANDSCAPE_SIZE = Object.freeze({
  * Normalizes a location string into a stable lookup key.
  *
  * `"The city |  Docks | Pier 9 "` and `"the city | docks | pier 9"` fold to
- * the same key (`"the city | docks | pier 9"`).
+ * the same key, so a spelling drift only costs a watcher call, never a
+ * duplicate image.
  *
- * @param {string} value
+ * @param {string} value e.g. 'The city | Docks | Pier 9'
  * @returns {string}
  */
 export function locationKey(value) {
@@ -35,16 +46,19 @@ export function locationKey(value) {
 }
 
 /**
- * Ensures a valid chat-scoped background store object. Mutates `raw` in place
- * when an object is passed so writes on `chatMetadata.meziverse.bg` stay live.
+ * Ensures a valid background store. Mutates `raw` in place - the store lives
+ * on `chatMetadata.meziverse.bg`, and SillyTavern saves that object by
+ * reference - and returns it. Anything unrecognised is pruned rather than
+ * trusted, so a hand-edited or stale chat file can never wedge the chain.
  *
  * @param {object} [raw]
- * @returns {{version:number, currentKey:string|null, keys:Record<string,string>, records:Record<string,{id:string,place:string,prompt:string,path:string,url:string,createdAt:number}>, nextId:number}}
+ * @returns {{version:number, currentKey:string|null, keys:Record<string,string>, records:Record<string,object>, nextId:number}}
  */
-export function normalizeBgStore(raw) {
+export function normalizeStore(raw) {
     const store = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
 
     store.version = BG_STORE_VERSION;
+
     if (typeof store.currentKey !== 'string' || !store.currentKey.trim()) {
         store.currentKey = null;
     } else {
@@ -58,24 +72,21 @@ export function normalizeBgStore(raw) {
         store.records = {};
     }
 
-    let maxNumericId = 0;
-    for (const [id, rec] of Object.entries(store.records)) {
-        if (!rec || typeof rec !== 'object') {
-            delete store.records[id];
-            continue;
-        }
+    let maxId = 0;
+    for (const [id, record] of Object.entries(store.records)) {
         const match = /^bg_(\d+)$/.exec(id);
-        if (match) maxNumericId = Math.max(maxNumericId, Number(match[1]));
+        if (match) maxId = Math.max(maxId, Number(match[1]));
+        if (!record || typeof record !== 'object') delete store.records[id];
     }
 
-    for (const [k, id] of Object.entries(store.keys)) {
-        const normKey = locationKey(k);
+    for (const [key, id] of Object.entries(store.keys)) {
+        const normKey = locationKey(key);
         if (!normKey || typeof id !== 'string' || !store.records[id]) {
-            delete store.keys[k];
+            delete store.keys[key];
             continue;
         }
-        if (normKey !== k) {
-            delete store.keys[k];
+        if (normKey !== key) {
+            delete store.keys[key];
             store.keys[normKey] = id;
         }
     }
@@ -84,34 +95,34 @@ export function normalizeBgStore(raw) {
         store.currentKey = null;
     }
 
-    const next = Number.isInteger(store.nextId) && store.nextId > maxNumericId
+    const next = Number.isInteger(store.nextId) && store.nextId > maxId
         ? store.nextId
-        : maxNumericId + 1;
+        : maxId + 1;
     store.nextId = Math.max(1, next);
 
     return store;
 }
 
 /**
- * Looks up a cached background record by location string or normalized key.
+ * Looks up a cached record by location string or by normalized key.
  *
  * @param {object} store
- * @param {string} placeOrKey
- * @returns {{id:string,place:string,prompt:string,path:string,url:string,createdAt:number}|null}
+ * @param {string} placeOrKey e.g. 'The city | Docks | Pier 9'
+ * @returns {object|null} the record, or null when this place was never drawn
  */
 export function lookupRecord(store, placeOrKey) {
     if (!store || typeof store !== 'object') return null;
     const key = locationKey(placeOrKey);
     if (!key) return null;
     const id = store.keys?.[key];
-    if (!id) return null;
-    return store.records?.[id] || null;
+    return (id && store.records?.[id]) || null;
 }
 
 /**
- * Returns the record currently active on screen, or null.
+ * The record whose image is on screen right now, or null.
  *
  * @param {object} store
+ * @returns {object|null}
  */
 export function currentRecord(store) {
     if (!store || !store.currentKey) return null;
@@ -119,33 +130,12 @@ export function currentRecord(store) {
 }
 
 /**
- * Aliases a location key (e.g. a spelling variant or matched location) to an
- * existing record id and marks it as the current key.
- *
- * @param {object} store
- * @param {string} placeOrKey
- * @param {string|number} targetId
- * @returns {{id:string,place:string,prompt:string,path:string,url:string,createdAt:number}|null}
- */
-export function aliasLocation(store, placeOrKey, targetId) {
-    const ensured = normalizeBgStore(store);
-    const key = locationKey(placeOrKey);
-    if (!key) return null;
-
-    const id = resolveRecordId(ensured, targetId);
-    if (!id || !ensured.records[id]) return null;
-
-    ensured.keys[key] = id;
-    ensured.currentKey = key;
-    return ensured.records[id];
-}
-
-/**
- * Resolves a record id such as `'bg_3'`, `'3'`, or `3` against `store.records`.
+ * Resolves a record id the way the watcher may write it - `'bg_3'`, `'3'` or
+ * `3` - against `store.records`.
  *
  * @param {object} store
  * @param {string|number|null|undefined} rawId
- * @returns {string|null}
+ * @returns {string|null} the record id, or null when nothing matches
  */
 export function resolveRecordId(store, rawId) {
     if (rawId === null || rawId === undefined) return null;
@@ -153,19 +143,42 @@ export function resolveRecordId(store, rawId) {
     if (!str) return null;
     if (store?.records?.[str]) return str;
     const digits = /^(\d+)$/.exec(str);
-    if (digits) {
-        const candidate = `bg_${digits[1]}`;
-        if (store?.records?.[candidate]) return candidate;
-    }
+    if (digits && store?.records?.[`bg_${digits[1]}`]) return `bg_${digits[1]}`;
     return null;
 }
 
 /**
- * Stores a newly generated background record (or overwrites the existing one
- * for `key` when `overwrite` is true) and marks `key` as current.
+ * Points a location key at an existing record - the watcher's "this is the
+ * same place, just spelled differently" answer - and marks it current, so the
+ * skip-gate compares equal from now on.
+ *
+ * @param {object} store
+ * @param {string} placeOrKey the location as the newest tag spelled it
+ * @param {string|number} targetId the record the watcher matched
+ * @returns {object|null} the aliased record, or null for an unknown id
+ */
+export function aliasLocation(store, placeOrKey, targetId) {
+    const ensured = normalizeStore(store);
+    const key = locationKey(placeOrKey);
+    if (!key) return null;
+
+    const id = resolveRecordId(ensured, targetId);
+    if (!id) return null;
+
+    ensured.keys[key] = id;
+    ensured.currentKey = key;
+    return ensured.records[id];
+}
+
+/**
+ * Stores a freshly generated background and marks its place current. With
+ * `overwrite` the existing record for that place is replaced in place (the
+ * brush button's "give me a new one"); without it every call adds a record,
+ * even for a place seen before.
  *
  * @param {object} store
  * @param {{key?:string, place:string, prompt:string, path:string, url?:string, overwrite?:boolean, createdAt?:number}} entry
+ * @returns {object|null} the stored record, or null when place/path is missing
  */
 export function storeRecord(store, {
     key,
@@ -176,29 +189,23 @@ export function storeRecord(store, {
     overwrite = false,
     createdAt = Date.now(),
 } = {}) {
-    const ensured = normalizeBgStore(store);
+    const ensured = normalizeStore(store);
     const cleanPlace = String(place ?? key ?? '').trim();
     const normKey = locationKey(key || cleanPlace);
     const cleanPath = String(path ?? '').trim();
     if (!normKey || !cleanPath) return null;
 
-    const cleanUrl = url ? String(url).trim() : toCssBgUrl(cleanPath);
     const existingId = ensured.keys[normKey];
-    let id;
-
-    if (overwrite && existingId && ensured.records[existingId]) {
-        id = existingId;
-    } else {
-        id = `bg_${ensured.nextId}`;
-        ensured.nextId += 1;
-    }
+    const reuse = overwrite && existingId && ensured.records[existingId] ? existingId : null;
+    const id = reuse || `bg_${ensured.nextId}`;
+    if (!reuse) ensured.nextId += 1;
 
     const record = {
         id,
         place: cleanPlace || normKey,
         prompt: String(prompt ?? '').trim(),
         path: cleanPath,
-        url: cleanUrl,
+        url: url ? String(url).trim() : toCssBgUrl(cleanPath),
         createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
     };
 
@@ -210,29 +217,27 @@ export function storeRecord(store, {
 
 /**
  * Re-derives `currentKey` from SillyTavern's `chat_metadata.custom_background`
- * when a chat loads. If no stored record matches, `currentKey` becomes `null`.
+ * when a chat loads. The background on screen is the truth, not our memory of
+ * the last reply; when no stored record matches, there is no current place.
  *
  * @param {object} store
- * @param {string|null|undefined} customBgUrl
- * @returns {string|null}
+ * @param {string|null|undefined} customBgUrl what SillyTavern restored
+ * @returns {string|null} the recovered key, or null
  */
 export function recoverCurrentKey(store, customBgUrl) {
-    const ensured = normalizeBgStore(store);
+    const ensured = normalizeStore(store);
     const raw = String(customBgUrl ?? '').trim();
     if (!raw) {
         ensured.currentKey = null;
         return null;
     }
 
-    // If currentKey already points at a matching record, keep it.
     const existing = currentRecord(ensured);
-    if (existing && matchesBgUrl(existing, raw)) {
-        return ensured.currentKey;
-    }
+    if (existing && matchesBgUrl(existing, raw)) return ensured.currentKey;
 
     for (const [key, id] of Object.entries(ensured.keys)) {
-        const rec = ensured.records[id];
-        if (rec && matchesBgUrl(rec, raw)) {
+        const record = ensured.records[id];
+        if (record && matchesBgUrl(record, raw)) {
             ensured.currentKey = key;
             return key;
         }
@@ -242,323 +247,68 @@ export function recoverCurrentKey(store, customBgUrl) {
     return null;
 }
 
-function matchesBgUrl(record, customBgUrl) {
-    if (!record) return false;
-    if (record.url === customBgUrl || record.path === customBgUrl) return true;
-    if (toCssBgUrl(record.path) === customBgUrl) return true;
-    return false;
-}
-
 /**
- * Formats an image path as the CSS `url("...")` string ST stores in
- * `chat_metadata.custom_background`.
+ * The CSS `url(...)` value SillyTavern's background module expects, wrapped
+ * the same way its own force-set handler wraps image paths.
  *
  * @param {string} imagePath
  * @returns {string}
  */
 export function toCssBgUrl(imagePath) {
-    const raw = String(imagePath ?? '').trim();
-    if (!raw) return '';
-    if (/^url\(/i.test(raw)) return raw;
-    return `url("${encodeURI(raw)}")`;
+    const path = String(imagePath ?? '').trim();
+    return path ? `url("${encodeURI(path)}")` : '';
 }
 
 /**
- * Returns the most recent known background records (capped at `limit`).
+ * The watcher's menu of images this chat already has: newest first, so it can
+ * answer "known" instead of inventing a near-duplicate place.
  *
  * @param {object} store
  * @param {{limit?:number}} [options]
+ * @returns {Array<{id:string, place:string, prompt:string}>}
  */
 export function knownBackgroundsList(store, { limit = 12 } = {}) {
-    if (!store?.records || typeof store.records !== 'object') return [];
-    const list = Object.values(store.records).filter(rec => rec && typeof rec === 'object' && rec.id);
-    list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-    return list.slice(0, Math.max(0, limit));
-}
-
-/* ---------- Story & scene grouping ---------- */
-
-/**
- * Splits a message (after stripping all non-scene tags) into sequential scene
- * blocks so the watcher sees `<scene .../>` paired with the narration that
- * belongs to that location.
- *
- * @param {string} mes
- * @param {{persona?:string}} [options]
- * @returns {Array<{scene:object|null, rawTag:string, prose:string}>}
- */
-export function groupMessageByScene(mes, { persona = '' } = {}) {
-    const cleaned = stripNonSceneTags(mes);
-    const tags = parseTags(cleaned);
-    const blocks = [];
-
-    let cursor = 0;
-    let currentScene = null;
-    let currentRawTag = '';
-
-    for (const tag of tags) {
-        if (tag.name !== 'scene' || !tag.closed) continue;
-
-        const before = cleaned.slice(cursor, tag.start).trim();
-        if (before || currentRawTag) {
-            blocks.push({
-                scene: currentScene,
-                rawTag: currentRawTag,
-                prose: before,
-            });
-        }
-
-        currentRawTag = cleaned.slice(tag.start, tag.end);
-        currentScene = isUsableScene(tag) ? describeScene(tag, { persona }) : null;
-        cursor = tag.end;
-    }
-
-    const tail = cleaned.slice(cursor).trim();
-    if (tail || currentRawTag) {
-        blocks.push({
-            scene: currentScene,
-            rawTag: currentRawTag,
-            prose: tail,
-        });
-    }
-
-    return blocks;
+    if (!store || typeof store !== 'object') return [];
+    const records = Object.values(store.records || {}).filter(record => record && typeof record === 'object');
+    records.sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
+    return records.slice(0, Math.max(0, limit)).map(record => ({
+        id: record.id,
+        place: record.place || '',
+        prompt: record.prompt || '',
+    }));
 }
 
 /**
- * Collects the recent place-name timeline across `messages` (up to `limit`
- * entries, in chronological order, collapsing consecutive identical places).
+ * What the chain should do about the place the story is at now: nothing (it is
+ * already on screen), apply a cached image (the place was seen before), or ask
+ * the watcher (a genuinely new place - or a spelling drift only the LLM can
+ * recognise, which it answers with `aliasLocation` instead).
  *
- * @param {Array<{mes?:string}>} messages
- * @param {{limit?:number, at?:number, persona?:string}} [options]
- * @returns {string[]}
+ * @param {object} store
+ * @param {string} key the resolved location, e.g. scene placeFull
+ * @returns {{action:'none'|'apply'|'watch', record:object|null}}
  */
-export function extractRecentPlaces(messages, { limit = 6, at, persona = '' } = {}) {
-    const list = Array.isArray(messages) ? messages : [];
-    if (!list.length || limit <= 0) return [];
+export function decide(store, key) {
+    const ensured = normalizeStore(store);
+    const normKey = locationKey(key);
 
-    const end = Number.isInteger(at) && at < list.length ? at : list.length - 1;
-    const timeline = [];
+    if (!normKey) return { action: 'none', record: null };
+    if (normKey === ensured.currentKey) return { action: 'none', record: currentRecord(ensured) };
 
-    for (let i = 0; i <= end; i += 1) {
-        const scenes = describeScenes(list[i], { persona });
-        for (const { scene } of scenes) {
-            if (!scene?.placeFull) continue;
-            const prev = timeline[timeline.length - 1];
-            if (!prev || locationKey(prev) !== locationKey(scene.placeFull)) {
-                timeline.push(scene.placeFull);
-            }
-        }
-    }
+    const record = lookupRecord(ensured, normKey);
+    if (record) return { action: 'apply', record };
 
-    return timeline.slice(-limit);
+    return { action: 'watch', record: null };
 }
 
 /**
- * Formats recent messages for the watcher LLM call.
- *
- * - Mode ON (`mode === true`): strips all tags except `<scene>` and groups each
- *   message into its scene blocks.
- * - Mode OFF (`mode === false`): keeps raw message text untouched.
- *
- * @param {Array<{mes?:string, is_user?:boolean, is_system?:boolean}>} messages
- * @param {{mode?:boolean, count?:number, at?:number, persona?:string}} [options]
- * @returns {string}
+ * Whether a record's image is the one behind SillyTavern's custom-background
+ * value. Tolerates the raw path and the wrapped CSS form alike.
  */
-export function formatLatestStory(messages, { mode = true, count = 2, at, persona = '' } = {}) {
-    const list = Array.isArray(messages) ? messages : [];
-    if (!list.length) return '';
-
-    const end = Number.isInteger(at) && at < list.length ? at : list.length - 1;
-    const maxCount = Math.max(1, Number(count) || 2);
-    const selected = [];
-
-    for (let i = end; i >= 0 && selected.length < maxCount; i -= 1) {
-        const msg = list[i];
-        if (!msg || msg.is_system) continue;
-        // Focus on AI replies (or fall back to the target message if none).
-        if (msg.is_user && selected.length > 0) continue;
-        selected.unshift({ index: i, message: msg });
-    }
-
-    if (!selected.length && list[end]) {
-        selected.push({ index: end, message: list[end] });
-    }
-
-    if (!mode) {
-        return selected
-            .map(({ message }, idx) => `[Reply ${idx + 1}]\n${String(message.mes ?? '').trim()}`)
-            .filter(Boolean)
-            .join('\n\n');
-    }
-
-    const parts = [];
-    for (let idx = 0; idx < selected.length; idx += 1) {
-        const { message } = selected[idx];
-        const blocks = groupMessageByScene(message.mes ?? '', { persona });
-        if (!blocks.length) {
-            const plain = stripTags(message.mes ?? '').trim();
-            if (plain) parts.push(`[Reply ${idx + 1}]\n${plain}`);
-            continue;
-        }
-        const formattedBlocks = blocks.map((b, bIdx) => {
-            const header = b.rawTag || '(no scene tag)';
-            const isFinalBlock = idx === selected.length - 1 && bIdx === blocks.length - 1;
-            const label = isFinalBlock ? `${header} [CURRENT LOCATION]` : header;
-            return b.prose ? `${label}\n${b.prose}` : label;
-        });
-        parts.push(`[Reply ${idx + 1}]\n${formattedBlocks.join('\n\n')}`);
-    }
-
-    return parts.join('\n\n');
-}
-
-/* ---------- Prompts & watcher parser ---------- */
-
-/**
- * Compiles the final positive prompt sent to `/imagine` by combining the scene
- * description and the user's style suffix.
- *
- * @param {string} description
- * @param {string} [style]
- * @returns {string}
- */
-export function compileBgPrompt(description, style = '') {
-    const cleanDesc = String(description ?? '').trim().replace(/^,+|,+$/g, '').trim();
-    const cleanStyle = String(style ?? '').trim().replace(/^,+|,+$/g, '').trim();
-    if (!cleanDesc) return '';
-    if (!cleanStyle) return cleanDesc;
-    return `${cleanDesc}, ${cleanStyle}`;
-}
-
-/**
- * Deterministic fallback description when the watcher LLM fails in Mode ON.
- *
- * @param {{placeFull?:string, place?:string, levels?:string[], time?:string, date?:string, weather?:string}|null} scene
- * @returns {string}
- */
-export function fallbackLocationPrompt(scene) {
-    if (!scene || !scene.placeFull) return '';
-    const pieces = [
-        `wide establishing shot of ${scene.placeFull}`,
-        scene.time ? `at ${scene.time}` : '',
-        scene.weather ? `${scene.weather} weather` : '',
-        'detailed environment, atmospheric lighting, empty of people',
-    ].filter(Boolean);
-    return pieces.join(', ');
-}
-
-/**
- * Parses the watcher LLM reply — accepts either JSON (`{state, knownId, place, prompt}`,
- * direct, fenced, or balanced `{...}`) or the plain-text fallback (`SAME`,
- * `KNOWN <id>`, `NEW\n<prompt>`).
- *
- * @param {string} raw
- * @returns {{state:'same'|'known'|'new', knownId:string|null, place:string, prompt:string}|null}
- */
-export function parseWatcherReply(raw) {
-    const text = String(raw ?? '').trim();
-    if (!text) return null;
-
-    const json = extractJsonObject(text);
-    if (json && typeof json === 'object') {
-        const stateRaw = String(json.state ?? '').trim().toLowerCase();
-        const place = String(json.place ?? '').trim();
-        const prompt = String(json.prompt ?? '').trim();
-        const knownId = json.knownId !== undefined && json.knownId !== null && String(json.knownId).trim() !== ''
-            ? String(json.knownId).trim()
-            : null;
-
-        if (stateRaw === 'same' || stateRaw === 'unchanged' || stateRaw === '0') {
-            return { state: 'same', knownId: null, place, prompt: '' };
-        }
-        if (stateRaw === 'known' || stateRaw === 'match') {
-            if (knownId) return { state: 'known', knownId, place, prompt: '' };
-        }
-        if (stateRaw === 'new' || prompt) {
-            if (prompt) return { state: 'new', knownId: null, place, prompt };
-        }
-    }
-
-    // Plain-text fallback protocol:
-    // Line 1: SAME | KNOWN <id> | NEW
-    const cleaned = text.replace(/^```[\w-]*\s*/i, '').replace(/```\s*$/, '').trim();
-    const lines = cleaned.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    if (!lines.length) return null;
-
-    const first = lines[0];
-    if (/^(same|unchanged|no\s*change|0)\b/i.test(first)) {
-        return { state: 'same', knownId: null, place: '', prompt: '' };
-    }
-
-    const knownMatch = /^(?:known|match)\s*[:#-]?\s*(bg_\d+|\d+)\b/i.exec(first);
-    if (knownMatch) {
-        return { state: 'known', knownId: knownMatch[1], place: '', prompt: '' };
-    }
-
-    if (/^new\b/i.test(first)) {
-        const inlineRest = first.replace(/^new\s*[:\-]?\s*/i, '').trim();
-        const body = [inlineRest, ...lines.slice(1)].filter(Boolean).join(', ').trim();
-        if (body) {
-            return { state: 'new', knownId: null, place: '', prompt: body };
-        }
-        return null;
-    }
-
-    return null;
-}
-
-function extractJsonObject(text) {
-    try {
-        return JSON.parse(text);
-    } catch {
-        // continue
-    }
-
-    const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(text);
-    if (fenced) {
-        try {
-            return JSON.parse(fenced[1].trim());
-        } catch {
-            // continue
-        }
-    }
-
-    const start = text.indexOf('{');
-    if (start < 0) return null;
-
-    let depth = 0;
-    let inString = false;
-    let escape = false;
-
-    for (let i = start; i < text.length; i += 1) {
-        const ch = text[i];
-        if (inString) {
-            if (escape) {
-                escape = false;
-            } else if (ch === '\\') {
-                escape = true;
-            } else if (ch === '"') {
-                inString = false;
-            }
-            continue;
-        }
-        if (ch === '"') {
-            inString = true;
-        } else if (ch === '{') {
-            depth += 1;
-        } else if (ch === '}') {
-            depth -= 1;
-            if (depth === 0) {
-                const candidate = text.slice(start, i + 1);
-                try {
-                    return JSON.parse(candidate);
-                } catch {
-                    return null;
-                }
-            }
-        }
-    }
-
-    return null;
+function matchesBgUrl(record, customBgUrl) {
+    const value = String(customBgUrl ?? '').trim();
+    if (!value || !record) return false;
+    if (record.url && record.url === value) return true;
+    if (record.path && (record.path === value || toCssBgUrl(record.path) === value)) return true;
+    return false;
 }

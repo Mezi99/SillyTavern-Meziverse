@@ -2,166 +2,161 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+    BG_STORE_VERSION,
     aliasLocation,
-    compileBgPrompt,
     currentRecord,
-    extractRecentPlaces,
-    fallbackLocationPrompt,
-    formatLatestStory,
-    groupMessageByScene,
+    decide,
     knownBackgroundsList,
     locationKey,
     lookupRecord,
-    normalizeBgStore,
-    parseWatcherReply,
+    normalizeStore,
     recoverCurrentKey,
+    resolveRecordId,
     storeRecord,
+    toCssBgUrl,
 } from '../src/backgrounds.js';
 
-test('locationKey normalizes pipes, whitespace, and case', () => {
-    assert.equal(
-        locationKey('  The City |  Docks  | Pier 9 '),
-        'the city | docks | pier 9',
-    );
-    assert.equal(
-        locationKey('the city | docks | pier 9'),
-        'the city | docks | pier 9',
-    );
+test('locationKey folds spelling drift to one key', () => {
+    assert.equal(locationKey('The city |  Docks | Pier 9 '), 'the city | docks | pier 9');
+    assert.equal(locationKey('the city | Docks | PIER 9'), 'the city | docks | pier 9');
+    assert.equal(locationKey(' The   Docks '), 'the docks');
     assert.equal(locationKey(''), '');
+    assert.equal(locationKey(null), '');
 });
 
-test('storeRecord, lookupRecord, currentRecord, and aliasLocation manage the store', () => {
-    const store = normalizeBgStore({});
-    assert.equal(store.currentKey, null);
-    assert.equal(store.nextId, 1);
+test('normalizeStore fills the shape and repairs what it can', () => {
+    assert.deepEqual(normalizeStore(), {
+        version: BG_STORE_VERSION,
+        currentKey: null,
+        keys: {},
+        records: {},
+        nextId: 1,
+    });
+
+    const raw = {};
+    assert.equal(normalizeStore(raw), raw, 'mutates in place - the store lives on chatMetadata');
+
+    const messy = normalizeStore({
+        currentKey: 'The Docks ',
+        keys: { 'The Docks': 'bg_7', Elsewhere: 'bg_404', Dangling: 5 },
+        records: { bg_7: { id: 'bg_7', path: '/images/docks.png' }, bg_9: 'junk' },
+        nextId: 3,
+    });
+    assert.equal(messy.currentKey, 'the docks');
+    assert.deepEqual(Object.keys(messy.keys), ['the docks']);
+    assert.deepEqual(Object.keys(messy.records), ['bg_7']);
+    assert.equal(messy.nextId, 10, 'ids are never recycled - not even the number of a corrupt record that gets pruned');
+
+    const roomy = normalizeStore({ records: { bg_7: {} }, nextId: 99 });
+    assert.equal(roomy.nextId, 99, 'a larger stored nextId is kept');
+});
+
+test('storeRecord keeps the newest image per place and rebinds current', () => {
+    const store = normalizeStore();
 
     const first = storeRecord(store, {
-        place: 'The City | Docks | Pier 9',
-        prompt: 'rainy wooden pier at night, neon reflections',
-        path: '/user/images/pier9.png',
-        createdAt: 1000,
+        key: 'The city | Docks | Pier 9',
+        place: 'Pier 9',
+        prompt: 'a wooden pier at dusk',
+        path: '/images/pier.png',
     });
-
     assert.equal(first.id, 'bg_1');
+    assert.equal(first.url, 'url("/images/pier.png")');
     assert.equal(store.currentKey, 'the city | docks | pier 9');
-    assert.equal(currentRecord(store).id, 'bg_1');
-    assert.equal(lookupRecord(store, 'THE CITY | DOCKS | PIER 9').path, '/user/images/pier9.png');
+    assert.equal(currentRecord(store), first);
 
-    // Spelling drift aliased to the same record
-    const aliased = aliasLocation(store, 'The City | Docks | Pier No. 9', 1);
-    assert.equal(aliased.id, 'bg_1');
-    assert.equal(store.currentKey, 'the city | docks | pier no. 9');
-    assert.equal(lookupRecord(store, 'the city | docks | pier no. 9').id, 'bg_1');
+    const again = storeRecord(store, {
+        key: 'The city | Docks | Pier 9',
+        place: 'Pier 9',
+        prompt: 'new',
+        path: '/images/pier2.png',
+    });
+    assert.equal(again.id, 'bg_2', 'without overwrite every generation adds a record');
+    assert.equal(lookupRecord(store, 'The city | Docks | Pier 9'), again, 'the key follows the newest record');
 
-    // Overwrite on manual brush forces update on the existing id
-    const overwritten = storeRecord(store, {
-        key: 'The City | Docks | Pier 9',
-        place: 'The City | Docks | Pier 9',
-        prompt: 'stormy wooden pier at dawn',
-        path: '/user/images/pier9_v2.png',
+    const fresh = storeRecord(store, {
+        key: 'The city | Docks | Pier 9',
+        place: 'Pier 9',
+        prompt: 'fresher',
+        path: '/images/pier3.png',
         overwrite: true,
-        createdAt: 2000,
     });
-    assert.equal(overwritten.id, 'bg_1');
-    assert.equal(lookupRecord(store, 'The City | Docks | Pier No. 9').path, '/user/images/pier9_v2.png');
-    assert.equal(knownBackgroundsList(store).length, 1);
+    assert.equal(fresh.id, 'bg_2', 'overwrite replaces the record in place');
+    assert.equal(store.records.bg_2.prompt, 'fresher');
+    assert.equal(store.nextId, 3);
+
+    assert.equal(storeRecord(store, { place: '', path: '' }), null, 'a missing place or path is refused');
 });
 
-test('recoverCurrentKey matches custom_background URL or clears when unknown', () => {
-    const store = normalizeBgStore({});
-    storeRecord(store, {
-        place: 'Old Town | Bakery',
-        prompt: 'warm bakery interior',
-        path: '/images/bakery 1.png',
+test('aliasLocation folds a spelling drift onto the matched record', () => {
+    const store = normalizeStore();
+    const record = storeRecord(store, {
+        key: 'The Docks',
+        place: 'The Docks',
+        prompt: 'rain-slick docks',
+        path: '/images/docks.png',
     });
-    store.currentKey = null;
 
-    assert.equal(recoverCurrentKey(store, 'url("/images/bakery%201.png")'), 'old town | bakery');
-    assert.equal(recoverCurrentKey(store, 'url("/images/other.png")'), null);
+    const aliased = aliasLocation(store, 'The Docks!!', 'bg_1');
+    assert.equal(aliased, record);
+    assert.equal(store.keys['the docks!!'], 'bg_1');
+    assert.equal(store.currentKey, 'the docks!!');
+
+    assert.equal(aliasLocation(store, 'Elsewhere', 'bg_404'), null, 'an unknown id is refused');
+});
+
+test('resolveRecordId tolerates every way the watcher writes an id', () => {
+    const store = normalizeStore();
+    storeRecord(store, { key: 'A', place: 'A', prompt: 'p', path: '/a.png' });
+
+    assert.equal(resolveRecordId(store, 'bg_1'), 'bg_1');
+    assert.equal(resolveRecordId(store, '1'), 'bg_1');
+    assert.equal(resolveRecordId(store, 1), 'bg_1');
+    assert.equal(resolveRecordId(store, 'nope'), null);
+    assert.equal(resolveRecordId(store, null), null);
+});
+
+test('recoverCurrentKey trusts the background SillyTavern restored', () => {
+    const store = normalizeStore();
+    storeRecord(store, { key: 'The Docks', place: 'The Docks', prompt: 'p', path: '/images/docks.png' });
+    storeRecord(store, { key: 'Pier 9', place: 'Pier 9', prompt: 'p', path: '/images/pier.png' });
+
+    assert.equal(recoverCurrentKey(store, 'url("/images/docks.png")'), 'the docks');
+    assert.equal(store.currentKey, 'the docks');
+    assert.equal(recoverCurrentKey(store, '/images/pier.png'), 'pier 9', 'the raw path matches too');
+    assert.equal(recoverCurrentKey(store, 'url("/images/none.png")'), null);
     assert.equal(store.currentKey, null);
+    assert.equal(recoverCurrentKey(store, ''), null);
 });
 
-test('groupMessageByScene pairs each scene tag with its prose and strips other tags', () => {
-    const mes = [
-        '<think>planning</think>',
-        '<scene date="9:00 PM" location="City | Street" />',
-        'Wet cobblestones. <lie character="Mara" />',
-        '<scene date="9:15 PM" location="City | Cafe" weather="Warm" />',
-        'Steam on the windows. <speech character="Mara">"Sit."</speech>',
-        '<ledger><recap era="1" fact="met" /></ledger>',
-    ].join('\n');
-
-    const blocks = groupMessageByScene(mes);
-    assert.equal(blocks.length, 2);
-    assert.equal(blocks[0].scene.placeFull, 'City | Street');
-    assert.equal(blocks[0].prose, 'Wet cobblestones.');
-    assert.equal(blocks[1].scene.placeFull, 'City | Cafe');
-    assert.equal(blocks[1].prose, 'Steam on the windows. "Sit."');
+test('toCssBgUrl wraps paths the way SillyTavern reads them', () => {
+    assert.equal(toCssBgUrl('/images/docks.png'), 'url("/images/docks.png")');
+    assert.equal(toCssBgUrl('/images/my pier.png'), 'url("/images/my%20pier.png")');
+    assert.equal(toCssBgUrl(''), '');
 });
 
-test('extractRecentPlaces builds a deduplicated chronological place timeline', () => {
-    const messages = [
-        { mes: '<scene location="City | Street" />Walking.' },
-        { mes: '<scene location="city | street" />Still walking.<scene location="City | Pier 9" />Arrived.' },
-        { mes: '<scene location="City | Warehouse" />Inside.' },
-    ];
+test('knownBackgroundsList serves the newest places first, capped', () => {
+    const store = normalizeStore();
+    storeRecord(store, { key: 'A', place: 'A', prompt: 'pa', path: '/a.png', createdAt: 1 });
+    storeRecord(store, { key: 'B', place: 'B', prompt: 'pb', path: '/b.png', createdAt: 3 });
+    storeRecord(store, { key: 'C', place: 'C', prompt: 'pc', path: '/c.png', createdAt: 2 });
 
-    assert.deepEqual(extractRecentPlaces(messages), [
-        'City | Street',
-        'City | Pier 9',
-        'City | Warehouse',
-    ]);
+    const list = knownBackgroundsList(store, { limit: 2 });
+    assert.deepEqual(list.map(entry => entry.place), ['B', 'C']);
+    assert.deepEqual(Object.keys(list[0]), ['id', 'place', 'prompt']);
 });
 
-test('formatLatestStory marks the final scene block as CURRENT LOCATION in mode ON', () => {
-    const messages = [
-        { mes: '<scene location="City | Street" />Walking.<scene location="City | Pier 9" />By the water.' },
-    ];
+test('decide turns a resolved place into none, apply, or watch', () => {
+    const store = normalizeStore();
+    assert.deepEqual(decide(store, ''), { action: 'none', record: null });
 
-    const out = formatLatestStory(messages, { mode: true, count: 1 });
-    assert.equal(out.includes('<scene location="City | Street" />\nWalking.'), true);
-    assert.equal(out.includes('<scene location="City | Pier 9" /> [CURRENT LOCATION]\nBy the water.'), true);
-});
+    const docks = storeRecord(store, { key: 'The Docks', place: 'The Docks', prompt: 'p', path: '/images/docks.png' });
+    assert.deepEqual(decide(store, 'the docks'), { action: 'none', record: docks }, 'already on screen');
 
-test('compileBgPrompt and fallbackLocationPrompt build clean prompts', () => {
-    assert.equal(
-        compileBgPrompt('rainy wooden pier, lanterns', 'anime style, detailed'),
-        'rainy wooden pier, lanterns, anime style, detailed',
-    );
-    assert.equal(
-        fallbackLocationPrompt({ placeFull: 'Old Town | Pier 9', time: '9:40 PM', weather: 'Rain' }),
-        'wide establishing shot of Old Town | Pier 9, at 9:40 PM, Rain weather, detailed environment, atmospheric lighting, empty of people',
-    );
-});
+    storeRecord(store, { key: 'Pier 9', place: 'Pier 9', prompt: 'p', path: '/images/pier.png' });
+    const back = decide(store, 'The Docks');
+    assert.equal(back.action, 'apply', 'a place seen before comes back from the cache');
+    assert.equal(back.record.path, '/images/docks.png');
 
-test('parseWatcherReply handles JSON, fenced JSON, and plain-text fallbacks', () => {
-    assert.deepEqual(
-        parseWatcherReply('{"state":"same","knownId":null,"place":"Pier 9","prompt":""}'),
-        { state: 'same', knownId: null, place: 'Pier 9', prompt: '' },
-    );
-
-    assert.deepEqual(
-        parseWatcherReply('```json\n{"state":"known","knownId":"bg_3","place":"Pier 9","prompt":""}\n```'),
-        { state: 'known', knownId: 'bg_3', place: 'Pier 9', prompt: '' },
-    );
-
-    assert.deepEqual(
-        parseWatcherReply('Here is the result: {"state":"new","knownId":null,"place":"Warehouse","prompt":"dark warehouse interior, crates, dusty shafts of light"}'),
-        { state: 'new', knownId: null, place: 'Warehouse', prompt: 'dark warehouse interior, crates, dusty shafts of light' },
-    );
-
-    assert.deepEqual(
-        parseWatcherReply('SAME'),
-        { state: 'same', knownId: null, place: '', prompt: '' },
-    );
-
-    assert.deepEqual(
-        parseWatcherReply('KNOWN bg_4'),
-        { state: 'known', knownId: 'bg_4', place: '', prompt: '' },
-    );
-
-    assert.deepEqual(
-        parseWatcherReply('NEW\ndark warehouse interior, crates, dusty shafts of light'),
-        { state: 'new', knownId: null, place: '', prompt: 'dark warehouse interior, crates, dusty shafts of light' },
-    );
+    assert.deepEqual(decide(store, 'Somewhere New'), { action: 'watch', record: null }, 'a new place asks the watcher');
 });
