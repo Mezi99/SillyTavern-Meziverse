@@ -14,6 +14,7 @@ Meziverse is an extension, not a fork. SillyTavern stays the engine and the stor
 - **Theming** — ink + one metal (jade, amber or rose), Newsreader prose / Inter interface, adjustable narration size, interface scale, reduced motion, custom prose colours, optional ST background.
 - **Notices** — ST's toastr toasts re-render as Meziverse toasts while the scene is open.
 - **Ledger rails** — the story trackers the model writes into each reply (`LEDGER` rows, parsed and never accumulated): threads, plans, hooks, lore and story so far on the right; standing, profiles and shifts on the left. Each entry sits behind its own icon, glance cards run down the frame, and a click opens the full record beside its own rail — full-profile cards with the private thought included. On narrow screens the glyphs ride a slim second chat-bar line and popups open as bottom sheets.
+- **Inline narration cues** — the model's `lie`, `filter`, `flashback` and `meanwhile` tags leave quiet marks in the prose: a round glyph whose popover tells the truth behind a lie or a blind spot (with a hairline crack on the liar's portrait), a dream pill that opens the memory as a drifting mindscape, and a meanwhile box that grows in place. With Meziverse mode off, the tags vanish entirely.
 
 The phone is still a placeholder and its buttons do nothing yet.
 

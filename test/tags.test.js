@@ -67,14 +67,68 @@ test('hidden blocks go, body and all', () => {
     assert.equal(stripTags(mes), 'abc');
 });
 
-test('speech and flashback keep their words', () => {
+test('speech keeps its words; a flashback keeps nothing but its pill', () => {
     assert.equal(stripTags('<speech character="Mara" tone="dry">Hello</speech> there'), 'Hello there');
-    assert.equal(stripTags('<flashback character="Ilya" when="1999">Before.</flashback>'), 'Before.');
+    assert.equal(stripTags('<flashback character="Ilya" when="1999">Before.</flashback>'), '');
+    assert.equal(stripTags('now <flashback character="Ilya">Before.</flashback> then'), 'now  then');
+});
+
+test('a flashback becomes a mark and keeps its body for the mindscape', () => {
+    const cues = splitCues('She left.<flashback character="Mara" when="Age 10" trigger="the lamp">"Run," she said.</flashback> After.');
+
+    assert.deepEqual(cues.map(cue => cue.type), ['text', 'mark', 'text']);
+    assert.equal(cues[1].tag.name, 'flashback');
+    assert.equal(cues[1].tag.attrs.when, 'Age 10');
+    assert.equal(cues[1].tag.body, '"Run," she said.');
+    assert.equal(cues[0].text, 'She left.');
+    assert.equal(cues[2].text, ' After.');
+});
+
+test('an unclosed flashback draws nothing and hides its tail', () => {
+    const cues = splitCues('one <flashback character="Ma');
+
+    assert.deepEqual(cues, [{ type: 'text', text: 'one ' }]);
 });
 
 test('inline self-closing tags vanish without a trace', () => {
     const mes = 'Before <meanwhile event="something" />after <filter reason="x" />the end';
     assert.equal(stripTags(mes), 'Before after the end');
+});
+
+test('a meanwhile becomes a box at the point it appeared', () => {
+    const cues = splitCues('Before <meanwhile event="the ferry leaves" importance="they miss the tide" />after');
+
+    assert.deepEqual(cues.map(cue => cue.type), ['text', 'box', 'text']);
+    assert.equal(cues[0].text, 'Before ');
+    assert.equal(cues[1].tag.name, 'meanwhile');
+    assert.equal(cues[1].tag.attrs.event, 'the ferry leaves');
+    assert.equal(cues[1].tag.attrs.importance, 'they miss the tide');
+    assert.equal(cues[2].text, 'after');
+});
+
+test('a box cuts the prose like a scene row', () => {
+    const cues = splitCues('a<meanwhile event="one" />b<scene date="Day 1" />c');
+
+    assert.deepEqual(cues.map(cue => cue.type), ['text', 'box', 'text', 'scene', 'text']);
+});
+
+test('meanwhile boxes stack in reading order', () => {
+    const cues = splitCues('intro<meanwhile event="one" /><meanwhile event="two" />outro');
+
+    assert.deepEqual(cues.map(cue => cue.type), ['text', 'box', 'box', 'text']);
+    assert.deepEqual(cues.filter(cue => cue.type === 'box').map(cue => cue.tag.attrs.event), ['one', 'two']);
+});
+
+test('a mark stays on its own side of a box', () => {
+    const cues = splitCues('a<lie type="omitting" /><meanwhile event="x" />b');
+
+    assert.deepEqual(cues.map(cue => cue.type), ['text', 'mark', 'box', 'text']);
+});
+
+test('an unclosed meanwhile draws nothing and hides its tail', () => {
+    const cues = splitCues('one <meanwhile event="some');
+
+    assert.deepEqual(cues, [{ type: 'text', text: 'one ' }]);
 });
 
 test('an unclosed hidden tag hides its streaming tail', () => {
@@ -112,6 +166,58 @@ test('splitCues folds hidden blocks out of the prose', () => {
     const cues = splitCues('a<think>secret</think>b');
 
     assert.deepEqual(cues, [{ type: 'text', text: 'ab' }]);
+});
+
+test('a mark leaves its tag whole and sits where the tag stood', () => {
+    const cues = splitCues('She smiled. <lie character="Mara" type="deceiving" truth="she knew" reason="fear" />Then he left.');
+
+    assert.deepEqual(cues.map(cue => cue.type), ['text', 'mark', 'text']);
+    assert.equal(cues[0].text, 'She smiled. ');
+    assert.deepEqual(cues[1].tag.attrs, {
+        character: 'Mara',
+        type: 'deceiving',
+        truth: 'she knew',
+        reason: 'fear',
+    });
+    assert.equal(cues[2].text, 'Then he left.');
+});
+
+test('a mark on a line of its own joins the end of the previous paragraph', () => {
+    const cues = splitCues('She smiled.\n<lie character="Mara" />Then he left.');
+
+    assert.deepEqual(cues.map(cue => cue.type), ['text', 'mark', 'text']);
+    assert.equal(cues[0].text, 'She smiled.');
+    assert.equal(cues[2].text, '\nThen he left.');
+});
+
+test('marks stack at the paragraph end in reading order', () => {
+    const cues = splitCues('She smiled.\n<lie character="Mara" />\n<filter reason="behind him" />Then he left.');
+
+    assert.deepEqual(cues.map(cue => cue.type), ['text', 'mark', 'mark', 'text']);
+    assert.equal(cues[0].text, 'She smiled.');
+    assert.equal(cues[3].text, '\n\nThen he left.');
+});
+
+test('a mark at the very start of the message stays where it is', () => {
+    const cues = splitCues('<filter event="steps" reason="behind him" />Nothing before.');
+
+    assert.deepEqual(cues.map(cue => cue.type), ['mark', 'text']);
+    assert.equal(cues[1].text, 'Nothing before.');
+});
+
+test('marks split the prose around them and scenes still cut runs', () => {
+    const cues = splitCues('a<lie type="omitting" />b<scene date="Day 1" />c');
+
+    assert.deepEqual(cues.map(cue => cue.type), ['text', 'mark', 'text', 'scene', 'text']);
+    assert.equal(cues[0].text, 'a');
+    assert.equal(cues[2].text, 'b');
+    assert.equal(cues[4].text, 'c');
+});
+
+test('an unclosed mark draws nothing and hides its tail', () => {
+    const cues = splitCues('one <lie character="Ma');
+
+    assert.deepEqual(cues, [{ type: 'text', text: 'one ' }]);
 });
 
 test('parseMessage caches on identity and rereads when mes changes', () => {

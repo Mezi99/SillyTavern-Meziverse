@@ -1,6 +1,6 @@
 # Meziverse — how it works
 
-Technical notes for version 2.2.0. Written for whoever picks this up next — including future us.
+Technical notes for version 2.3.0. Written for whoever picks this up next — including future us.
 
 ## The one rule: Ride SillyTavern
 
@@ -82,6 +82,19 @@ Each reply may close with a `LEDGER` block — the model's full story state as r
 
 Prompt work — pushing this state back at the model — stays out until the preset phase.
 
+## The inline cues (the third feature family)
+
+Four in-band tags decorate the prose itself: `lie`, `filter`, `flashback`, `meanwhile` (`speech` keeps its words in the prose, untouched). Everything else about tags is unchanged — stripped in every mode, decoration gated on `modeOn()`.
+
+- **Parsing is one scanner** (`tags.js`): `parseTags` finds catalogue tags only (card-written HTML passes through; fenced and inline code is never parsed), `stripTags` gives the plain text, and `splitCues` splits a message into prose runs, scene rows, meanwhile boxes and inline marks — so a swipe, edit or stream frame is correct the moment the text changes.
+- **Marks travel as slots.** A mark's private-use placeholder rides through SillyTavern's formatter inside its prose run and is swapped for the markup afterwards, so paragraphs and quotes never break. Placement: the mark sits at the end of the text before its tag; a tag on a line of its own joins the previous paragraph's end; marks stack in reading order. A tag not yet closed draws nothing and hides its tail.
+- **One shared popover** (a frame child, fixed-positioned and clamped) serves the lie and blind-spot marks: hover opens on pointer devices after 90 ms, a tap or click pins, focus-visible opens, one at a time. The liar's portrait additionally wears a hairline crack (`renderTells`) that flickers while its popover is open — a bonus echo, never the only carrier.
+- **The flashback** leaves a dream pill carrying the body out of the prose and the log; a click opens the mindscape (`cues.js`) — paced fragments on a warmed, blurred stage. The rows come from the mechanical splitter in `memory.js`: sentences split at their own ends, never inside quotation marks, and a sentence that speaks in quotes takes the single one after it. No word lists. Closing the memory fires its cascade on the character's thought overlay until the next turn.
+- **The meanwhile box** renders closed and grows in place (`grid-template-rows`), numbered "n / N" when several stack in one reply. Boxes toggle independently and reset closed on every re-render.
+- **Floats** (`floats.js`): one `placeFloat` / `closeFloats` registry keeps the popover and the thought overlays to one floating thing at a time. Esc chain: floats → memory → card → dock → log → settings.
+- **Settings** (Cues group): Popovers (hover and tap / tap only), Memories (pill / open on arrival), Meanwhile (closed / latest one open). The last two fire once per arrival, on the latest turn, after generation settles.
+- **Mobile** (< 760 px): the cue popover stays anchored to its mark — a deliberate deviation from the bottom-sheet rule; the meanwhile box drops its inner indent; the mindscape clamps to the frame.
+
 ## The composer
 
 Our textarea and ST's `#send_textarea` stay **mirrored both ways** while the scene is open:
@@ -122,4 +135,4 @@ While the scene is open, ST's `toastr` is intercepted: `notify.js` swaps in func
 
 ## What comes next (not built yet)
 
-The **inline pieces** — speech bubbles, deception (lie), omniscience (filter), memories (flashback), parallel scenes (meanwhile) — then backgrounds, then the preset phase: mode ownership, trim, Features/Style, and the prompt work (`ctx().setExtensionPrompt('meziverse_state', …)`) where the state Meziverse already parses gets pushed back at the model. Milestone firing (`shift` totals crossing ±100) is deliberately unimplemented: the idea is to detect the crossing in the extension and fire it from there rather than trust prompt memory. The phone is the intended UI, and its buttons are placeholders for now. See `LocalHelpFiles/Frame VN Tracker Extension (Design Spec v0.1).md` — that spec is authoritative for the M-series.
+The **speech bubbles** — the one inline piece left, with `speech` still reading as plain prose — then backgrounds, then the preset phase: mode ownership, trim, Features/Style, and the prompt work (`ctx().setExtensionPrompt('meziverse_state', …)`) where the state Meziverse already parses gets pushed back at the model. Milestone firing (`shift` totals crossing ±100) is deliberately unimplemented: the idea is to detect the crossing in the extension and fire it from there rather than trust prompt memory. The phone is the intended UI, and its buttons are placeholders for now. See `LocalHelpFiles/Frame VN Tracker Extension (Design Spec v0.1).md` — that spec is authoritative for the M-series.

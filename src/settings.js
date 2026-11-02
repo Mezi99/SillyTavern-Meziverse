@@ -18,6 +18,12 @@ const DEFAULTS = {
     theme: 'ink-jade',
     background: 'none',
     reducedMotion: false,
+    // How the inline cue popovers open: on hover and tap, or tap only.
+    cuePopovers: 'both',
+    // How a memory arrives: as a pill, or opening on arrival.
+    cueMemories: 'pill',
+    // How the meanwhile boxes arrive: closed, or the latest one open.
+    cueMeanwhile: 'closed',
     uiScale: 1,
     narrSize: 18.5,
     narrFont: 'inter',

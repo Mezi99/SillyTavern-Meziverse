@@ -67,9 +67,9 @@
 
     --mz-pane-h: 300px;
     --mz-pane-h-min: 220px;
-    --mz-port-min-h: 180px;
+    --mz-port-min-h: 210px;
     --mz-port-max-h: 500px;
-    --mz-port-min-h-mobile: 120px;
+    --mz-port-min-h-mobile: 140px;
     --mz-port-max-h-mobile: 200px;
 
     /* shape */

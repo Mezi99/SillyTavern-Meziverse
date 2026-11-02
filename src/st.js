@@ -188,6 +188,13 @@ export function personaName() {
     }
 }
 
+/** Story text as display text: `{{user}}` is the persona's own name. */
+export function say(value) {
+    const raw = String(value ?? '');
+    const name = personaName();
+    return name ? raw.replace(/\{\{\s*user\s*\}\}/gi, name) : raw;
+}
+
 /**
  * Uploads a prepared image into the chat's portrait folder.
  *

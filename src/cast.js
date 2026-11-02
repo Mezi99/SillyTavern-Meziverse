@@ -7,11 +7,12 @@
  * file only prepares a small WebP and then hands it over.
  */
 
-import { castImages, castKey, currentChatId, removeCastImage, setCastImage, uploadImage } from './st.js';
+import { castImages, castKey, currentChatId, removeCastImage, say, setCastImage, uploadImage } from './st.js';
 import { initials } from './scene.js';
 import { icon } from './icons.js';
 import { notify } from './notify.js';
 import { entryOn, modeOn } from './settings.js';
+import { closeFloats, placeFloat, registerFloat } from './floats.js';
 
 const MAX_EDGE = 1024;
 const QUALITY = 0.85;
@@ -22,8 +23,6 @@ const FALLBACK_CEILING = 500;
    posters. The pane's maximum yields the same amount while thoughts
    are on stage (overlay's paneLimits), so the two never fight over
    a short window. */
-export const BUBBLE_ROOM = 72;
-
 let host = null;
 let track = null;
 let picker = null;
@@ -34,9 +33,20 @@ let lastScene = null;
 let lastSignature = '';
 let lastNames = '';
 let lastThoughts = [];
+let lastTells = [];
 let busyName = '';
 let busyChat = null;
 let pending = null;
+
+// The one thought bubble: its element on the frame, whose thought it
+// carries, and the ledger's thoughts by avatar.
+let thoughtPop = null;
+let thoughtKey = '';
+let thoughtByName = new Map();
+
+// A memory's cascade lingering on its character until the next turn.
+let cascadeKey = '';
+let cascadeText = '';
 
 /** Mounts the strip inside the frame's cast region. Idempotent. */
 export function mountCast(element) {
@@ -57,6 +67,7 @@ export function mountCast(element) {
 
     host.addEventListener('click', onClick);
     picker.addEventListener('change', onFileChosen);
+    document.addEventListener('click', onDocClick);
 
     if (typeof ResizeObserver === 'function') {
         observer = new ResizeObserver(() => refreshCastSizing());
@@ -64,6 +75,21 @@ export function mountCast(element) {
     }
 
     window.addEventListener('resize', refreshCastSizing);
+    window.addEventListener('resize', () => placeThought());
+
+    // The thought bubble floats over the posters, on the frame: the
+    // layout never knows it exists. Only one floats at a time.
+    thoughtPop = document.createElement('div');
+    thoughtPop.className = 'mz-thought-pop';
+    thoughtPop.setAttribute('role', 'status');
+    thoughtPop.hidden = true;
+    const thoughtText = document.createElement('div');
+    thoughtText.className = 'mz-thought-text';
+    thoughtPop.append(thoughtText);
+    (host.closest('.mz-frame') || host.parentElement).append(thoughtPop);
+    registerFloat(closeThought);
+
+    track.addEventListener('scroll', () => closeThought(), { passive: true });
 }
 
 /**
@@ -112,6 +138,7 @@ export function renderCast(scene) {
     if (resetScroll) track.scrollLeft = 0;
 
     applyThoughts();
+    applyTells();
     refreshCastSizing();
     requestAnimationFrame(refreshCastSizing);
 }
@@ -131,10 +158,11 @@ export function castAvatar(name) {
 }
 
 /**
- * Attaches the ledger's private thoughts to their posters — one thought
- * bubble per avatar, matched by the simple, consistent name both sides
- * carry. Reapplied whenever the ledger or the cast changes; a thought
- * with no matching avatar simply stays unspoken.
+ * Attaches the ledger's private thoughts to their posters — one toggle
+ * per avatar, matched by the simple, consistent name both sides carry,
+ * opening a floating bubble over that poster. Reapplied whenever the
+ * ledger or the cast changes; a thought with no matching avatar simply
+ * stays unspoken.
  *
  * @param {object[]} profiles
  */
@@ -143,35 +171,95 @@ export function renderThoughts(profiles) {
     applyThoughts();
 }
 
-/* Thoughts hidden by their avatar's own toggle. Session-only, like the
-   rails' snapped boxes: the future mode-features menu owns persistence. */
-const hiddenThoughts = new Set();
+/** Puts the thought bubble away. True when one was open. */
+export function closeThought() {
+    if (!thoughtPop || !thoughtKey) return false;
+
+    thoughtKey = '';
+    thoughtPop.classList.remove('is-open');
+    thoughtPop.hidden = true;
+
+    for (const button of track.querySelectorAll('.mz-thought-btn')) {
+        button.classList.remove('is-on');
+        button.title = 'Read thought';
+        button.setAttribute('aria-label', button.title);
+        button.setAttribute('aria-expanded', 'false');
+    }
+
+    return true;
+}
+
+/**
+ * Opens one avatar's thought over its poster. A new one always closes
+ * the last, so the strip never turns into a mess of bubbles.
+ */
+function openThought(key) {
+    const thought = thoughtByName.get(key);
+    if (!thought || !thoughtPop) return;
+
+    closeFloats(closeThought);
+    closeThought();
+
+    thoughtKey = key;
+    setThoughtBody(key, thought);
+    thoughtPop.hidden = false;
+    placeThought();
+    thoughtPop.classList.add('is-open');
+
+    for (const button of track.querySelectorAll('.mz-thought-btn')) {
+        const open = button.dataset.mzThought === key;
+        button.classList.toggle('is-on', open);
+        button.title = open ? 'Hide thought' : 'Read thought';
+        button.setAttribute('aria-label', button.title);
+        button.setAttribute('aria-expanded', String(open));
+    }
+}
+
+/** The bubble sits over its poster's own space and never leaves the window. */
+function placeThought() {
+    if (!thoughtKey || !thoughtPop || thoughtPop.hidden) return;
+
+    const figure = [...track.querySelectorAll('.mz-port')]
+        .find(node => textOf(node.dataset.name).trim().toLowerCase() === thoughtKey);
+    if (!figure) {
+        closeThought();
+        return;
+    }
+
+    placeFloat(thoughtPop, figure, { mode: 'over', notch: false });
+}
+
+function onDocClick(event) {
+    if (!thoughtKey || !event.isTrusted) return;
+    // The click that puts a memory away is not a press against its
+    // cascade; the bubble it opens must outlive it.
+    if (event.target.closest?.('.mz-thought-pop') || event.target.closest?.('[data-mz-thought]') || event.target.closest?.('.mz-mind')) return;
+    closeThought();
+}
 
 function applyThoughts() {
     if (!host || !track) return;
 
     const shown = modeOn() && entryOn('profiles');
-    const byName = new Map();
+    thoughtByName = new Map();
 
     if (shown) {
         for (const profile of lastThoughts) {
             const key = textOf(profile.character).trim().toLowerCase();
-            if (key && profile.thought && !byName.has(key)) byName.set(key, profile.thought);
+            if (key && profile.thought && !thoughtByName.has(key)) thoughtByName.set(key, profile.thought);
         }
     }
 
-    let anyBubble = false;
+    // A lingering cascade reads as its character's thought for the turn.
+    if (cascadeKey && cascadeText) thoughtByName.set(cascadeKey, cascadeText);
 
     for (const figure of track.querySelectorAll('.mz-port')) {
         const key = textOf(figure.dataset.name).trim().toLowerCase();
-        const thought = byName.get(key) || '';
-        const bubble = figure.querySelector('.mz-thought-bub');
         const toggle = figure.querySelector('.mz-thought-btn');
 
-        // A thought with no matching avatar stays unspoken: no bubble
-        // and no toggle to bring one back.
-        if (!thought) {
-            bubble?.remove();
+        // A thought with no matching avatar stays unspoken: no toggle to
+        // bring one back.
+        if (!thoughtByName.has(key)) {
             toggle?.remove();
             continue;
         }
@@ -179,26 +267,66 @@ function applyThoughts() {
         const button = toggle || thoughtToggle(key);
         if (!toggle) figure.append(button);
 
-        const hidden = hiddenThoughts.has(key);
-        button.classList.toggle('is-off', hidden);
-        button.title = hidden ? 'Show thought' : 'Hide thought';
+        const open = thoughtKey === key;
+        button.classList.toggle('is-on', open);
+        button.title = open ? 'Hide thought' : 'Read thought';
         button.setAttribute('aria-label', button.title);
-        button.setAttribute('aria-pressed', String(!hidden));
+        button.setAttribute('aria-expanded', String(open));
+    }
 
-        if (hidden) {
-            bubble?.remove();
+    // The open bubble follows its thought through re-renders; a thought
+    // that leaves the ledger takes its bubble with it.
+    if (thoughtKey) {
+        const thought = thoughtByName.get(thoughtKey);
+        if (thought) {
+            setThoughtBody(thoughtKey, thought);
+            placeThought();
         } else {
-            const target = bubble || thoughtBubble();
-            if (target.textContent !== thought) target.textContent = thought;
-            if (!bubble) figure.append(target);
-            anyBubble = true;
+            closeThought();
         }
     }
 
-    // The bubbles are content: when any is on stage the track makes room
-    // above the posters so its own scroll never clips them.
-    track.style.setProperty('--mz-bubble-room', anyBubble ? `${BUBBLE_ROOM}px` : '0px');
     refreshCastSizing();
+}
+
+/** A memory's cascade lingers on its character as a thought, opened
+ *  fresh — "After the memory" — until the next turn. A character with
+ *  no portrait keeps it in the mindscape alone. */
+export function showCascade(name, text) {
+    const key = textOf(name).trim().toLowerCase();
+    if (!key || !text) return;
+
+    cascadeKey = key;
+    cascadeText = text;
+
+    applyThoughts();
+    if (thoughtByName.has(key)) openThought(key);
+}
+
+/** The next turn finishes the lingering cascade. */
+export function clearCascade() {
+    if (!cascadeKey) return;
+
+    cascadeKey = '';
+    cascadeText = '';
+    closeThought();
+    applyThoughts();
+}
+
+/** The bubble's words: the thought, or the cascade that replaced it. */
+function setThoughtBody(key, thought) {
+    const body = thoughtPop.querySelector('.mz-thought-text');
+    const cascade = key === cascadeKey;
+    thoughtPop.classList.toggle('is-cascade', cascade);
+
+    if (!cascade) {
+        body.textContent = say(thought);
+        return;
+    }
+
+    const label = document.createElement('b');
+    label.textContent = 'After the memory';
+    body.replaceChildren(label, document.createTextNode(say(cascadeText || thought)));
 }
 
 function thoughtToggle(key) {
@@ -210,15 +338,67 @@ function thoughtToggle(key) {
     return button;
 }
 
-function thoughtBubble() {
-    const bubble = document.createElement('div');
-    bubble.className = 'mz-thought-bub';
-    bubble.title = 'Click to read in full';
-    return bubble;
-}
-
 function textOf(value) {
     return typeof value === 'string' ? value : '';
+}
+
+/* ---------- told lies ---------- */
+
+// The hairline crack over a liar's portrait. It is a bonus: the mark in
+// the prose carries the tell on its own.
+const FRACTURE = '<svg class="mz-fracture" viewBox="0 0 100 166" preserveAspectRatio="none" aria-hidden="true">'
+    + '<path d="M64 0 L56 17 L67 33 L52 52 L61 70 L46 88 L55 104 L42 124 L49 142 L40 166"/>'
+    + '<path d="M52 52 L36 60 L30 76"/>'
+    + '<path d="M55 104 L70 112 L74 128"/>'
+    + '</svg>';
+
+/**
+ * Cracks the portraits of everyone the shown turn caught in a lie — one
+ * crack per liar, whoever is on the stage. A liar who is not in the scene's
+ * present keeps the mark in the prose alone. Reapplied whenever the cast
+ * is redrawn.
+ *
+ * @param {string[]} characters
+ */
+export function renderTells(characters) {
+    lastTells = Array.isArray(characters) ? characters : [];
+    applyTells();
+}
+
+/** Lights the crack while that liar's mark has its popover open. */
+export function tellTold(name, on) {
+    if (!host || !track) return;
+
+    const key = textOf(name).trim().toLowerCase();
+    if (!key) return;
+
+    for (const figure of track.querySelectorAll('.mz-port')) {
+        if (textOf(figure.dataset.name).trim().toLowerCase() === key) {
+            figure.classList.toggle('is-told', !!on);
+        }
+    }
+}
+
+function applyTells() {
+    if (!host || !track) return;
+
+    const told = new Set();
+    if (modeOn()) {
+        for (const name of lastTells) {
+            const key = textOf(name).trim().toLowerCase();
+            if (key) told.add(key);
+        }
+    }
+
+    for (const figure of track.querySelectorAll('.mz-port')) {
+        const key = textOf(figure.dataset.name).trim().toLowerCase();
+        const has = told.has(key);
+        figure.classList.toggle('has-tell', has);
+
+        const crack = figure.querySelector('.mz-fracture');
+        if (has && !crack) figure.insertAdjacentHTML('beforeend', FRACTURE);
+        if (!has && crack) crack.remove();
+    }
 }
 
 /** Fits poster height to the space above the pane and the available width. */
@@ -370,15 +550,8 @@ function onClick(event) {
     const toggle = event.target.closest('[data-mz-thought]');
     if (toggle) {
         const key = toggle.dataset.mzThought;
-        if (hiddenThoughts.has(key)) hiddenThoughts.delete(key);
-        else hiddenThoughts.add(key);
-        applyThoughts();
-        return;
-    }
-
-    const bubble = event.target.closest('.mz-thought-bub');
-    if (bubble) {
-        bubble.classList.toggle('is-open');
+        if (thoughtKey === key) closeThought();
+        else openThought(key);
         return;
     }
 

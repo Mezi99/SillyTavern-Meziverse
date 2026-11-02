@@ -19,12 +19,17 @@ const SELF = new Set([
 ]);
 
 /* Body tags whose words are prose, so only the wrapper goes. */
-const KEEP = new Set(['speech', 'flashback']);
+const KEEP = new Set(['speech']);
 
 /* Body tags whose words are private: strip wrapper and body together. */
 const HIDDEN = new Set(['think', 'ledger', 'playerguide', 'directorguide', 'vkit']);
 
-const NAMES = new Set([...SELF, ...KEEP, ...HIDDEN]);
+/* Inline cues that leave a mark in the prose where the tag stood. A
+   flashback's body is not prose either: it waits behind its pill, whole,
+   for the mindscape. */
+const MARKS = new Set(['lie', 'filter', 'flashback']);
+
+const NAMES = new Set([...SELF, ...KEEP, ...HIDDEN, ...MARKS]);
 
 const OPEN = /<([A-Za-z][A-Za-z0-9_-]*)/y;
 const ATTRIBUTE = /([A-Za-z_:][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
@@ -76,8 +81,9 @@ export function parseMessage(message) {
 /**
  * The message with every catalogue tag removed.
  *
- * Streaming-safe: an unclosed hidden tag hides its tail; an unclosed `speech`
- * or `flashback` keeps its partial body because those words are prose.
+ * Streaming-safe: an unclosed hidden tag hides its tail; an unclosed
+ * `speech` keeps its partial body because those words are prose. The
+ * cue marks and a flashback's body go with their tags.
  */
 export function stripTags(mes) {
     const text = typeof mes === 'string' ? mes : '';
@@ -124,10 +130,18 @@ export function scenesOf(tags) {
 
 /**
  * Splits a message at complete scene tags, so prose and inline scene rows can
- * be interleaved. Non-scene tags are stripped exactly as in `stripTags`.
+ * be interleaved; at the inline cues (`lie`, `filter`, `flashback`) that leave
+ * a mark in the prose; and at complete `meanwhile` tags, which stand as a box
+ * of their own between the prose runs. Non-cue tags are stripped exactly as in
+ * `stripTags`.
+ *
+ * A mark goes where its tag stood, at the end of the text before it. A tag
+ * that starts its own line moves to the end of the previous paragraph, so a
+ * mark never floats alone; its line's whitespace follows it. A box keeps the
+ * tag's place between the runs and never joins a paragraph.
  *
  * @param {string} mes
- * @returns {Array<{type:'text', text:string}|{type:'scene', tag:object}>}
+ * @returns {Array<{type:'text', text:string}|{type:'scene', tag:object}|{type:'box', tag:object}|{type:'mark', tag:object}>}
  */
 export function splitCues(mes) {
     const text = typeof mes === 'string' ? mes : '';
@@ -135,11 +149,13 @@ export function splitCues(mes) {
 
     const cues = [];
     let prose = '';
+    let runHasText = false;
     let cursor = 0;
 
     const flush = () => {
         if (!prose) return;
         cues.push({ type: 'text', text: prose });
+        if (prose.trim()) runHasText = true;
         prose = '';
     };
 
@@ -150,6 +166,39 @@ export function splitCues(mes) {
         if (tag.name === 'scene' && tag.closed) {
             flush();
             cues.push({ type: 'scene', tag });
+            runHasText = false;
+            cursor = tag.end;
+            continue;
+        }
+
+        // A meanwhile box is a block like a scene row: it stands where its
+        // tag stood, between the prose runs, and cuts them the same way.
+        if (tag.name === 'meanwhile' && tag.closed) {
+            flush();
+            cues.push({ type: 'box', tag });
+            runHasText = false;
+            cursor = tag.end;
+            continue;
+        }
+
+        if (MARKS.has(tag.name)) {
+            // A half tag draws nothing at all, and hides its tail.
+            if (!tag.closed) {
+                cursor = text.length;
+                break;
+            }
+
+            // The mark moves to the previous paragraph's end when its tag
+            // began a line of its own and there is a paragraph to join.
+            const spacing = /[ \t\r\n]*$/.exec(prose)[0];
+            const head = prose.slice(0, prose.length - spacing.length);
+            const attach = spacing.includes('\n') && (runHasText || !!head.trim());
+
+            prose = attach ? head : head + spacing;
+            flush();
+            cues.push({ type: 'mark', tag });
+            prose = attach ? spacing : '';
+
             cursor = tag.end;
             continue;
         }

@@ -41,6 +41,12 @@ const SPRITE = `<svg class="mz-sprite" aria-hidden="true" focusable="false">
 <symbol id="mz-i-camera" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5h3l1.5-2.2h6l1.5 2.2h3a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 2 17.1v-7a1.5 1.5 0 0 1 1.5-1.6z"/><circle cx="12" cy="13" r="3.4"/></symbol>
 <symbol id="mz-i-expand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4H4v5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></symbol>
 <symbol id="mz-i-collapse" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h5V4M20 9h-5V4M20 15h-5v5M4 15h5v5"/></symbol>
+<symbol id="mz-i-crack" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3l-4 6 5 2.5-5 4 3 1.5-2 4"/><path d="M5 8l3 1M19 14l-3 .5"/></symbol>
+<symbol id="mz-i-mask" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7.5c3-1.4 5.6-2 8-2s5 .6 8 2c0 6.2-3 10.2-8 11.5-5-1.3-8-5.3-8-11.5z"/><path d="M7.8 11.2c.9-.7 2-.7 2.9 0M13.3 11.2c.9-.7 2-.7 2.9 0"/><path d="M9.6 14.6c1.5.9 3.3.9 4.8 0"/></symbol>
+<symbol id="mz-i-gap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5H5v14h3M16 5h3v14h-3"/><path d="M9.5 12h.01M12 12h.01M14.5 12h.01"/></symbol>
+<symbol id="mz-i-cut" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 20L14 4M14 20l6-16"/></symbol>
+<symbol id="mz-i-dream" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19.5 14.2A8 8 0 1 1 9.8 4.5a6.4 6.4 0 0 0 9.7 9.7z"/><path d="M17 3.5v4M15 5.5h4"/></symbol>
+<symbol id="mz-i-return" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h9a6 6 0 0 1 0 12h-3"/></symbol>
 </svg>`;
 
 /** Builds one icon node pointing at the sprite. */
@@ -54,6 +60,11 @@ export function icon(name, className = 'ico') {
     svg.append(use);
 
     return svg;
+}
+
+/** The same icon as markup, for the prose strings that build HTML. */
+export function iconHtml(name, className = 'ico') {
+    return `<svg class="${className}" aria-hidden="true"><use href="#${name}"/></svg>`;
 }
 
 /** Puts the sprite into the root once. */

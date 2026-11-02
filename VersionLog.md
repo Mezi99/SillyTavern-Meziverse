@@ -1,5 +1,30 @@
 # Meziverse — version log
 
+## 2.3.0 — 2026-11-02
+
+The third feature family — the inline narration cues. Four tags now leave their mark in the prose itself: a lie, a blind spot, a memory, and the world elsewhere.
+
+### The marks
+- `lie` and `filter` leave a small round glyph exactly where the tag stood — at the end of the text before it (a tag on a line of its own joins the previous paragraph's end; marks stack in reading order). The glyph tells the kind apart: crack / mask / gap for lying / deceiving / omitting, a closed eye for the blind spot.
+- **One shared popover** serves both marks. Hover opens it on a pointer after 90 ms, a tap or click pins it, focus-visible opens it; Esc, scroll or an outside press puts it away — one at a time. The lie's popover names the kind, the liar ("Who"), the truth and why; the blind spot's is shaped the same way — "Missed" in its own violet ink, then what happened and why.
+- The liar's portrait wears a hairline crack — a bonus echo, never the only carrier — that flickers once while the lie's popover is open.
+
+### The memory
+- `flashback` leaves a small dream pill (glyph + name) in the prose and carries the body out of both the prose and the log. A click opens the **mindscape**: the stage warms and blurs away, the memory surfaces fragment by fragment ("{character} remembers", when, and the trigger up top; the "And now" cascade at the foot), and click anywhere — except a click that just selected a passage — Return, or Esc brings you back.
+- Closing the memory lets its cascade linger on the character's thought bubble until the next turn. The thought bubbles themselves became floating overlays with a three-circle trail, one at a time, closed by default.
+- The fragments come from a **mechanical sentence splitter** (`memory.js`), no word lists: sentences split at their own ends, never inside quotation marks, and a sentence that speaks in quotes takes the single one after it into its row. Pinned by synthetic tests.
+
+### The meanwhile box
+- `meanwhile` stands as its own quiet box at the point it appeared: closed by default, showing only the cut glyph and the label, and growing in place on click to the event and a hairline "Why it matters". Several in a row stack as one unit, and each head numbers itself ("2 / 3") when a reply holds more than one. It renders in the pane and the log alike.
+
+### The Cues settings group
+- **Popovers** (hover and tap / tap only), **Memories** (pill / open on arrival), **Meanwhile** (closed / latest one open). The last two arrive once per turn, after generation settles.
+
+### Notes
+- With Meziverse mode off every cue tag vanishes from the prose entirely. A tag still streaming draws nothing and hides its tail.
+- The version rides beside the wordmark ("Meziverse v2.3.0"); `manifest.json` matches.
+- The synthetic suite stands at 110 tests.
+
 ## 2.2.0 — 2026-11-01
 
 The second feature family — the ledger rails. The story trackers the model already writes into each reply now live on two icon menus beside the narration: story on the right, people on the left.

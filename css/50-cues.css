@@ -1,0 +1,486 @@
+/* ==========================================================================
+   Meziverse — cues
+   The in-narration tags. The narration stays quiet: each cue is one small,
+   calm control in the prose, and the weight is revealed only on demand.
+
+     lie        a round glyph at the tag's position, shaped by its kind, plus
+                a crack on the liar's portrait. Hover or tap opens a popover
+                with the truth.
+     filter     the same round glyph, a closed eye. The same popover, the
+                same behaviour, saying what was missed and why.
+     flashback  a small dream pill in the prose; a click opens the mindscape.
+     meanwhile  an expandable box between the prose runs, closed by default.
+
+   All cue text is Inter (var(--mz-font-ui)), like the rest of the UI.
+   ========================================================================== */
+
+#mz-root {
+    --mz-cue-lie: var(--mz-bad);               /* a crack in the story */
+    --mz-cue-mem: var(--mz-warn);              /* old gold, dream light */
+    --mz-cue-blind: var(--mz-tone-desire-low); /* what you cannot perceive */
+    --mz-cue-away: var(--mz-accent);           /* somewhere else, meanwhile */
+}
+
+/* ---------- the round mark and the popover it opens ---------- */
+
+.mz-mark {
+    --c: var(--mz-text-muted);
+    position: relative;
+    display: inline-grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    margin: 0 .15em 0 .3em;
+    vertical-align: .12em;
+    border: 1px solid color-mix(in srgb, var(--c) 42%, transparent);
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--c) 9%, transparent);
+    color: var(--c);
+    cursor: pointer;
+    transition: background var(--mz-dur-fast), transform var(--mz-dur-fast) var(--mz-ease), box-shadow var(--mz-dur-fast);
+}
+
+.mz-mark .ico { width: 12px; height: 12px; }
+
+.mz-mark[data-cue="lie"] { --c: var(--mz-cue-lie); }
+.mz-mark[data-cue="blind"] { --c: var(--mz-cue-blind); }
+
+.mz-mark:hover,
+.mz-mark:focus-visible { background: color-mix(in srgb, var(--c) 20%, transparent); transform: scale(1.1); }
+
+.mz-mark[aria-expanded="true"] {
+    background: var(--c);
+    color: var(--mz-bg);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 18%, transparent);
+}
+
+/* a touch target bigger than the glyph, without growing the glyph */
+.mz-mark::after { content: ""; position: absolute; inset: -9px; }
+
+/* The popover: one element, moved next to whichever mark opened it. It is
+   fixed-positioned by script, so the reading pane's own scrolling or
+   clipping never cuts it. */
+.mz-pop {
+    --c: var(--mz-text-muted);
+    position: fixed;
+    z-index: calc(var(--mz-z-sheet) + 2);
+    top: 0;
+    left: 0;
+    width: min(330px, calc(100% - 24px));
+    display: grid;
+    gap: 8px;
+    padding: 12px 14px 13px;
+    border: 1px solid color-mix(in srgb, var(--c) 38%, transparent);
+    border-radius: var(--mz-r);
+    background: color-mix(in srgb, var(--mz-bg) 92%, transparent);
+    backdrop-filter: var(--mz-blur);
+    box-shadow: var(--mz-shadow);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(4px);
+    transition: opacity var(--mz-dur-fast) var(--mz-ease), transform var(--mz-dur-fast) var(--mz-ease), visibility 0s linear var(--mz-dur-fast);
+}
+
+.mz-pop.is-open { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+.mz-pop[data-cue="lie"] { --c: var(--mz-cue-lie); }
+.mz-pop[data-cue="blind"] { --c: var(--mz-cue-blind); }
+
+/* a small notch pointing at the mark; --nx is set by script */
+.mz-pop::after {
+    content: "";
+    position: absolute;
+    left: var(--nx, 24px);
+    bottom: -5px;
+    width: 9px;
+    height: 9px;
+    border: inherit;
+    border-width: 0 1px 1px 0;
+    background: inherit;
+    rotate: 45deg;
+    translate: -50% 0;
+}
+
+.mz-pop.is-below::after { bottom: auto; top: -5px; border-width: 1px 0 0 1px; }
+
+.mz-pop-h {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font: 600 var(--mz-text-2xs) var(--mz-font-ui);
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--c);
+}
+
+.mz-pop-h .ico { width: 13px; height: 13px; }
+.mz-pop-h span { margin-left: auto; font-weight: 500; letter-spacing: .06em; text-transform: none; color: var(--mz-text-dim); }
+.mz-pop-h span b { margin-right: 6px; font: 500 var(--mz-text-2xs) var(--mz-font-ui); letter-spacing: .12em; text-transform: uppercase; color: var(--mz-text-dim); }
+
+.mz-pop dl { display: grid; gap: 7px; margin: 0; }
+.mz-pop dt { font: 500 var(--mz-text-2xs) var(--mz-font-ui); letter-spacing: .12em; text-transform: uppercase; color: var(--mz-text-dim); }
+.mz-pop dd { margin: 1px 0 0; font: 400 var(--mz-text-md) / 1.45 var(--mz-font-ui); color: var(--mz-text); }
+.mz-pop dd.is-why { font-weight: 300; color: var(--mz-text-muted); }
+
+/* ---------- the tell on the liar's portrait ---------- */
+
+/* A hairline crack on the stage — no button, no badge, at any portrait
+   size — carried over any art by a dark halo under the stroke. The mark
+   in the prose carries the tell on its own. */
+.mz-port .mz-fracture {
+    position: absolute;
+    z-index: 2;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity var(--mz-dur) var(--mz-ease);
+}
+
+.mz-port .mz-fracture path {
+    fill: none;
+    stroke: var(--mz-cue-lie);
+    stroke-width: 2.2;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    vector-effect: non-scaling-stroke;
+    filter:
+        drop-shadow(0 1px 2px rgba(0, 0, 0, .9))
+        drop-shadow(0 0 7px color-mix(in srgb, var(--mz-cue-lie) 85%, transparent));
+}
+
+.mz-port.has-tell .mz-fracture { opacity: 1; }
+.mz-port.has-tell.is-told .mz-fracture { animation: mz-crack 900ms var(--mz-ease) 1; }
+
+@keyframes mz-crack {
+    0% { opacity: .2; }
+    30% { opacity: 1; }
+    100% { opacity: 1; }
+}
+
+/* ==========================================================================
+   2. FLASHBACK
+   In the prose: a small dream pill, who and nothing more. Click opens the
+   mindscape: the whole frame dissolves into a soft, drifting memory whose
+   fragments surface one by one.
+   ========================================================================== */
+
+.mz-dream {
+    --c: var(--mz-cue-mem);
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 22px;
+    margin: 0 .15em 0 .3em;
+    padding: 0 9px 0 6px;
+    vertical-align: .08em;
+    border: 1px solid color-mix(in srgb, var(--c) 40%, transparent);
+    border-radius: var(--mz-r-pill);
+    background: color-mix(in srgb, var(--c) 10%, transparent);
+    color: var(--c);
+    font: 500 var(--mz-text-xs) var(--mz-font-ui);
+    letter-spacing: .02em;
+    cursor: pointer;
+    transition: background var(--mz-dur-fast), box-shadow var(--mz-dur) var(--mz-ease), border-color var(--mz-dur-fast);
+}
+
+.mz-dream::after { content: ""; position: absolute; inset: -8px -4px; }
+.mz-dream .ico { flex: none; width: 13px; height: 13px; animation: mz-dream-breathe 5.5s ease-in-out infinite; }
+
+.mz-dream:hover,
+.mz-dream:focus-visible {
+    background: color-mix(in srgb, var(--c) 20%, transparent);
+    border-color: color-mix(in srgb, var(--c) 65%, transparent);
+    box-shadow: 0 0 18px -3px color-mix(in srgb, var(--c) 50%, transparent);
+}
+
+@keyframes mz-dream-breathe {
+    0%, 100% { opacity: .7; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.14) rotate(-6deg); }
+}
+
+/* the stage behind the memory: soft, warm, far away */
+.mz-frame .mz-bg,
+.mz-frame .mz-cast { transition: filter 700ms var(--mz-ease), opacity 700ms var(--mz-ease), transform 900ms var(--mz-ease); }
+
+.mz-frame.is-memory .mz-bg { filter: sepia(.7) saturate(.8) brightness(.55) blur(6px); transform: scale(1.04); }
+.mz-frame.is-memory .mz-cast { filter: sepia(.8) saturate(.6) brightness(.5) blur(4px); opacity: .4; }
+
+.mz-frame.is-memory .mz-dlg,
+.mz-frame.is-memory .mz-glance,
+.mz-frame.is-memory .mz-header,
+.mz-frame.is-memory .mz-chatbar { opacity: 0; pointer-events: none; transition: opacity 500ms var(--mz-ease); }
+
+/* the mindscape itself: no card, no border. Its edges dissolve into the
+   stage, and it is independent of the reading pane's height. */
+.mz-mind {
+    position: absolute;
+    z-index: calc(var(--mz-z-sheet) - 4);
+    inset: 0;
+    overflow: hidden;
+}
+
+.mz-mind-haze {
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(48% 42% at 50% 46%, color-mix(in srgb, var(--mz-cue-mem) 20%, transparent), transparent 72%),
+        radial-gradient(30% 34% at 18% 78%, color-mix(in srgb, var(--mz-cue-mem) 11%, transparent), transparent 70%),
+        radial-gradient(34% 30% at 84% 22%, color-mix(in srgb, var(--mz-cue-mem) 9%, transparent), transparent 70%),
+        color-mix(in srgb, var(--mz-bg) 58%, transparent);
+    backdrop-filter: blur(16px) sepia(.5);
+    -webkit-mask-image: radial-gradient(ellipse 92% 88% at 50% 50%, #000 52%, transparent 100%);
+    mask-image: radial-gradient(ellipse 92% 88% at 50% 50%, #000 52%, transparent 100%);
+    animation: mz-haze-in 600ms var(--mz-ease) both;
+}
+
+@keyframes mz-haze-in { from { opacity: 0; transform: scale(.92); } to { opacity: 1; transform: none; } }
+
+/* the flash that opens it: a short bloom of light */
+.mz-mind::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 50% 46%, color-mix(in srgb, var(--mz-cue-mem) 55%, var(--mz-text)) 0, transparent 55%);
+    opacity: 0;
+    pointer-events: none;
+    animation: mz-flash 700ms ease-out both;
+}
+
+@keyframes mz-flash {
+    0% { opacity: 0; }
+    14% { opacity: .62; }
+    100% { opacity: 0; }
+}
+
+/* slow rings, like thought rippling out */
+.mz-mind-ring {
+    position: absolute;
+    left: 50%;
+    top: 46%;
+    width: 60vmin;
+    height: 60vmin;
+    border: 1px solid color-mix(in srgb, var(--mz-cue-mem) 26%, transparent);
+    border-radius: 50%;
+    translate: -50% -50%;
+    opacity: 0;
+    animation: mz-ring 9s ease-out infinite;
+    pointer-events: none;
+}
+
+.mz-mind-ring:nth-of-type(2) { animation-delay: 3s; }
+.mz-mind-ring:nth-of-type(3) { animation-delay: 6s; }
+
+@keyframes mz-ring {
+    0% { transform: scale(.5); opacity: 0; }
+    15% { opacity: .5; }
+    100% { transform: scale(1.7); opacity: 0; }
+}
+
+/* drifting motes of light */
+.mz-mind-motes { position: absolute; inset: 0; pointer-events: none; }
+
+.mz-mind-motes i {
+    position: absolute;
+    left: var(--x);
+    bottom: -10px;
+    width: var(--s);
+    height: var(--s);
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--mz-cue-mem) 80%, var(--mz-text));
+    filter: blur(1px);
+    opacity: 0;
+    animation: mz-mote var(--t) linear var(--d) infinite;
+}
+
+@keyframes mz-mote {
+    0% { transform: translate(0, 0); opacity: 0; }
+    15% { opacity: .55; }
+    100% { transform: translate(var(--dx, 24px), -110vh); opacity: 0; }
+}
+
+.mz-mind-scroll {
+    position: relative;
+    height: 100%;
+    overflow-y: auto;
+    padding: clamp(36px, 9vh, 96px) max(20px, calc((100% - 46rem) / 2)) clamp(28px, 7vh, 72px);
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 7%, #000 90%, transparent 100%);
+    mask-image: linear-gradient(180deg, transparent 0, #000 7%, #000 90%, transparent 100%);
+}
+
+.mz-mind-scroll::-webkit-scrollbar { display: none; }
+
+.mz-mind-head {
+    display: grid;
+    justify-items: center;
+    gap: 4px;
+    margin-bottom: clamp(20px, 5vh, 44px);
+    text-align: center;
+    animation: mz-drift 800ms var(--mz-ease) 150ms both;
+}
+
+.mz-mind-who { font: 600 var(--mz-text-2xs) var(--mz-font-ui); letter-spacing: .3em; text-transform: uppercase; color: var(--mz-cue-mem); }
+.mz-mind-when { font: 300 clamp(20px, 3vmin, 28px) / 1.3 var(--mz-font-ui); letter-spacing: -.005em; color: color-mix(in srgb, var(--mz-text) 90%, var(--mz-cue-mem)); text-shadow: 0 0 28px color-mix(in srgb, var(--mz-cue-mem) 40%, transparent); text-wrap: balance; }
+.mz-mind-trigger { font: 300 var(--mz-text-sm) var(--mz-font-ui); color: var(--mz-text-muted); }
+.mz-mind-trigger::before { content: "\2026 "; }
+
+/* Fragments surface one by one, sharpening out of a blur, and sit off
+   centre like pieces of a thought rather than a column of text. */
+.mz-mind-body { display: grid; gap: clamp(16px, 3.4vh, 30px); }
+
+.mz-mind-frag {
+    max-width: 34rem;
+    font: 300 calc(var(--mz-narr-size) + 1px) / 1.7 var(--mz-font-ui);
+    color: color-mix(in srgb, var(--mz-text) 90%, var(--mz-cue-mem));
+    text-shadow: 0 0 22px color-mix(in srgb, var(--mz-cue-mem) 28%, transparent);
+    animation: mz-fragment 800ms var(--mz-ease) both;
+}
+
+.mz-mind-frag p { margin: 0; }
+.mz-mind-frag:nth-child(odd) { justify-self: start; }
+.mz-mind-frag:nth-child(even) { justify-self: end; text-align: right; }
+.mz-mind-frag q { quotes: none; font-weight: 400; color: color-mix(in srgb, var(--mz-cue-mem) 62%, var(--mz-text)); }
+
+@keyframes mz-fragment {
+    from { opacity: 0; filter: blur(10px); transform: translateY(14px); }
+    to { opacity: 1; filter: none; transform: none; }
+}
+
+@keyframes mz-drift {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: none; }
+}
+
+.mz-mind-foot {
+    display: grid;
+    justify-items: center;
+    gap: 16px;
+    margin-top: clamp(24px, 6vh, 52px);
+    text-align: center;
+    animation: mz-drift 800ms var(--mz-ease) 3300ms both;
+}
+
+.mz-mind-cascade { margin: 0; max-width: 32rem; font: 300 var(--mz-text-md) / 1.55 var(--mz-font-ui); color: var(--mz-text-muted); }
+.mz-mind-cascade b { display: block; margin-bottom: 4px; font: 600 var(--mz-text-2xs) var(--mz-font-ui); letter-spacing: .22em; text-transform: uppercase; color: var(--mz-text-dim); }
+
+/* the way back is always on screen and never waits for the fragments */
+.mz-mind-back {
+    position: absolute;
+    z-index: 2;
+    top: max(14px, env(safe-area-inset-top, 0px));
+    right: max(14px, env(safe-area-inset-right, 0px));
+    animation: mz-drift 600ms var(--mz-ease) 350ms both;
+}
+
+.mz-btn {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 32px;
+    padding: 0 14px;
+    border: 1px solid var(--mz-line-strong);
+    border-radius: var(--mz-r-pill);
+    background: color-mix(in srgb, var(--mz-bg) 50%, transparent);
+    font: 500 var(--mz-text-sm) var(--mz-font-ui);
+    color: var(--mz-text);
+    transition: border-color var(--mz-dur-fast), color var(--mz-dur-fast), background var(--mz-dur-fast);
+}
+
+.mz-btn:hover { border-color: var(--mz-accent-line); color: var(--mz-accent); background: var(--mz-accent-wash); }
+.mz-btn .ico { width: 13px; height: 13px; }
+.mz-btn kbd { font: 500 9.5px var(--mz-font-ui); padding: 1px 5px; border: 1px solid var(--mz-line-strong); border-radius: 4px; color: var(--mz-text-dim); }
+
+/* after the memory, its cascade lingers on the character as a thought */
+.mz-thought-pop.is-cascade { border-color: color-mix(in srgb, var(--mz-cue-mem) 40%, transparent); }
+
+.mz-thought-pop.is-cascade b {
+    display: block;
+    margin-bottom: 2px;
+    font: 600 8.5px var(--mz-font-ui);
+    font-style: normal;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--mz-cue-mem);
+}
+
+/* ==========================================================================
+   3. FILTER
+   Just the round mark. Its popover says what you cannot perceive and why.
+   (Markup and behaviour are the lie's; only colour, glyph and copy differ.)
+   ========================================================================== */
+
+/* ==========================================================================
+   4. MEANWHILE
+   An expandable box inside the narration, closed by default. Several can
+   follow one another and read as one quiet stack.
+   ========================================================================== */
+
+.mz-meanwhile {
+    --c: var(--mz-cue-away);
+    margin: .85em 0;
+    border: 1px solid color-mix(in srgb, var(--c) 24%, transparent);
+    border-left: 2px solid color-mix(in srgb, var(--c) 70%, transparent);
+    border-radius: var(--mz-r);
+    background: linear-gradient(95deg, color-mix(in srgb, var(--c) 13%, transparent), color-mix(in srgb, var(--c) 2%, transparent) 75%);
+    overflow: hidden;
+    transition: border-color var(--mz-dur-fast), background var(--mz-dur) var(--mz-ease);
+}
+.mz-meanwhile + .mz-meanwhile { margin-top: -.45em; }
+.mz-meanwhile:hover { border-color: color-mix(in srgb, var(--c) 45%, transparent); border-left-color: var(--c); }
+.mz-meanwhile.is-open { border-color: color-mix(in srgb, var(--c) 40%, transparent); border-left-color: var(--c); }
+
+.mz-mw-head {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    width: 100%;
+    min-height: 36px;
+    padding: 6px 12px 6px 10px;
+    text-align: left;
+    color: var(--mz-text);
+}
+.mz-mw-slash {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--c) 14%, transparent);
+    color: var(--c);
+}
+.mz-mw-slash .ico { width: 13px; height: 13px; }
+.mz-mw-label { font: 600 var(--mz-text-2xs) var(--mz-font-ui); letter-spacing: .18em; text-transform: uppercase; color: var(--c); }
+.mz-mw-label { flex: 1; }
+/* several boxes in a reply number themselves, quietly */
+.mz-mw-count { flex: none; font: 500 var(--mz-text-2xs) var(--mz-font-ui); letter-spacing: .1em; color: var(--mz-text-dim); }
+.mz-mw-chev { flex: none; width: 14px; height: 14px; color: var(--mz-text-dim); transition: transform var(--mz-dur) var(--mz-ease), color var(--mz-dur-fast); }
+.mz-meanwhile:hover .mz-mw-chev { color: var(--c); }
+.mz-meanwhile.is-open .mz-mw-chev { transform: rotate(90deg); color: var(--c); }
+
+/* grid-template-rows animates the height without measuring it */
+.mz-mw-body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 360ms var(--mz-ease); }
+.mz-meanwhile.is-open .mz-mw-body { grid-template-rows: 1fr; }
+.mz-mw-in { min-height: 0; overflow: hidden; }
+.mz-mw-in > div { display: grid; gap: 10px; padding: 2px 16px 15px 43px; opacity: 0; transform: translateY(-4px); transition: opacity 300ms var(--mz-ease), transform 300ms var(--mz-ease); }
+.mz-meanwhile.is-open .mz-mw-in > div { opacity: 1; transform: none; transition-delay: 90ms; }
+.mz-mw-ev { margin: 0; font: 400 var(--mz-text-md) / 1.6 var(--mz-font-ui); color: var(--mz-text); }
+.mz-mw-why { display: grid; gap: 2px; margin: 0; padding-top: 9px; border-top: 1px solid color-mix(in srgb, var(--c) 18%, transparent); }
+.mz-mw-why b { font: 500 var(--mz-text-2xs) var(--mz-font-ui); letter-spacing: .14em; text-transform: uppercase; color: var(--mz-text-dim); }
+.mz-mw-why span { font: 300 var(--mz-text-md) / 1.55 var(--mz-font-ui); color: var(--mz-text-muted); }
+
+/* ---------- small screens ---------- */
+
+@media (max-width: 759px) {
+    .mz-mind-frag:nth-child(even) { justify-self: start; text-align: left; margin-left: 8%; }
+    .mz-mw-in > div { padding-left: 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .mz-dream .ico, .mz-mind-ring, .mz-mind-motes i { animation: none; }
+    .mz-mind-motes, .mz-mind-ring { display: none; }
+    .mz-mind::before { animation: none; }
+    .mz-mind-haze, .mz-mind-head, .mz-mind-frag, .mz-mind-foot, .mz-mind-back { animation: none; }
+    .mz-mw-body, .mz-mw-in > div, .mz-pop { transition: none; }
+}
