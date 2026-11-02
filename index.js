@@ -8,12 +8,14 @@
 
 import { whenReady } from './src/st.js';
 import { mount, open } from './src/overlay.js';
+import { initBackgrounds } from './src/bgchain.js';
 import { addLauncher, addDrawerBlock } from './src/launcher.js';
 
 async function boot() {
     await whenReady();
 
     mount();
+    initBackgrounds();
     addLauncher(open);
     addDrawerBlock(open);
 

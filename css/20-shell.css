@@ -266,6 +266,24 @@ body.mz-open .popup { z-index: 9500 !important; }
     box-shadow: 0 0 6px color-mix(in srgb, var(--mz-accent) 55%, transparent);
 }
 
+/* The background switch and the brush ride with the mode switch: the same
+   pill, one more promise kept beside it. */
+.mz-bgauto { margin-left: 6px; }
+
+.mz-brush {
+    margin-left: 2px;
+    align-self: center;
+}
+
+.mz-brush.is-busy {
+    opacity: .5;
+    pointer-events: none;
+}
+
+.mz-brush.is-off { opacity: .35; }
+
+.mz-set-row input.mz-select { max-width: 320px; }
+
 .mz-chatname {
     display: flex;
     align-items: baseline;

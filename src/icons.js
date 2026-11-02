@@ -6,6 +6,7 @@
 
 const SPRITE = `<svg class="mz-sprite" aria-hidden="true" focusable="false">
 <symbol id="mz-i-gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="12" cy="12" r="3.3"/><path d="M12 2.6v2.6M12 18.8v2.6M2.6 12h2.6M18.8 12h2.6M5.3 5.3l1.9 1.9M16.8 16.8l1.9 1.9M18.7 5.3l-1.9 1.9M7.2 16.8l-1.9 1.9"/></symbol>
+<symbol id="mz-i-brush" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 3.5 20.5 7.5 11 17a3.5 3.5 0 0 1-5-5z"/><path d="M14 6l4 4"/><path d="M7 14c-2 1-3 2.6-3 4.5 1.4-.5 2.7-.4 3.8.1 1 .5 2.2.5 3.2 0 1.8-.8 2.5-2.6 1.6-4"/></symbol>
 <symbol id="mz-i-door" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 3.5h5.5v17h-5.5"/><path d="M3.5 12h10.5"/><path d="M10 8l4 4-4 4"/></symbol>
 <symbol id="mz-i-log" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v5a3 3 0 0 1-3 3h-6.5L6.5 18v-3A3 3 0 0 1 4 12z"/><path d="M8.5 9.5h.01M12 9.5h.01M15.5 9.5h.01"/></symbol>
 <symbol id="mz-i-profiles" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.4 2.7-6 6-6s6 2.6 6 6"/><circle cx="17" cy="9" r="2.4"/><path d="M17 14c2.4 0 4 1.8 4 4.5"/></symbol>

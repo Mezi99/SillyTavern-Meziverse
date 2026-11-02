@@ -24,6 +24,7 @@ import {
     locationKey,
     normalizeStore,
     parseWatcherReply,
+    recoverCurrentKey,
     resolveRecordId,
     storeRecord,
     LANDSCAPE_SIZE,
@@ -31,11 +32,13 @@ import {
 import {
     bgStore,
     chatMessages,
+    customBackground,
     currentChatId,
     forceSetBackground,
     generateRaw,
     imagine,
     imageGenerationStatus,
+    on,
     personaName,
     saveChatMetadata,
 } from './st.js';
@@ -63,6 +66,33 @@ export function cancelBackgroundWork() {
 /** Forgets the mode OFF pace, e.g. when a chat changes. */
 export function resetBackgroundPacing() {
     repliesSinceWatch = 0;
+}
+
+/**
+ * Wires the chain to the story: every finished reply, swipe or edit runs it
+ * once, and a chat change cancels whatever was in flight and re-derives the
+ * current place from the background SillyTavern itself restored. The chain
+ * follows the chat whether the scene is open or not - the background belongs
+ * to the chat, not to the window.
+ */
+export function initBackgrounds() {
+    on('CHAT_CHANGED', () => {
+        cancelBackgroundWork();
+        resetBackgroundPacing();
+        recoverCurrentKey(bgStore(), customBackground());
+    });
+
+    const follow = () => {
+        syncBackgrounds({ generate: true }).catch?.(error => {
+            console.warn(`${LOG} chain failed`, error);
+        });
+    };
+
+    on('GENERATION_ENDED', follow);
+    on('GENERATION_STOPPED', follow);
+    on('GROUP_WRAPPER_FINISHED', follow);
+    on('MESSAGE_SWIPED', follow);
+    on('MESSAGE_EDITED', follow);
 }
 
 /**
