@@ -231,7 +231,9 @@ function placeThought() {
 
 function onDocClick(event) {
     if (!thoughtKey || !event.isTrusted) return;
-    if (event.target.closest?.('.mz-thought-pop') || event.target.closest?.('[data-mz-thought]')) return;
+    // The click that puts a memory away is not a press against its
+    // cascade; the bubble it opens must outlive it.
+    if (event.target.closest?.('.mz-thought-pop') || event.target.closest?.('[data-mz-thought]') || event.target.closest?.('.mz-mind')) return;
     closeThought();
 }
 

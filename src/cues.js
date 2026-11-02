@@ -93,6 +93,13 @@ function onClick(event) {
         return;
     }
 
+    // The memory covers the screen: a real click anywhere on it puts it
+    // away — unless the pointer just selected a passage to keep.
+    if (mind && !mind.hidden && mind.contains(event.target)) {
+        if (event.isTrusted && !String(getSelection?.() ?? '').trim()) closeMemory();
+        return;
+    }
+
     const mark = event.target.closest?.('.mz-mark');
     if (mark) {
         clearTimer();
