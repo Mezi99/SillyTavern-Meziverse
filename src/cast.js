@@ -7,11 +7,12 @@
  * file only prepares a small WebP and then hands it over.
  */
 
-import { castImages, castKey, currentChatId, removeCastImage, setCastImage, uploadImage } from './st.js';
+import { castImages, castKey, currentChatId, removeCastImage, say, setCastImage, uploadImage } from './st.js';
 import { initials } from './scene.js';
 import { icon } from './icons.js';
 import { notify } from './notify.js';
 import { entryOn, modeOn } from './settings.js';
+import { closeFloats, placeFloat, registerFloat } from './floats.js';
 
 const MAX_EDGE = 1024;
 const QUALITY = 0.85;
@@ -22,8 +23,6 @@ const FALLBACK_CEILING = 500;
    posters. The pane's maximum yields the same amount while thoughts
    are on stage (overlay's paneLimits), so the two never fight over
    a short window. */
-export const BUBBLE_ROOM = 72;
-
 let host = null;
 let track = null;
 let picker = null;
@@ -38,6 +37,12 @@ let lastTells = [];
 let busyName = '';
 let busyChat = null;
 let pending = null;
+
+// The one thought bubble: its element on the frame, whose thought it
+// carries, and the ledger's thoughts by avatar.
+let thoughtPop = null;
+let thoughtKey = '';
+let thoughtByName = new Map();
 
 /** Mounts the strip inside the frame's cast region. Idempotent. */
 export function mountCast(element) {
@@ -58,6 +63,7 @@ export function mountCast(element) {
 
     host.addEventListener('click', onClick);
     picker.addEventListener('change', onFileChosen);
+    document.addEventListener('click', onDocClick);
 
     if (typeof ResizeObserver === 'function') {
         observer = new ResizeObserver(() => refreshCastSizing());
@@ -65,6 +71,18 @@ export function mountCast(element) {
     }
 
     window.addEventListener('resize', refreshCastSizing);
+    window.addEventListener('resize', () => placeThought());
+
+    // The thought bubble floats over the posters, on the frame: the
+    // layout never knows it exists. Only one floats at a time.
+    thoughtPop = document.createElement('div');
+    thoughtPop.className = 'mz-thought-pop';
+    thoughtPop.setAttribute('role', 'status');
+    thoughtPop.hidden = true;
+    (host.closest('.mz-frame') || host.parentElement).append(thoughtPop);
+    registerFloat(closeThought);
+
+    track.addEventListener('scroll', () => closeThought(), { passive: true });
 }
 
 /**
@@ -133,10 +151,11 @@ export function castAvatar(name) {
 }
 
 /**
- * Attaches the ledger's private thoughts to their posters — one thought
- * bubble per avatar, matched by the simple, consistent name both sides
- * carry. Reapplied whenever the ledger or the cast changes; a thought
- * with no matching avatar simply stays unspoken.
+ * Attaches the ledger's private thoughts to their posters — one toggle
+ * per avatar, matched by the simple, consistent name both sides carry,
+ * opening a floating bubble over that poster. Reapplied whenever the
+ * ledger or the cast changes; a thought with no matching avatar simply
+ * stays unspoken.
  *
  * @param {object[]} profiles
  */
@@ -145,35 +164,90 @@ export function renderThoughts(profiles) {
     applyThoughts();
 }
 
-/* Thoughts hidden by their avatar's own toggle. Session-only, like the
-   rails' snapped boxes: the future mode-features menu owns persistence. */
-const hiddenThoughts = new Set();
+/** Puts the thought bubble away. True when one was open. */
+export function closeThought() {
+    if (!thoughtPop || !thoughtKey) return false;
+
+    thoughtKey = '';
+    thoughtPop.classList.remove('is-open');
+    thoughtPop.hidden = true;
+
+    for (const button of track.querySelectorAll('.mz-thought-btn')) {
+        button.classList.remove('is-on');
+        button.title = 'Read thought';
+        button.setAttribute('aria-label', button.title);
+        button.setAttribute('aria-expanded', 'false');
+    }
+
+    return true;
+}
+
+/**
+ * Opens one avatar's thought over its poster. A new one always closes
+ * the last, so the strip never turns into a mess of bubbles.
+ */
+function openThought(key) {
+    const thought = thoughtByName.get(key);
+    if (!thought || !thoughtPop) return;
+
+    closeFloats(closeThought);
+    closeThought();
+
+    thoughtKey = key;
+    thoughtPop.textContent = say(thought);
+    thoughtPop.hidden = false;
+    placeThought();
+    thoughtPop.classList.add('is-open');
+
+    for (const button of track.querySelectorAll('.mz-thought-btn')) {
+        const open = button.dataset.mzThought === key;
+        button.classList.toggle('is-on', open);
+        button.title = open ? 'Hide thought' : 'Read thought';
+        button.setAttribute('aria-label', button.title);
+        button.setAttribute('aria-expanded', String(open));
+    }
+}
+
+/** The bubble sits over its poster's own space and never leaves the window. */
+function placeThought() {
+    if (!thoughtKey || !thoughtPop || thoughtPop.hidden) return;
+
+    const figure = [...track.querySelectorAll('.mz-port')]
+        .find(node => textOf(node.dataset.name).trim().toLowerCase() === thoughtKey);
+    if (!figure) {
+        closeThought();
+        return;
+    }
+
+    placeFloat(thoughtPop, figure, { mode: 'over', notch: false });
+}
+
+function onDocClick(event) {
+    if (!thoughtKey || !event.isTrusted) return;
+    if (event.target.closest?.('.mz-thought-pop') || event.target.closest?.('[data-mz-thought]')) return;
+    closeThought();
+}
 
 function applyThoughts() {
     if (!host || !track) return;
 
     const shown = modeOn() && entryOn('profiles');
-    const byName = new Map();
+    thoughtByName = new Map();
 
     if (shown) {
         for (const profile of lastThoughts) {
             const key = textOf(profile.character).trim().toLowerCase();
-            if (key && profile.thought && !byName.has(key)) byName.set(key, profile.thought);
+            if (key && profile.thought && !thoughtByName.has(key)) thoughtByName.set(key, profile.thought);
         }
     }
 
-    let anyBubble = false;
-
     for (const figure of track.querySelectorAll('.mz-port')) {
         const key = textOf(figure.dataset.name).trim().toLowerCase();
-        const thought = byName.get(key) || '';
-        const bubble = figure.querySelector('.mz-thought-bub');
         const toggle = figure.querySelector('.mz-thought-btn');
 
-        // A thought with no matching avatar stays unspoken: no bubble
-        // and no toggle to bring one back.
-        if (!thought) {
-            bubble?.remove();
+        // A thought with no matching avatar stays unspoken: no toggle to
+        // bring one back.
+        if (!thoughtByName.has(key)) {
             toggle?.remove();
             continue;
         }
@@ -181,25 +255,25 @@ function applyThoughts() {
         const button = toggle || thoughtToggle(key);
         if (!toggle) figure.append(button);
 
-        const hidden = hiddenThoughts.has(key);
-        button.classList.toggle('is-off', hidden);
-        button.title = hidden ? 'Show thought' : 'Hide thought';
+        const open = thoughtKey === key;
+        button.classList.toggle('is-on', open);
+        button.title = open ? 'Hide thought' : 'Read thought';
         button.setAttribute('aria-label', button.title);
-        button.setAttribute('aria-pressed', String(!hidden));
+        button.setAttribute('aria-expanded', String(open));
+    }
 
-        if (hidden) {
-            bubble?.remove();
+    // The open bubble follows its thought through re-renders; a thought
+    // that leaves the ledger takes its bubble with it.
+    if (thoughtKey) {
+        const thought = thoughtByName.get(thoughtKey);
+        if (thought) {
+            if (thoughtPop.textContent !== thought) thoughtPop.textContent = say(thought);
+            placeThought();
         } else {
-            const target = bubble || thoughtBubble();
-            if (target.textContent !== thought) target.textContent = thought;
-            if (!bubble) figure.append(target);
-            anyBubble = true;
+            closeThought();
         }
     }
 
-    // The bubbles are content: when any is on stage the track makes room
-    // above the posters so its own scroll never clips them.
-    track.style.setProperty('--mz-bubble-room', anyBubble ? `${BUBBLE_ROOM}px` : '0px');
     refreshCastSizing();
 }
 
@@ -210,13 +284,6 @@ function thoughtToggle(key) {
     button.dataset.mzThought = key;
     button.append(icon('mz-i-thought'));
     return button;
-}
-
-function thoughtBubble() {
-    const bubble = document.createElement('div');
-    bubble.className = 'mz-thought-bub';
-    bubble.title = 'Click to read in full';
-    return bubble;
 }
 
 function textOf(value) {
@@ -431,15 +498,8 @@ function onClick(event) {
     const toggle = event.target.closest('[data-mz-thought]');
     if (toggle) {
         const key = toggle.dataset.mzThought;
-        if (hiddenThoughts.has(key)) hiddenThoughts.delete(key);
-        else hiddenThoughts.add(key);
-        applyThoughts();
-        return;
-    }
-
-    const bubble = event.target.closest('.mz-thought-bub');
-    if (bubble) {
-        bubble.classList.toggle('is-open');
+        if (thoughtKey === key) closeThought();
+        else openThought(key);
         return;
     }
 

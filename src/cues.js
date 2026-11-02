@@ -11,6 +11,7 @@
 import { settings } from './settings.js';
 import { icon } from './icons.js';
 import { tellTold } from './cast.js';
+import { closeFloats, placeFloat, registerFloat } from './floats.js';
 
 /* Hover is for mice; a tap or a click pins the popover open. */
 const HOVER_OPEN = 90;
@@ -38,6 +39,7 @@ export function mountCues(element) {
     if (!element || frame === element) return;
     frame = element;
     pop = frame.querySelector('.mz-pop');
+    registerFloat(closePopover);
 
     frame.addEventListener('click', onClick);
     frame.addEventListener('mouseover', onOver);
@@ -144,12 +146,13 @@ function openPop(mark, pin) {
     }
 
     clearTimer();
+    closeFloats(closePopover);
     current = mark;
     pinned = !!pin;
     mark.setAttribute('aria-expanded', 'true');
 
     fill(mark);
-    place(mark);
+    placeFloat(pop, mark);
     pop.classList.add('is-open');
 
     if (mark.dataset.cue === 'lie' && mark.dataset.mzCharacter) {
@@ -169,10 +172,7 @@ function fill(mark) {
         const head = document.createElement('div');
         head.className = 'mz-pop-h';
         head.append(icon(lie.icon), lie.word);
-
-        const who = document.createElement('span');
-        who.textContent = mark.dataset.mzCharacter || '';
-        head.append(who);
+        head.append(whoLine(mark.dataset.mzCharacter));
         pop.append(head);
 
         pop.append(rows([
@@ -182,12 +182,30 @@ function fill(mark) {
         return;
     }
 
-    // A blind spot says what happened and why it was missed — no title,
-    // no "you", so it fits any person and any pair of characters.
+    // A blind spot says what happened and why it was missed — the same
+    // shape as the lie's, "Missed" in its own violet ink.
+    const head = document.createElement('div');
+    head.className = 'mz-pop-h';
+    head.append(icon('mz-i-eye-off'), 'Missed');
+    pop.append(head);
+
     pop.append(rows([
-        ['', mark.dataset.mzEvent, 'is-lead'],
-        ['Missed because', mark.dataset.mzReason, 'is-why'],
+        ['What', mark.dataset.mzEvent, ''],
+        ['Why', mark.dataset.mzReason, 'is-why'],
     ]));
+}
+
+/** The liar's name, labelled so a lie from off stage still reads. */
+function whoLine(name) {
+    const wrap = document.createElement('span');
+
+    if (name) {
+        const label = document.createElement('b');
+        label.textContent = 'Who';
+        wrap.append(label, ` ${name}`);
+    }
+
+    return wrap;
 }
 
 function rows(entries) {
@@ -211,28 +229,4 @@ function rows(entries) {
     }
 
     return list;
-}
-
-/**
- * Sits the popover beside its mark: centred on it, preferring to float
- * above and flipping below when there is no room. The small notch keeps
- * pointing at the mark either way. Both edges clamp to the window, so a
- * mark still below the pane's own scroll cannot throw the popover away.
- */
-function place(mark) {
-    const anchor = mark.getBoundingClientRect();
-    const width = pop.offsetWidth;
-    const height = pop.offsetHeight;
-
-    const left = Math.max(12, Math.min(innerWidth - width - 12, anchor.left + anchor.width / 2 - width / 2));
-    const above = anchor.top - height - 14 > 8;
-
-    const top = above
-        ? anchor.top - height - 11
-        : anchor.bottom + 11;
-
-    pop.style.left = `${left}px`;
-    pop.style.top = `${Math.max(8, Math.min(innerHeight - height - 8, top))}px`;
-    pop.classList.toggle('is-below', !above);
-    pop.style.setProperty('--nx', `${Math.max(14, Math.min(width - 14, anchor.left + anchor.width / 2 - left))}px`);
 }

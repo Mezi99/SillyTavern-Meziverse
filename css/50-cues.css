@@ -110,17 +110,18 @@
 
 .mz-pop-h .ico { width: 13px; height: 13px; }
 .mz-pop-h span { margin-left: auto; font-weight: 500; letter-spacing: .06em; text-transform: none; color: var(--mz-text-dim); }
+.mz-pop-h span b { margin-right: 6px; font: 500 var(--mz-text-2xs) var(--mz-font-ui); letter-spacing: .12em; text-transform: uppercase; color: var(--mz-text-dim); }
 
 .mz-pop dl { display: grid; gap: 7px; margin: 0; }
 .mz-pop dt { font: 500 var(--mz-text-2xs) var(--mz-font-ui); letter-spacing: .12em; text-transform: uppercase; color: var(--mz-text-dim); }
 .mz-pop dd { margin: 1px 0 0; font: 400 var(--mz-text-md) / 1.45 var(--mz-font-ui); color: var(--mz-text); }
 .mz-pop dd.is-why { font-weight: 300; color: var(--mz-text-muted); }
-.mz-pop dd.is-lead { font-size: var(--mz-text-lg); line-height: 1.4; }
 
 /* ---------- the tell on the liar's portrait ---------- */
 
-/* Only a hairline crack on the stage — no button, no badge, at any portrait
-   size. The mark in the prose carries the tell on its own. */
+/* A hairline crack on the stage — no button, no badge, at any portrait
+   size — carried over any art by a dark halo under the stroke. The mark
+   in the prose carries the tell on its own. */
 .mz-port .mz-fracture {
     position: absolute;
     z-index: 2;
@@ -133,15 +134,17 @@
 .mz-port .mz-fracture path {
     fill: none;
     stroke: var(--mz-cue-lie);
-    stroke-width: 1.4;
+    stroke-width: 2.2;
     stroke-linejoin: round;
     stroke-linecap: round;
     vector-effect: non-scaling-stroke;
-    filter: drop-shadow(0 0 4px color-mix(in srgb, var(--mz-cue-lie) 70%, transparent));
+    filter:
+        drop-shadow(0 1px 2px rgba(0, 0, 0, .9))
+        drop-shadow(0 0 7px color-mix(in srgb, var(--mz-cue-lie) 85%, transparent));
 }
 
-.mz-port.has-tell .mz-fracture { opacity: .8; }
-.mz-port.has-tell.is-told .mz-fracture { opacity: 1; animation: mz-crack 900ms var(--mz-ease) 1; }
+.mz-port.has-tell .mz-fracture { opacity: 1; }
+.mz-port.has-tell.is-told .mz-fracture { animation: mz-crack 900ms var(--mz-ease) 1; }
 
 @keyframes mz-crack {
     0% { opacity: .2; }

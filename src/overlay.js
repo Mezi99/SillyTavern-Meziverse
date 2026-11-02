@@ -10,10 +10,11 @@ import { chatMessages, currentChatId, on, sendUserMessage, stopGeneration, click
 import { settings, saveSettings, modeOn } from './settings.js';
 import { injectSprite } from './icons.js';
 import { createTranscript } from './transcript.js';
-import { mountCast, refreshCastSizing, renderCast, renderThoughts, renderTells, BUBBLE_ROOM } from './cast.js';
+import { mountCast, refreshCastSizing, renderCast, renderThoughts, renderTells } from './cast.js';
 import { resolveLedger } from './ledger.js';
 import { parseMessage } from './tags.js';
-import { mountCues, closePopover } from './cues.js';
+import { mountCues } from './cues.js';
+import { closeFloats } from './floats.js';
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr } from './notify.js';
 
@@ -825,10 +826,7 @@ function paneLimits() {
     const portMin = cssPx('--mz-port-min-h', 180);
     const header = root.querySelector('.mz-header')?.offsetHeight || 34;
     const chatbar = root.querySelector('.mz-chatbar')?.offsetHeight || 48;
-    // Thoughts on stage take their cut from the pane's maximum, so the
-    // bubbles above the posters can never be squeezed off the window.
-    const bubbles = root.querySelector('.mz-thought-bub') ? BUBBLE_ROOM : 0;
-    const max = Math.max(min, frame.clientHeight - header - chatbar - portMin - bubbles - 28);
+    const max = Math.max(min, frame.clientHeight - header - chatbar - portMin - 28);
     return { min, max };
 }
 
@@ -1429,8 +1427,8 @@ function wireKeys() {
 
             event.preventDefault();
             event.stopPropagation();
-            // The cues' popover goes first, then everything else.
-            if (closePopover()) return;
+            // The floating overlays go first, then everything else.
+            if (closeFloats()) return;
             if (isCardOpen()) closeCard();
             else if (isDockOpen()) closeDock();
             else if (transcript?.isLogOpen()) transcript.closeLog();
