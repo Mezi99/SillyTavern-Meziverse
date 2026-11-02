@@ -3,17 +3,26 @@ import assert from 'node:assert/strict';
 
 import {
     BG_STORE_VERSION,
+    WATCHER_SCHEMA,
     aliasLocation,
+    buildWatcherRequest,
+    compileBgPrompt,
     currentRecord,
     decide,
+    extractRecentPlaces,
+    fallbackLocationPrompt,
+    formatLatestStory,
+    groupMessageByScene,
     knownBackgroundsList,
     locationKey,
     lookupRecord,
     normalizeStore,
+    parseWatcherReply,
     recoverCurrentKey,
     resolveRecordId,
     storeRecord,
     toCssBgUrl,
+    watcherSystemPrompt,
 } from '../src/backgrounds.js';
 
 test('locationKey folds spelling drift to one key', () => {
@@ -159,4 +168,107 @@ test('decide turns a resolved place into none, apply, or watch', () => {
     assert.equal(back.record.path, '/images/docks.png');
 
     assert.deepEqual(decide(store, 'Somewhere New'), { action: 'watch', record: null }, 'a new place asks the watcher');
+});
+
+const msg = mes => ({ mes });
+
+test('groupMessageByScene groups narration under the scene it happens in', () => {
+    const groups = groupMessageByScene(
+        'Pier approach. <scene date="Tuesday, March 4 · 9:40 PM" location="The city | Docks | Pier 9" weather="Rain" /> Rain hammers the planks. <scene location="The Docks" /> Silence on the boards.',
+    );
+
+    assert.deepEqual(groups, [
+        { place: '', date: '', time: '', weather: '', text: 'Pier approach.' },
+        { place: 'The city | Docks | Pier 9', date: 'Tuesday, March 4', time: '9:40 PM', weather: 'Rain', text: 'Rain hammers the planks.' },
+        { place: 'The Docks', date: '', time: '', weather: '', text: 'Silence on the boards.' },
+    ]);
+});
+
+test('groupMessageByScene strips other tags out of the narration', () => {
+    const groups = groupMessageByScene('Walk on. <scene location="A" /> At the pier. <ledger>secret</ledger>');
+    assert.deepEqual(groups.map(group => group.text), ['Walk on.', 'At the pier.']);
+});
+
+test('extractRecentPlaces walks the latest replies backwards, oldest first', () => {
+    const messages = [
+        msg('<scene location="The Docks" /> ...'),
+        msg('plain text'),
+        msg('<scene location="Pier 9" /> ...'),
+        msg('<scene location="Pier 9" /> again'),
+    ];
+
+    assert.deepEqual(extractRecentPlaces(messages, { limit: 6 }), ['The Docks', 'Pier 9']);
+});
+
+test('formatLatestStory groups by scene in mode ON and stays raw in mode OFF', () => {
+    const messages = [msg('Pre. <scene location="A" weather="Rain" /> Post.')];
+
+    assert.equal(formatLatestStory(messages, { mode: true, count: 2 }), 'Pre.\nSCENE: A (Rain)\nPost.');
+    assert.equal(formatLatestStory(messages, { mode: false, count: 2 }), 'Pre. <scene location="A" weather="Rain" /> Post.');
+    assert.equal(formatLatestStory([msg('one'), msg('two')], { mode: false, count: 1 }), 'two', 'the window is the last count replies');
+});
+
+test('buildWatcherRequest serves the store and the story, and knows force', () => {
+    const store = normalizeStore();
+    const messages = [msg('<scene location="A" /> x')];
+
+    const empty = buildWatcherRequest({ store, messages, mode: true, count: 2 });
+    assert.ok(empty.prompt.includes('CURRENT BACKGROUND\nnone yet'));
+    assert.ok(empty.prompt.includes('KNOWN BACKGROUNDS\nnone'));
+    assert.ok(empty.prompt.includes('RECENT PLACES\nA'));
+    assert.ok(empty.prompt.includes('LATEST STORY\n'));
+    assert.equal(empty.jsonSchema, WATCHER_SCHEMA);
+    assert.equal(empty.systemPrompt, watcherSystemPrompt());
+
+    storeRecord(store, { key: 'A', place: 'A', prompt: 'a pier at dusk', path: '/a.png' });
+    const full = buildWatcherRequest({ store, messages, mode: true, count: 2 });
+    assert.ok(full.prompt.includes('CURRENT BACKGROUND\nA\na pier at dusk'));
+    assert.ok(full.prompt.includes('KNOWN BACKGROUNDS\n- bg_1: A - a pier at dusk'));
+
+    assert.ok(watcherSystemPrompt({ force: true }).includes('fresh image'), 'force switches matching off');
+});
+
+test('parseWatcherReply reads the JSON, the text protocol, or a bare description', () => {
+    assert.deepEqual(
+        parseWatcherReply('{"state":"same","knownId":null,"place":"Pier 9","prompt":""}'),
+        { state: 'same', knownId: null, place: 'Pier 9', prompt: '' },
+    );
+    assert.deepEqual(
+        parseWatcherReply('Here you go:\n```json\n{"state":"known","knownId":3,"place":"Docks","prompt":""}\n```'),
+        { state: 'known', knownId: '3', place: 'Docks', prompt: '' },
+    );
+    assert.deepEqual(
+        parseWatcherReply('{"state":"unchanged","knownId":null,"place":"","prompt":""}'),
+        { state: 'same', knownId: null, place: '', prompt: '' },
+        'the state word is judged by meaning too',
+    );
+
+    assert.deepEqual(parseWatcherReply('SAME'), { state: 'same', knownId: null, place: '', prompt: '' });
+    assert.deepEqual(parseWatcherReply('KNOWN bg_3'), { state: 'known', knownId: 'bg_3', place: '', prompt: '' });
+    assert.deepEqual(
+        parseWatcherReply('NEW\na pier at dusk, rain'),
+        { state: 'new', knownId: null, place: '', prompt: 'a pier at dusk, rain' },
+    );
+
+    assert.deepEqual(
+        parseWatcherReply('a lone pier at dusk, rain'),
+        { state: 'new', knownId: null, place: '', prompt: 'a lone pier at dusk, rain' },
+        'a bare description counts as new',
+    );
+    assert.equal(parseWatcherReply(''), null);
+    assert.equal(parseWatcherReply('{"state":"???"}'), null, 'an unknown state is not guessed at');
+});
+
+test('compileBgPrompt layers the style over the watcher description', () => {
+    assert.equal(compileBgPrompt('a pier at dusk', 'anime style'), 'anime style, a pier at dusk');
+    assert.equal(compileBgPrompt('a pier at dusk.', ''), 'a pier at dusk');
+    assert.equal(compileBgPrompt('', 'anime style'), 'anime style');
+});
+
+test('fallbackLocationPrompt describes the place plainly when the watcher fails', () => {
+    assert.equal(
+        fallbackLocationPrompt({ placeFull: 'The Docks', date: 'Tuesday, March 4', time: '9:40 PM', weather: 'Rain' }),
+        'The Docks, Tuesday, March 4 9:40 PM, Rain, wide establishing shot, empty place, detailed environment',
+    );
+    assert.equal(fallbackLocationPrompt('Pier 9'), 'Pier 9, wide establishing shot, empty place, detailed environment');
 });

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseMessage, parseTags, scenesOf, splitCues, stripTags } from '../src/tags.js';
+import { parseMessage, parseTags, scenesOf, splitCues, stripNonSceneTags, stripTags } from '../src/tags.js';
 
 const scene = attrs => `<scene ${attrs} />`;
 
@@ -236,4 +236,16 @@ test('parseMessage caches on identity and rereads when mes changes', () => {
 test('parseMessage tolerates missing or non-object messages', () => {
     assert.deepEqual(parseMessage(null), { mes: '', tags: [] });
     assert.deepEqual(parseMessage({}), { mes: '', tags: [] });
+});
+
+test('stripNonSceneTags keeps scene tags and drops the rest like stripTags', () => {
+    assert.equal(stripNonSceneTags('a<think>b</think>c'), 'ac');
+    assert.equal(stripNonSceneTags('before<scene location="A" />after'), 'before<scene location="A" />after');
+    assert.equal(stripNonSceneTags('<speech>w</speech>x'), 'wx', 'speech words are prose');
+    assert.equal(stripNonSceneTags('a<flashback>dream</flashback>b'), 'ab', 'a flashback waits behind its pill, whole');
+});
+
+test('stripNonSceneTags is streaming-safe', () => {
+    assert.equal(stripNonSceneTags('tail <ledger>open'), 'tail ', 'an unclosed hidden tag hides its tail');
+    assert.equal(stripNonSceneTags('<scene location="A"'), '', 'a half-written scene tag hides its tail');
 });
