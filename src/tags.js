@@ -19,15 +19,17 @@ const SELF = new Set([
 ]);
 
 /* Body tags whose words are prose, so only the wrapper goes. */
-const KEEP = new Set(['speech', 'flashback']);
+const KEEP = new Set(['speech']);
 
 /* Body tags whose words are private: strip wrapper and body together. */
 const HIDDEN = new Set(['think', 'ledger', 'playerguide', 'directorguide', 'vkit']);
 
-/* Inline cues that leave a mark in the prose where the tag stood. */
-const MARKS = new Set(['lie', 'filter']);
+/* Inline cues that leave a mark in the prose where the tag stood. A
+   flashback's body is not prose either: it waits behind its pill, whole,
+   for the mindscape. */
+const MARKS = new Set(['lie', 'filter', 'flashback']);
 
-const NAMES = new Set([...SELF, ...KEEP, ...HIDDEN]);
+const NAMES = new Set([...SELF, ...KEEP, ...HIDDEN, ...MARKS]);
 
 const OPEN = /<([A-Za-z][A-Za-z0-9_-]*)/y;
 const ATTRIBUTE = /([A-Za-z_:][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
@@ -79,8 +81,9 @@ export function parseMessage(message) {
 /**
  * The message with every catalogue tag removed.
  *
- * Streaming-safe: an unclosed hidden tag hides its tail; an unclosed `speech`
- * or `flashback` keeps its partial body because those words are prose.
+ * Streaming-safe: an unclosed hidden tag hides its tail; an unclosed
+ * `speech` keeps its partial body because those words are prose. The
+ * cue marks and a flashback's body go with their tags.
  */
 export function stripTags(mes) {
     const text = typeof mes === 'string' ? mes : '';
@@ -127,8 +130,9 @@ export function scenesOf(tags) {
 
 /**
  * Splits a message at complete scene tags, so prose and inline scene rows can
- * be interleaved, and at the inline cues (`lie`, `filter`) that leave a mark
- * in the prose. Non-cue tags are stripped exactly as in `stripTags`.
+ * be interleaved, and at the inline cues (`lie`, `filter`, `flashback`) that
+ * leave a mark in the prose. Non-cue tags are stripped exactly as in
+ * `stripTags`.
  *
  * A mark goes where its tag stood, at the end of the text before it. A tag
  * that starts its own line moves to the end of the previous paragraph, so a

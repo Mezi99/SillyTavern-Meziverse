@@ -8,9 +8,11 @@
  * The weight stays hidden until the reader reaches for a mark.
  */
 
+import { formatMessage } from './st.js';
 import { settings } from './settings.js';
 import { icon } from './icons.js';
-import { tellTold } from './cast.js';
+import { showCascade, tellTold } from './cast.js';
+import { splitMemory } from './memory.js';
 import { closeFloats, placeFloat, registerFloat } from './floats.js';
 
 /* Hover is for mice; a tap or a click pins the popover open. */
@@ -26,20 +28,24 @@ const LIE_WORDS = {
 
 let frame = null;
 let pop = null;
+let mind = null;
+let memoryMark = null;
 let current = null;
 let pinned = false;
 let toldName = '';
 let timer = 0;
 
 /**
- * Wires the cues to the frame's prose. Idempotent. The popover element
- * itself comes with the frame.
+ * Wires the cues to the frame's prose. Idempotent. The popover and the
+ * mindscape elements themselves come with the frame.
  */
 export function mountCues(element) {
     if (!element || frame === element) return;
     frame = element;
     pop = frame.querySelector('.mz-pop');
+    mind = frame.querySelector('.mz-mind');
     registerFloat(closePopover);
+    seedMotes();
 
     frame.addEventListener('click', onClick);
     frame.addEventListener('mouseover', onOver);
@@ -76,6 +82,17 @@ function clearTimer() {
 }
 
 function onClick(event) {
+    const dream = event.target.closest?.('.mz-dream');
+    if (dream) {
+        openMemory(dream);
+        return;
+    }
+
+    if (event.target.closest?.('[data-mz-mem-close]')) {
+        closeMemory();
+        return;
+    }
+
     const mark = event.target.closest?.('.mz-mark');
     if (mark) {
         clearTimer();
@@ -229,4 +246,83 @@ function rows(entries) {
     }
 
     return list;
+}
+
+/* ---------- the mindscape ---------- */
+
+/**
+ * Takes the whole frame into one memory: the stage warms and blurs away
+ * and the memory surfaces fragment by fragment. The body left the prose
+ * when its pill arrived; it is whole here.
+ */
+function openMemory(mark) {
+    if (!mind || !mark) return;
+
+    closeFloats();
+
+    const data = mark.dataset;
+    mind.querySelector('[data-mz="mem-who"]').textContent = `${data.mzCharacter || 'Someone'} remembers`;
+
+    const when = mind.querySelector('[data-mz="mem-when"]');
+    when.textContent = data.mzWhen || '';
+    when.hidden = !data.mzWhen;
+
+    const trigger = mind.querySelector('[data-mz="mem-trigger"]');
+    trigger.textContent = data.mzTrigger || '';
+    trigger.hidden = !data.mzTrigger;
+
+    const body = mind.querySelector('[data-mz="mem-body"]');
+    body.replaceChildren(...splitMemory(data.mzBody || '').map(fragmentNode));
+
+    mind.querySelector('[data-mz="mem-cascade"]').textContent = data.mzCascade || '';
+    mind.querySelector('[data-mz="mem-foot"]').hidden = !data.mzCascade;
+
+    mind.querySelector('.mz-mind-scroll').scrollTop = 0;
+    memoryMark = mark;
+    mind.hidden = false;
+    frame.classList.add('is-memory');
+}
+
+/** Puts the memory away — and lets its cascade linger on the character. */
+export function closeMemory() {
+    if (!mind || mind.hidden) return false;
+
+    frame.classList.remove('is-memory');
+    mind.hidden = true;
+
+    const character = memoryMark?.dataset.mzCharacter || '';
+    const cascade = memoryMark?.dataset.mzCascade || '';
+    memoryMark = null;
+    if (character && cascade) showCascade(character, cascade);
+
+    return true;
+}
+
+/** One surface of the memory, sharpening out of a blur in its own time. */
+function fragmentNode(text, at) {
+    const wrap = document.createElement('div');
+    wrap.className = 'mz-mind-frag';
+    wrap.style.animationDelay = `${Math.min(450 + at * 700, 3100)}ms`;
+
+    const html = formatMessage({ mes: text }, 0);
+    if (html) wrap.innerHTML = html;
+    else wrap.textContent = text;
+
+    return wrap;
+}
+
+/** The drifting motes of light behind the memory. */
+function seedMotes() {
+    const host = mind?.querySelector('.mz-mind-motes');
+    if (!host) return;
+
+    for (let i = 0; i < 15; i += 1) {
+        const mote = document.createElement('i');
+        mote.style.setProperty('--x', `${4 + ((i * 37) % 92)}%`);
+        mote.style.setProperty('--s', `${2 + (i % 3)}px`);
+        mote.style.setProperty('--t', `${14 + (i % 7) * 2}s`);
+        mote.style.setProperty('--d', `${-((i * 3) % 18)}s`);
+        mote.style.setProperty('--dx', `${12 + ((i * 11) % 30)}px`);
+        host.append(mote);
+    }
 }

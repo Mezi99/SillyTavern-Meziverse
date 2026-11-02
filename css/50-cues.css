@@ -14,6 +14,7 @@
 
 #mz-root {
     --mz-cue-lie: var(--mz-bad);               /* a crack in the story */
+    --mz-cue-mem: var(--mz-warn);              /* old gold, dream light */
     --mz-cue-blind: var(--mz-tone-desire-low); /* what you cannot perceive */
 }
 
@@ -150,4 +151,265 @@
     0% { opacity: .2; }
     30% { opacity: 1; }
     100% { opacity: 1; }
+}
+
+/* ==========================================================================
+   2. FLASHBACK
+   In the prose: a small dream pill, who and nothing more. Click opens the
+   mindscape: the whole frame dissolves into a soft, drifting memory whose
+   fragments surface one by one.
+   ========================================================================== */
+
+.mz-dream {
+    --c: var(--mz-cue-mem);
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 22px;
+    margin: 0 .15em 0 .3em;
+    padding: 0 9px 0 6px;
+    vertical-align: .08em;
+    border: 1px solid color-mix(in srgb, var(--c) 40%, transparent);
+    border-radius: var(--mz-r-pill);
+    background: color-mix(in srgb, var(--c) 10%, transparent);
+    color: var(--c);
+    font: 500 var(--mz-text-xs) var(--mz-font-ui);
+    letter-spacing: .02em;
+    cursor: pointer;
+    transition: background var(--mz-dur-fast), box-shadow var(--mz-dur) var(--mz-ease), border-color var(--mz-dur-fast);
+}
+
+.mz-dream::after { content: ""; position: absolute; inset: -8px -4px; }
+.mz-dream .ico { flex: none; width: 13px; height: 13px; animation: mz-dream-breathe 5.5s ease-in-out infinite; }
+
+.mz-dream:hover,
+.mz-dream:focus-visible {
+    background: color-mix(in srgb, var(--c) 20%, transparent);
+    border-color: color-mix(in srgb, var(--c) 65%, transparent);
+    box-shadow: 0 0 18px -3px color-mix(in srgb, var(--c) 50%, transparent);
+}
+
+@keyframes mz-dream-breathe {
+    0%, 100% { opacity: .7; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.14) rotate(-6deg); }
+}
+
+/* the stage behind the memory: soft, warm, far away */
+.mz-frame .mz-bg,
+.mz-frame .mz-cast { transition: filter 700ms var(--mz-ease), opacity 700ms var(--mz-ease), transform 900ms var(--mz-ease); }
+
+.mz-frame.is-memory .mz-bg { filter: sepia(.7) saturate(.8) brightness(.55) blur(6px); transform: scale(1.04); }
+.mz-frame.is-memory .mz-cast { filter: sepia(.8) saturate(.6) brightness(.5) blur(4px); opacity: .4; }
+
+.mz-frame.is-memory .mz-dlg,
+.mz-frame.is-memory .mz-glance,
+.mz-frame.is-memory .mz-header,
+.mz-frame.is-memory .mz-chatbar { opacity: 0; pointer-events: none; transition: opacity 500ms var(--mz-ease); }
+
+/* the mindscape itself: no card, no border. Its edges dissolve into the
+   stage, and it is independent of the reading pane's height. */
+.mz-mind {
+    position: absolute;
+    z-index: calc(var(--mz-z-sheet) - 4);
+    inset: 0;
+    overflow: hidden;
+}
+
+.mz-mind-haze {
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(48% 42% at 50% 46%, color-mix(in srgb, var(--mz-cue-mem) 20%, transparent), transparent 72%),
+        radial-gradient(30% 34% at 18% 78%, color-mix(in srgb, var(--mz-cue-mem) 11%, transparent), transparent 70%),
+        radial-gradient(34% 30% at 84% 22%, color-mix(in srgb, var(--mz-cue-mem) 9%, transparent), transparent 70%),
+        color-mix(in srgb, var(--mz-bg) 58%, transparent);
+    backdrop-filter: blur(16px) sepia(.5);
+    -webkit-mask-image: radial-gradient(ellipse 92% 88% at 50% 50%, #000 52%, transparent 100%);
+    mask-image: radial-gradient(ellipse 92% 88% at 50% 50%, #000 52%, transparent 100%);
+    animation: mz-haze-in 600ms var(--mz-ease) both;
+}
+
+@keyframes mz-haze-in { from { opacity: 0; transform: scale(.92); } to { opacity: 1; transform: none; } }
+
+/* the flash that opens it: a short bloom of light */
+.mz-mind::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 50% 46%, color-mix(in srgb, var(--mz-cue-mem) 55%, var(--mz-text)) 0, transparent 55%);
+    opacity: 0;
+    pointer-events: none;
+    animation: mz-flash 700ms ease-out both;
+}
+
+@keyframes mz-flash {
+    0% { opacity: 0; }
+    14% { opacity: .62; }
+    100% { opacity: 0; }
+}
+
+/* slow rings, like thought rippling out */
+.mz-mind-ring {
+    position: absolute;
+    left: 50%;
+    top: 46%;
+    width: 60vmin;
+    height: 60vmin;
+    border: 1px solid color-mix(in srgb, var(--mz-cue-mem) 26%, transparent);
+    border-radius: 50%;
+    translate: -50% -50%;
+    opacity: 0;
+    animation: mz-ring 9s ease-out infinite;
+    pointer-events: none;
+}
+
+.mz-mind-ring:nth-of-type(2) { animation-delay: 3s; }
+.mz-mind-ring:nth-of-type(3) { animation-delay: 6s; }
+
+@keyframes mz-ring {
+    0% { transform: scale(.5); opacity: 0; }
+    15% { opacity: .5; }
+    100% { transform: scale(1.7); opacity: 0; }
+}
+
+/* drifting motes of light */
+.mz-mind-motes { position: absolute; inset: 0; pointer-events: none; }
+
+.mz-mind-motes i {
+    position: absolute;
+    left: var(--x);
+    bottom: -10px;
+    width: var(--s);
+    height: var(--s);
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--mz-cue-mem) 80%, var(--mz-text));
+    filter: blur(1px);
+    opacity: 0;
+    animation: mz-mote var(--t) linear var(--d) infinite;
+}
+
+@keyframes mz-mote {
+    0% { transform: translate(0, 0); opacity: 0; }
+    15% { opacity: .55; }
+    100% { transform: translate(var(--dx, 24px), -110vh); opacity: 0; }
+}
+
+.mz-mind-scroll {
+    position: relative;
+    height: 100%;
+    overflow-y: auto;
+    padding: clamp(36px, 9vh, 96px) max(20px, calc((100% - 46rem) / 2)) clamp(28px, 7vh, 72px);
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 7%, #000 90%, transparent 100%);
+    mask-image: linear-gradient(180deg, transparent 0, #000 7%, #000 90%, transparent 100%);
+}
+
+.mz-mind-scroll::-webkit-scrollbar { display: none; }
+
+.mz-mind-head {
+    display: grid;
+    justify-items: center;
+    gap: 4px;
+    margin-bottom: clamp(20px, 5vh, 44px);
+    text-align: center;
+    animation: mz-drift 800ms var(--mz-ease) 150ms both;
+}
+
+.mz-mind-who { font: 600 var(--mz-text-2xs) var(--mz-font-ui); letter-spacing: .3em; text-transform: uppercase; color: var(--mz-cue-mem); }
+.mz-mind-when { font: 300 clamp(20px, 3vmin, 28px) / 1.3 var(--mz-font-ui); letter-spacing: -.005em; color: color-mix(in srgb, var(--mz-text) 90%, var(--mz-cue-mem)); text-shadow: 0 0 28px color-mix(in srgb, var(--mz-cue-mem) 40%, transparent); text-wrap: balance; }
+.mz-mind-trigger { font: 300 var(--mz-text-sm) var(--mz-font-ui); color: var(--mz-text-muted); }
+.mz-mind-trigger::before { content: "\2026 "; }
+
+/* Fragments surface one by one, sharpening out of a blur, and sit off
+   centre like pieces of a thought rather than a column of text. */
+.mz-mind-body { display: grid; gap: clamp(16px, 3.4vh, 30px); }
+
+.mz-mind-frag {
+    max-width: 34rem;
+    font: 300 calc(var(--mz-narr-size) + 1px) / 1.7 var(--mz-font-ui);
+    color: color-mix(in srgb, var(--mz-text) 90%, var(--mz-cue-mem));
+    text-shadow: 0 0 22px color-mix(in srgb, var(--mz-cue-mem) 28%, transparent);
+    animation: mz-fragment 800ms var(--mz-ease) both;
+}
+
+.mz-mind-frag p { margin: 0; }
+.mz-mind-frag:nth-child(odd) { justify-self: start; }
+.mz-mind-frag:nth-child(even) { justify-self: end; text-align: right; }
+.mz-mind-frag q { quotes: none; font-weight: 400; color: color-mix(in srgb, var(--mz-cue-mem) 62%, var(--mz-text)); }
+
+@keyframes mz-fragment {
+    from { opacity: 0; filter: blur(10px); transform: translateY(14px); }
+    to { opacity: 1; filter: none; transform: none; }
+}
+
+@keyframes mz-drift {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: none; }
+}
+
+.mz-mind-foot {
+    display: grid;
+    justify-items: center;
+    gap: 16px;
+    margin-top: clamp(24px, 6vh, 52px);
+    text-align: center;
+    animation: mz-drift 800ms var(--mz-ease) 3300ms both;
+}
+
+.mz-mind-cascade { margin: 0; max-width: 32rem; font: 300 var(--mz-text-md) / 1.55 var(--mz-font-ui); color: var(--mz-text-muted); }
+.mz-mind-cascade b { display: block; margin-bottom: 4px; font: 600 var(--mz-text-2xs) var(--mz-font-ui); letter-spacing: .22em; text-transform: uppercase; color: var(--mz-text-dim); }
+
+/* the way back is always on screen and never waits for the fragments */
+.mz-mind-back {
+    position: absolute;
+    z-index: 2;
+    top: max(14px, env(safe-area-inset-top, 0px));
+    right: max(14px, env(safe-area-inset-right, 0px));
+    animation: mz-drift 600ms var(--mz-ease) 350ms both;
+}
+
+.mz-btn {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 32px;
+    padding: 0 14px;
+    border: 1px solid var(--mz-line-strong);
+    border-radius: var(--mz-r-pill);
+    background: color-mix(in srgb, var(--mz-bg) 50%, transparent);
+    font: 500 var(--mz-text-sm) var(--mz-font-ui);
+    color: var(--mz-text);
+    transition: border-color var(--mz-dur-fast), color var(--mz-dur-fast), background var(--mz-dur-fast);
+}
+
+.mz-btn:hover { border-color: var(--mz-accent-line); color: var(--mz-accent); background: var(--mz-accent-wash); }
+.mz-btn .ico { width: 13px; height: 13px; }
+.mz-btn kbd { font: 500 9.5px var(--mz-font-ui); padding: 1px 5px; border: 1px solid var(--mz-line-strong); border-radius: 4px; color: var(--mz-text-dim); }
+
+/* after the memory, its cascade lingers on the character as a thought */
+.mz-thought-pop.is-cascade { border-color: color-mix(in srgb, var(--mz-cue-mem) 40%, transparent); }
+
+.mz-thought-pop.is-cascade b {
+    display: block;
+    margin-bottom: 2px;
+    font: 600 8.5px var(--mz-font-ui);
+    font-style: normal;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--mz-cue-mem);
+}
+
+/* ---------- small screens ---------- */
+
+@media (max-width: 759px) {
+    .mz-mind-frag:nth-child(even) { justify-self: start; text-align: left; margin-left: 8%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .mz-dream .ico, .mz-mind-ring, .mz-mind-motes i { animation: none; }
+    .mz-mind-motes, .mz-mind-ring { display: none; }
+    .mz-mind::before { animation: none; }
+    .mz-mind-haze, .mz-mind-head, .mz-mind-frag, .mz-mind-foot, .mz-mind-back { animation: none; }
 }

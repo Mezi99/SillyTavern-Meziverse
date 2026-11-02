@@ -67,9 +67,27 @@ test('hidden blocks go, body and all', () => {
     assert.equal(stripTags(mes), 'abc');
 });
 
-test('speech and flashback keep their words', () => {
+test('speech keeps its words; a flashback keeps nothing but its pill', () => {
     assert.equal(stripTags('<speech character="Mara" tone="dry">Hello</speech> there'), 'Hello there');
-    assert.equal(stripTags('<flashback character="Ilya" when="1999">Before.</flashback>'), 'Before.');
+    assert.equal(stripTags('<flashback character="Ilya" when="1999">Before.</flashback>'), '');
+    assert.equal(stripTags('now <flashback character="Ilya">Before.</flashback> then'), 'now  then');
+});
+
+test('a flashback becomes a mark and keeps its body for the mindscape', () => {
+    const cues = splitCues('She left.<flashback character="Mara" when="Age 10" trigger="the lamp">"Run," she said.</flashback> After.');
+
+    assert.deepEqual(cues.map(cue => cue.type), ['text', 'mark', 'text']);
+    assert.equal(cues[1].tag.name, 'flashback');
+    assert.equal(cues[1].tag.attrs.when, 'Age 10');
+    assert.equal(cues[1].tag.body, '"Run," she said.');
+    assert.equal(cues[0].text, 'She left.');
+    assert.equal(cues[2].text, ' After.');
+});
+
+test('an unclosed flashback draws nothing and hides its tail', () => {
+    const cues = splitCues('one <flashback character="Ma');
+
+    assert.deepEqual(cues, [{ type: 'text', text: 'one ' }]);
 });
 
 test('inline self-closing tags vanish without a trace', () => {

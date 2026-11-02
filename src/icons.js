@@ -44,6 +44,8 @@ const SPRITE = `<svg class="mz-sprite" aria-hidden="true" focusable="false">
 <symbol id="mz-i-crack" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3l-4 6 5 2.5-5 4 3 1.5-2 4"/><path d="M5 8l3 1M19 14l-3 .5"/></symbol>
 <symbol id="mz-i-mask" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7.5c3-1.4 5.6-2 8-2s5 .6 8 2c0 6.2-3 10.2-8 11.5-5-1.3-8-5.3-8-11.5z"/><path d="M7.8 11.2c.9-.7 2-.7 2.9 0M13.3 11.2c.9-.7 2-.7 2.9 0"/><path d="M9.6 14.6c1.5.9 3.3.9 4.8 0"/></symbol>
 <symbol id="mz-i-gap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5H5v14h3M16 5h3v14h-3"/><path d="M9.5 12h.01M12 12h.01M14.5 12h.01"/></symbol>
+<symbol id="mz-i-dream" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19.5 14.2A8 8 0 1 1 9.8 4.5a6.4 6.4 0 0 0 9.7 9.7z"/><path d="M17 3.5v4M15 5.5h4"/></symbol>
+<symbol id="mz-i-return" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h9a6 6 0 0 1 0 12h-3"/></symbol>
 </svg>`;
 
 /** Builds one icon node pointing at the sprite. */

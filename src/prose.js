@@ -115,6 +115,21 @@ function markHtml(tag) {
             + '</button>';
     }
 
+    if (tag.name === 'flashback') {
+        const who = say(data.character || '').trim();
+
+        return '<button class="mz-dream" type="button" data-cue="mem"'
+            + attr('data-mz-character', say(data.character))
+            + attr('data-mz-when', say(data.when))
+            + attr('data-mz-trigger', say(data.trigger))
+            + attr('data-mz-cascade', say(data.cascade))
+            + attr('data-mz-body', tag.body ?? '')
+            + ` aria-label="${escapeHtml(`${who || 'Someone'} remembers`)}">`
+            + iconHtml('mz-i-dream')
+            + escapeHtml(who)
+            + '</button>';
+    }
+
     return '';
 }
 

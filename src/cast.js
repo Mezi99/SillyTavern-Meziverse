@@ -44,6 +44,10 @@ let thoughtPop = null;
 let thoughtKey = '';
 let thoughtByName = new Map();
 
+// A memory's cascade lingering on its character until the next turn.
+let cascadeKey = '';
+let cascadeText = '';
+
 /** Mounts the strip inside the frame's cast region. Idempotent. */
 export function mountCast(element) {
     if (!element || host === element) return;
@@ -79,6 +83,9 @@ export function mountCast(element) {
     thoughtPop.className = 'mz-thought-pop';
     thoughtPop.setAttribute('role', 'status');
     thoughtPop.hidden = true;
+    const thoughtText = document.createElement('div');
+    thoughtText.className = 'mz-thought-text';
+    thoughtPop.append(thoughtText);
     (host.closest('.mz-frame') || host.parentElement).append(thoughtPop);
     registerFloat(closeThought);
 
@@ -194,7 +201,7 @@ function openThought(key) {
     closeThought();
 
     thoughtKey = key;
-    thoughtPop.textContent = say(thought);
+    setThoughtBody(key, thought);
     thoughtPop.hidden = false;
     placeThought();
     thoughtPop.classList.add('is-open');
@@ -241,6 +248,9 @@ function applyThoughts() {
         }
     }
 
+    // A lingering cascade reads as its character's thought for the turn.
+    if (cascadeKey && cascadeText) thoughtByName.set(cascadeKey, cascadeText);
+
     for (const figure of track.querySelectorAll('.mz-port')) {
         const key = textOf(figure.dataset.name).trim().toLowerCase();
         const toggle = figure.querySelector('.mz-thought-btn');
@@ -267,7 +277,7 @@ function applyThoughts() {
     if (thoughtKey) {
         const thought = thoughtByName.get(thoughtKey);
         if (thought) {
-            if (thoughtPop.textContent !== thought) thoughtPop.textContent = say(thought);
+            setThoughtBody(thoughtKey, thought);
             placeThought();
         } else {
             closeThought();
@@ -275,6 +285,46 @@ function applyThoughts() {
     }
 
     refreshCastSizing();
+}
+
+/** A memory's cascade lingers on its character as a thought, opened
+ *  fresh — "After the memory" — until the next turn. A character with
+ *  no portrait keeps it in the mindscape alone. */
+export function showCascade(name, text) {
+    const key = textOf(name).trim().toLowerCase();
+    if (!key || !text) return;
+
+    cascadeKey = key;
+    cascadeText = text;
+
+    applyThoughts();
+    if (thoughtByName.has(key)) openThought(key);
+}
+
+/** The next turn finishes the lingering cascade. */
+export function clearCascade() {
+    if (!cascadeKey) return;
+
+    cascadeKey = '';
+    cascadeText = '';
+    closeThought();
+    applyThoughts();
+}
+
+/** The bubble's words: the thought, or the cascade that replaced it. */
+function setThoughtBody(key, thought) {
+    const body = thoughtPop.querySelector('.mz-thought-text');
+    const cascade = key === cascadeKey;
+    thoughtPop.classList.toggle('is-cascade', cascade);
+
+    if (!cascade) {
+        body.textContent = say(thought);
+        return;
+    }
+
+    const label = document.createElement('b');
+    label.textContent = 'After the memory';
+    body.replaceChildren(label, document.createTextNode(say(cascadeText || thought)));
 }
 
 function thoughtToggle(key) {

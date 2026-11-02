@@ -10,10 +10,10 @@ import { chatMessages, currentChatId, on, sendUserMessage, stopGeneration, click
 import { settings, saveSettings, modeOn } from './settings.js';
 import { injectSprite } from './icons.js';
 import { createTranscript } from './transcript.js';
-import { mountCast, refreshCastSizing, renderCast, renderThoughts, renderTells } from './cast.js';
+import { mountCast, refreshCastSizing, renderCast, renderThoughts, renderTells, clearCascade } from './cast.js';
 import { resolveLedger } from './ledger.js';
 import { parseMessage } from './tags.js';
-import { mountCues } from './cues.js';
+import { mountCues, closeMemory } from './cues.js';
 import { closeFloats } from './floats.js';
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr } from './notify.js';
@@ -144,6 +144,27 @@ const FRAME_HTML = `
     <!-- the one popover shared by the inline cues -->
     <div class="mz-pop" role="status"></div>
 
+    <!-- the mindscape a memory opens: built once, filled per memory -->
+    <section class="mz-mind" role="dialog" aria-label="Memory" hidden>
+        <div class="mz-mind-haze" aria-hidden="true"></div>
+        <span class="mz-mind-ring" aria-hidden="true"></span>
+        <span class="mz-mind-ring" aria-hidden="true"></span>
+        <span class="mz-mind-ring" aria-hidden="true"></span>
+        <div class="mz-mind-motes" aria-hidden="true"></div>
+        <button class="mz-btn mz-mind-back" type="button" data-mz-mem-close>${svg('return')}<span>Return</span><kbd>Esc</kbd></button>
+        <div class="mz-mind-scroll">
+            <header class="mz-mind-head">
+                <span class="mz-mind-who" data-mz="mem-who"></span>
+                <b class="mz-mind-when" data-mz="mem-when"></b>
+                <span class="mz-mind-trigger" data-mz="mem-trigger"></span>
+            </header>
+            <div class="mz-mind-body" data-mz="mem-body"></div>
+            <footer class="mz-mind-foot" data-mz="mem-foot" hidden>
+                <p class="mz-mind-cascade"><b>And now</b><span data-mz="mem-cascade"></span></p>
+            </footer>
+        </div>
+    </section>
+
     <section class="mz-card" data-mz="card" role="dialog" aria-modal="true" aria-label="Full profile" aria-hidden="true">
         <div class="mz-card-frame" data-mz="card-body"></div>
     </section>
@@ -242,6 +263,13 @@ const FRAME_HTML = `
                 <div class="mz-seg" role="group" aria-label="Popovers">
                     <button type="button" data-mz-pick-cuepop="both">Hover and tap</button>
                     <button type="button" data-mz-pick-cuepop="tap">Tap only</button>
+                </div>
+            </div>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Memories</b><small>How a flashback arrives: as a pill, or opening the memory at once.</small></span>
+                <div class="mz-seg" role="group" aria-label="Memories">
+                    <button type="button" data-mz-pick-cuemem="pill">Pill</button>
+                    <button type="button" data-mz-pick-cuemem="open">Open on arrival</button>
                 </div>
             </div>
         </div>
@@ -410,6 +438,7 @@ export function mount() {
     applyNarrationFont();
     applyProseColors();
     applyCuePopovers();
+    applyCueMemories();
     applyPaneOpacity();
     applyLogWidth(Number(settings().logWidth) || LOG_W_DEFAULT);
 
@@ -658,6 +687,17 @@ function applyCuePopovers() {
     });
 }
 
+/** Lights the chosen way a memory arrives. */
+function applyCueMemories() {
+    const pick = settings().cueMemories === 'open' ? 'open' : 'pill';
+
+    root.querySelectorAll('[data-mz-pick-cuemem]').forEach(button => {
+        const isOn = button.dataset.mzPickCuemem === pick;
+        button.classList.toggle('is-on', isOn);
+        button.setAttribute('aria-pressed', String(isOn));
+    });
+}
+
 function applyBackground() {
     const useSt = settings().background === 'st';
     frame.classList.toggle('is-bg-st', useSt);
@@ -796,8 +836,17 @@ function applyLedger(entry) {
 /**
  * Cracks the portraits of everyone the shown turn caught in a lie. The
  * marks in the prose carry the tell on their own; this is the stage echo.
+ * A turn change also finishes the last memory's lingering cascade, and
+ * lets a memory open itself on arrival when that is how they are set.
  */
+let shownIndex = null;
+let arrivedMemory = null;
+
 function applyTells(entry) {
+    const index = entry?.index ?? null;
+    const turned = index !== shownIndex;
+    shownIndex = index;
+
     const { tags } = entry?.message ? parseMessage(entry.message) : { tags: [] };
     const liars = [];
 
@@ -808,6 +857,17 @@ function applyTells(entry) {
     }
 
     renderTells(liars);
+
+    if (turned) clearCascade();
+
+    if (settings().cueMemories === 'open'
+        && index === chatMessages().length - 1
+        && arrivedMemory !== index
+        && !frame.classList.contains('is-generating')
+        && els.prose.querySelector('.mz-dream')) {
+        arrivedMemory = index;
+        els.prose.querySelector('.mz-dream').click();
+    }
 }
 
 /* ---------- reading pane ---------- */
@@ -1262,6 +1322,14 @@ function wireActions() {
             return;
         }
 
+        const cueMem = event.target.closest('[data-mz-pick-cuemem]');
+        if (cueMem) {
+            settings().cueMemories = cueMem.dataset.mzPickCuemem;
+            applyCueMemories();
+            saveSettings();
+            return;
+        }
+
         const prosePick = event.target.closest('[data-mz-pick-prose]');
         if (prosePick) {
             settings().proseColors = prosePick.dataset.mzPickProse;
@@ -1427,8 +1495,10 @@ function wireKeys() {
 
             event.preventDefault();
             event.stopPropagation();
-            // The floating overlays go first, then everything else.
+            // The floating overlays go first, then the memory, then the
+            // rest of the scene.
             if (closeFloats()) return;
+            if (closeMemory()) return;
             if (isCardOpen()) closeCard();
             else if (isDockOpen()) closeDock();
             else if (transcript?.isLogOpen()) transcript.closeLog();
