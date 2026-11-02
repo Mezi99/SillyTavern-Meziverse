@@ -6,6 +6,8 @@
  * own: it hands the context over and lets the caller decide.
  */
 
+import { normalizeStore, toCssBgUrl } from './backgrounds.js';
+
 /**
  * SillyTavern's own context object, or null while the app is still loading.
  *
@@ -571,5 +573,222 @@ export async function branchChat(mesId) {
     } catch (error) {
         console.warn('[Meziverse] could not branch the chat', error);
         return null;
+    }
+}
+
+/* ---------- location backgrounds ---------- */
+
+/**
+ * The open chat's background store, normalized and live.
+ *
+ * Mutating it edits `chatMetadata.meziverse.bg` in place - the object
+ * SillyTavern serialises - so callers write records and then ask
+ * `saveChatMetadata()` to persist. With no chat open the store is detached:
+ * writes to it are simply lost, which is right, because there is nothing to
+ * save them to. Pure logic lives in backgrounds.js; this only anchors the
+ * store to SillyTavern's metadata.
+ */
+export function bgStore() {
+    const metadata = ctx()?.chatMetadata;
+    if (!metadata || typeof metadata !== 'object') return normalizeStore();
+
+    if (!metadata.meziverse || typeof metadata.meziverse !== 'object') metadata.meziverse = {};
+    if (!metadata.meziverse.bg || typeof metadata.meziverse.bg !== 'object') metadata.meziverse.bg = {};
+
+    return normalizeStore(metadata.meziverse.bg);
+}
+
+/**
+ * The background SillyTavern has locked to this chat
+ * (`chat_metadata.custom_background`), as its raw value, or null.
+ */
+export function customBackground() {
+    const value = ctx()?.chatMetadata?.custom_background;
+    return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+/**
+ * Makes SillyTavern set a chat background from an image path, the same way
+ * its own image-generation "background" mode does: the FORCE_SET_BACKGROUND
+ * event locks it to the chat, registers it in the chat's background list and
+ * persists the metadata. The scene's own backdrop mirror follows the event.
+ *
+ * Idempotent: when the image is already the chat's background nothing is
+ * emitted. Afterwards the chat's background list is de-duplicated in place -
+ * SillyTavern appends every forced background unconditionally, and a re-applied
+ * cached image would otherwise pile up copies.
+ *
+ * @param {string} imagePath the path Image Generation returned
+ * @returns {Promise<boolean>} whether the background now shows that image
+ */
+export async function forceSetBackground(imagePath) {
+    const context = ctx();
+    const path = String(imagePath ?? '').trim();
+    const type = context?.eventTypes?.FORCE_SET_BACKGROUND;
+    if (!path || !context?.eventSource || !type) return false;
+
+    const url = toCssBgUrl(path);
+    if (customBackground() === url) return true;
+
+    try {
+        await context.eventSource.emit(type, { url, path });
+    } catch (error) {
+        console.warn('[Meziverse] could not set the chat background', error);
+        return false;
+    }
+
+    dedupeChatBackgrounds();
+    return true;
+}
+
+/** Collapses duplicates SillyTavern appended to the chat's background list. */
+function dedupeChatBackgrounds() {
+    const list = ctx()?.chatMetadata?.chat_backgrounds;
+    if (!Array.isArray(list)) return;
+
+    const seen = new Set();
+    const unique = list.filter(item => {
+        const key = String(item ?? '');
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+
+    if (unique.length === list.length) return;
+
+    // In place: the metadata object keeps its identity across the save.
+    list.length = 0;
+    list.push(...unique);
+}
+
+/* ---------- image generation ---------- */
+
+/**
+ * Whether SillyTavern's own Image Generation is set up well enough to draw
+ * backgrounds: its settings exist and its /imagine command is registered.
+ * The extension does the API keys, sources and models; we only need this gate.
+ *
+ * @returns {{ok:boolean, text:string}} what to tell the user
+ */
+export function imageGenerationStatus() {
+    const context = ctx();
+    const sd = context?.extensionSettings?.sd ?? context?.extension_settings?.sd;
+
+    if (!sd) {
+        return { ok: false, text: 'Image Generation settings not found. Enable the Image Generation extension.' };
+    }
+    if (typeof context?.SlashCommandParser?.commands?.imagine?.callback !== 'function') {
+        return { ok: false, text: 'The /imagine command is not registered. Enable the Image Generation extension.' };
+    }
+
+    const source = sd.source ? String(sd.source) : 'unknown source';
+    const model = sd.model ? String(sd.model) : 'default model';
+    return { ok: true, text: `SillyTavern Image Generation: ${source} - ${model}` };
+}
+
+/**
+ * Generates one image through SillyTavern's own /imagine command.
+ *
+ * The command is invoked the way the chat invokes it, with the differences
+ * that make it ours: `quiet` keeps the image out of the chat entirely (the
+ * prompt is then discarded by SillyTavern - callers keep their own copy),
+ * and `extend` is off so the prompt reaches the image model verbatim, with
+ * no rewrite pass and no review popup in the way. SillyTavern saves the file
+ * and returns its path.
+ *
+ * @param {{prompt:string, negative?:string, width?:number|string, height?:number|string, signal?:AbortSignal}} request
+ * @returns {Promise<{ok:true, path:string}|{ok:false, error:string, aborted:boolean}>}
+ */
+export async function imagine({ prompt, negative, width, height, signal } = {}) {
+    const text = String(prompt ?? '').trim();
+    if (!text) return { ok: false, error: 'The image prompt is empty.', aborted: false };
+
+    const callback = ctx()?.SlashCommandParser?.commands?.imagine?.callback;
+    if (typeof callback !== 'function') {
+        return {
+            ok: false,
+            error: 'Image Generation is not available. Enable the Image Generation extension and set an API.',
+            aborted: false,
+        };
+    }
+
+    const controller = new AbortController();
+    if (signal) {
+        if (signal.aborted) return { ok: false, error: 'The generation was cancelled.', aborted: true };
+        signal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
+
+    const args = {
+        quiet: 'true',
+        gallery: 'false',
+        extend: 'false',
+        _abortController: controller,
+    };
+    const cleanNegative = String(negative ?? '').trim();
+    if (cleanNegative) args.negative = cleanNegative;
+    if (width && height) {
+        args.width = String(width);
+        args.height = String(height);
+    }
+
+    try {
+        const path = String(await callback(args, text) ?? '').trim();
+        if (signal?.aborted || controller.signal.aborted) {
+            return { ok: false, error: 'The generation was cancelled.', aborted: true };
+        }
+        if (!path) {
+            return {
+                ok: false,
+                error: 'Image Generation returned nothing. Check its source, model and API key.',
+                aborted: false,
+            };
+        }
+        return { ok: true, path };
+    } catch (error) {
+        if (signal?.aborted || controller.signal.aborted) {
+            return { ok: false, error: 'The generation was cancelled.', aborted: true };
+        }
+        console.warn('[Meziverse] Image Generation failed', error);
+        return {
+            ok: false,
+            error: `Image Generation failed: ${error?.message || error}`,
+            aborted: false,
+        };
+    }
+}
+
+/**
+ * One quiet call to the main connection's LLM - the watcher's question about
+ * where the story is now. Only what we pass goes over the wire: no card, no
+ * chat history, so the caller decides exactly what the LLM sees. Structured
+ * output is requested with a schema when the caller has one.
+ *
+ * There is no abort signal to give: SillyTavern's own stop button governs
+ * raw generation, same as its other quiet calls.
+ *
+ * @param {{prompt:string, systemPrompt?:string, responseLength?:number, jsonSchema?:object}} request
+ * @returns {Promise<{ok:boolean, text:string, error:string}>}
+ */
+export async function generateRaw({ prompt, systemPrompt, responseLength, jsonSchema } = {}) {
+    const context = ctx();
+    const text = String(prompt ?? '').trim();
+    if (!text) return { ok: false, text: '', error: 'The watcher prompt is empty.' };
+
+    if (typeof context?.generateRaw !== 'function') {
+        return { ok: false, text: '', error: 'SillyTavern offers no raw generation here.' };
+    }
+
+    try {
+        const result = await context.generateRaw({
+            prompt: text,
+            systemPrompt: String(systemPrompt ?? ''),
+            responseLength: Number.isFinite(Number(responseLength)) ? Number(responseLength) : undefined,
+            jsonSchema,
+            trimNames: false,
+        });
+        return { ok: true, text: String(result ?? '').trim(), error: '' };
+    } catch (error) {
+        console.warn('[Meziverse] the watcher call failed', error);
+        return { ok: false, text: '', error: `The watcher call failed: ${error?.message || error}` };
     }
 }
