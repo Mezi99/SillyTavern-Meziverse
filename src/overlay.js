@@ -18,7 +18,7 @@ import { closeFloats } from './floats.js';
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr } from './notify.js';
 
-const VERSION = '2.2.0';
+const VERSION = '2.3.0';
 const PANE_DEFAULT = 300;
 const LOG_W_DEFAULT = 720;
 const LOG_H_SHARE = 0.7;
@@ -272,6 +272,13 @@ const FRAME_HTML = `
                     <button type="button" data-mz-pick-cuemem="open">Open on arrival</button>
                 </div>
             </div>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Meanwhile</b><small>How the meanwhile boxes arrive: closed, or the latest one open.</small></span>
+                <div class="mz-seg" role="group" aria-label="Meanwhile">
+                    <button type="button" data-mz-pick-cuemw="closed">Closed</button>
+                    <button type="button" data-mz-pick-cuemw="open">Latest one open</button>
+                </div>
+            </div>
         </div>
 
         <footer class="mz-sheet-foot">
@@ -439,6 +446,7 @@ export function mount() {
     applyProseColors();
     applyCuePopovers();
     applyCueMemories();
+    applyCueMeanwhile();
     applyPaneOpacity();
     applyLogWidth(Number(settings().logWidth) || LOG_W_DEFAULT);
 
@@ -698,6 +706,17 @@ function applyCueMemories() {
     });
 }
 
+/** Lights the chosen way the meanwhile boxes arrive. */
+function applyCueMeanwhile() {
+    const pick = settings().cueMeanwhile === 'open' ? 'open' : 'closed';
+
+    root.querySelectorAll('[data-mz-pick-cuemw]').forEach(button => {
+        const isOn = button.dataset.mzPickCuemw === pick;
+        button.classList.toggle('is-on', isOn);
+        button.setAttribute('aria-pressed', String(isOn));
+    });
+}
+
 function applyBackground() {
     const useSt = settings().background === 'st';
     frame.classList.toggle('is-bg-st', useSt);
@@ -837,10 +856,12 @@ function applyLedger(entry) {
  * Cracks the portraits of everyone the shown turn caught in a lie. The
  * marks in the prose carry the tell on their own; this is the stage echo.
  * A turn change also finishes the last memory's lingering cascade, and
- * lets a memory open itself on arrival when that is how they are set.
+ * lets a memory — or the latest meanwhile box — open itself on arrival
+ * when that is how they are set.
  */
 let shownIndex = null;
 let arrivedMemory = null;
+let arrivedBox = null;
 
 function applyTells(entry) {
     const index = entry?.index ?? null;
@@ -867,6 +888,16 @@ function applyTells(entry) {
         && els.prose.querySelector('.mz-dream')) {
         arrivedMemory = index;
         els.prose.querySelector('.mz-dream').click();
+    }
+
+    if (settings().cueMeanwhile === 'open'
+        && index === chatMessages().length - 1
+        && arrivedBox !== index
+        && !frame.classList.contains('is-generating')
+        && els.prose.querySelector('.mz-meanwhile')) {
+        arrivedBox = index;
+        const boxes = els.prose.querySelectorAll('.mz-meanwhile');
+        boxes[boxes.length - 1].querySelector('.mz-mw-head')?.click();
     }
 }
 
@@ -1326,6 +1357,14 @@ function wireActions() {
         if (cueMem) {
             settings().cueMemories = cueMem.dataset.mzPickCuemem;
             applyCueMemories();
+            saveSettings();
+            return;
+        }
+
+        const cueMw = event.target.closest('[data-mz-pick-cuemw]');
+        if (cueMw) {
+            settings().cueMeanwhile = cueMw.dataset.mzPickCuemw;
+            applyCueMeanwhile();
             saveSettings();
             return;
         }

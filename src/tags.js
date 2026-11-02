@@ -130,16 +130,18 @@ export function scenesOf(tags) {
 
 /**
  * Splits a message at complete scene tags, so prose and inline scene rows can
- * be interleaved, and at the inline cues (`lie`, `filter`, `flashback`) that
- * leave a mark in the prose. Non-cue tags are stripped exactly as in
+ * be interleaved; at the inline cues (`lie`, `filter`, `flashback`) that leave
+ * a mark in the prose; and at complete `meanwhile` tags, which stand as a box
+ * of their own between the prose runs. Non-cue tags are stripped exactly as in
  * `stripTags`.
  *
  * A mark goes where its tag stood, at the end of the text before it. A tag
  * that starts its own line moves to the end of the previous paragraph, so a
- * mark never floats alone; its line's whitespace follows it.
+ * mark never floats alone; its line's whitespace follows it. A box keeps the
+ * tag's place between the runs and never joins a paragraph.
  *
  * @param {string} mes
- * @returns {Array<{type:'text', text:string}|{type:'scene', tag:object}|{type:'mark', tag:object}>}
+ * @returns {Array<{type:'text', text:string}|{type:'scene', tag:object}|{type:'box', tag:object}|{type:'mark', tag:object}>}
  */
 export function splitCues(mes) {
     const text = typeof mes === 'string' ? mes : '';
@@ -164,6 +166,16 @@ export function splitCues(mes) {
         if (tag.name === 'scene' && tag.closed) {
             flush();
             cues.push({ type: 'scene', tag });
+            runHasText = false;
+            cursor = tag.end;
+            continue;
+        }
+
+        // A meanwhile box is a block like a scene row: it stands where its
+        // tag stood, between the prose runs, and cuts them the same way.
+        if (tag.name === 'meanwhile' && tag.closed) {
+            flush();
+            cues.push({ type: 'box', tag });
             runHasText = false;
             cursor = tag.end;
             continue;

@@ -95,6 +95,42 @@ test('inline self-closing tags vanish without a trace', () => {
     assert.equal(stripTags(mes), 'Before after the end');
 });
 
+test('a meanwhile becomes a box at the point it appeared', () => {
+    const cues = splitCues('Before <meanwhile event="the ferry leaves" importance="they miss the tide" />after');
+
+    assert.deepEqual(cues.map(cue => cue.type), ['text', 'box', 'text']);
+    assert.equal(cues[0].text, 'Before ');
+    assert.equal(cues[1].tag.name, 'meanwhile');
+    assert.equal(cues[1].tag.attrs.event, 'the ferry leaves');
+    assert.equal(cues[1].tag.attrs.importance, 'they miss the tide');
+    assert.equal(cues[2].text, 'after');
+});
+
+test('a box cuts the prose like a scene row', () => {
+    const cues = splitCues('a<meanwhile event="one" />b<scene date="Day 1" />c');
+
+    assert.deepEqual(cues.map(cue => cue.type), ['text', 'box', 'text', 'scene', 'text']);
+});
+
+test('meanwhile boxes stack in reading order', () => {
+    const cues = splitCues('intro<meanwhile event="one" /><meanwhile event="two" />outro');
+
+    assert.deepEqual(cues.map(cue => cue.type), ['text', 'box', 'box', 'text']);
+    assert.deepEqual(cues.filter(cue => cue.type === 'box').map(cue => cue.tag.attrs.event), ['one', 'two']);
+});
+
+test('a mark stays on its own side of a box', () => {
+    const cues = splitCues('a<lie type="omitting" /><meanwhile event="x" />b');
+
+    assert.deepEqual(cues.map(cue => cue.type), ['text', 'mark', 'box', 'text']);
+});
+
+test('an unclosed meanwhile draws nothing and hides its tail', () => {
+    const cues = splitCues('one <meanwhile event="some');
+
+    assert.deepEqual(cues, [{ type: 'text', text: 'one ' }]);
+});
+
 test('an unclosed hidden tag hides its streaming tail', () => {
     assert.equal(stripTags('one<think>still thinking'), 'one');
     assert.equal(stripTags('one<LEDGER><recap era="x"'), 'one');

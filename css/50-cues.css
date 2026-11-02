@@ -8,6 +8,8 @@
                 with the truth.
      filter     the same round glyph, a closed eye. The same popover, the
                 same behaviour, saying what was missed and why.
+     flashback  a small dream pill in the prose; a click opens the mindscape.
+     meanwhile  an expandable box between the prose runs, closed by default.
 
    All cue text is Inter (var(--mz-font-ui)), like the rest of the UI.
    ========================================================================== */
@@ -16,6 +18,7 @@
     --mz-cue-lie: var(--mz-bad);               /* a crack in the story */
     --mz-cue-mem: var(--mz-warn);              /* old gold, dream light */
     --mz-cue-blind: var(--mz-tone-desire-low); /* what you cannot perceive */
+    --mz-cue-away: var(--mz-accent);           /* somewhere else, meanwhile */
 }
 
 /* ---------- the round mark and the popover it opens ---------- */
@@ -401,10 +404,77 @@
     color: var(--mz-cue-mem);
 }
 
+/* ==========================================================================
+   3. FILTER
+   Just the round mark. Its popover says what you cannot perceive and why.
+   (Markup and behaviour are the lie's; only colour, glyph and copy differ.)
+   ========================================================================== */
+
+/* ==========================================================================
+   4. MEANWHILE
+   An expandable box inside the narration, closed by default. Several can
+   follow one another and read as one quiet stack.
+   ========================================================================== */
+
+.mz-meanwhile {
+    --c: var(--mz-cue-away);
+    margin: .85em 0;
+    border: 1px solid color-mix(in srgb, var(--c) 24%, transparent);
+    border-left: 2px solid color-mix(in srgb, var(--c) 70%, transparent);
+    border-radius: var(--mz-r);
+    background: linear-gradient(95deg, color-mix(in srgb, var(--c) 13%, transparent), color-mix(in srgb, var(--c) 2%, transparent) 75%);
+    overflow: hidden;
+    transition: border-color var(--mz-dur-fast), background var(--mz-dur) var(--mz-ease);
+}
+.mz-meanwhile + .mz-meanwhile { margin-top: -.45em; }
+.mz-meanwhile:hover { border-color: color-mix(in srgb, var(--c) 45%, transparent); border-left-color: var(--c); }
+.mz-meanwhile.is-open { border-color: color-mix(in srgb, var(--c) 40%, transparent); border-left-color: var(--c); }
+
+.mz-mw-head {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    width: 100%;
+    min-height: 36px;
+    padding: 6px 12px 6px 10px;
+    text-align: left;
+    color: var(--mz-text);
+}
+.mz-mw-slash {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--c) 14%, transparent);
+    color: var(--c);
+}
+.mz-mw-slash .ico { width: 13px; height: 13px; }
+.mz-mw-label { font: 600 var(--mz-text-2xs) var(--mz-font-ui); letter-spacing: .18em; text-transform: uppercase; color: var(--c); }
+.mz-mw-label { flex: 1; }
+/* several boxes in a reply number themselves, quietly */
+.mz-mw-count { flex: none; font: 500 var(--mz-text-2xs) var(--mz-font-ui); letter-spacing: .1em; color: var(--mz-text-dim); }
+.mz-mw-chev { flex: none; width: 14px; height: 14px; color: var(--mz-text-dim); transition: transform var(--mz-dur) var(--mz-ease), color var(--mz-dur-fast); }
+.mz-meanwhile:hover .mz-mw-chev { color: var(--c); }
+.mz-meanwhile.is-open .mz-mw-chev { transform: rotate(90deg); color: var(--c); }
+
+/* grid-template-rows animates the height without measuring it */
+.mz-mw-body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 360ms var(--mz-ease); }
+.mz-meanwhile.is-open .mz-mw-body { grid-template-rows: 1fr; }
+.mz-mw-in { min-height: 0; overflow: hidden; }
+.mz-mw-in > div { display: grid; gap: 10px; padding: 2px 16px 15px 43px; opacity: 0; transform: translateY(-4px); transition: opacity 300ms var(--mz-ease), transform 300ms var(--mz-ease); }
+.mz-meanwhile.is-open .mz-mw-in > div { opacity: 1; transform: none; transition-delay: 90ms; }
+.mz-mw-ev { margin: 0; font: 400 var(--mz-text-md) / 1.6 var(--mz-font-ui); color: var(--mz-text); }
+.mz-mw-why { display: grid; gap: 2px; margin: 0; padding-top: 9px; border-top: 1px solid color-mix(in srgb, var(--c) 18%, transparent); }
+.mz-mw-why b { font: 500 var(--mz-text-2xs) var(--mz-font-ui); letter-spacing: .14em; text-transform: uppercase; color: var(--mz-text-dim); }
+.mz-mw-why span { font: 300 var(--mz-text-md) / 1.55 var(--mz-font-ui); color: var(--mz-text-muted); }
+
 /* ---------- small screens ---------- */
 
 @media (max-width: 759px) {
     .mz-mind-frag:nth-child(even) { justify-self: start; text-align: left; margin-left: 8%; }
+    .mz-mw-in > div { padding-left: 16px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -412,4 +482,5 @@
     .mz-mind-motes, .mz-mind-ring { display: none; }
     .mz-mind::before { animation: none; }
     .mz-mind-haze, .mz-mind-head, .mz-mind-frag, .mz-mind-foot, .mz-mind-back { animation: none; }
+    .mz-mw-body, .mz-mw-in > div, .mz-pop { transition: none; }
 }

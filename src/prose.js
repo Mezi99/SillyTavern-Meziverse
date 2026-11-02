@@ -4,8 +4,9 @@
  * SillyTavern does the formatting, so regex scripts, Markdown, quotes, rules
  * and every display extension behave exactly as they do in the native chat.
  * The only work here is removing Meziverse's own tags and putting an inline
- * scene row at every complete `<scene>` and an inline mark at every `lie` or
- * `filter`.
+ * scene row at every complete `<scene>`, an inline mark at every `lie` or
+ * `filter`, a dream pill at every `flashback`, and a meanwhile box at every
+ * `meanwhile`.
  */
 
 import { formatMessage, say } from './st.js';
@@ -133,6 +134,35 @@ function markHtml(tag) {
     return '';
 }
 
+/* ---------- the meanwhile box ---------- */
+
+/**
+ * One `meanwhile` as its own quiet box in the prose: closed by default,
+ * carrying only the cut glyph and the label until it is opened. When a reply
+ * holds more than one, each head numbers itself ("2 / 3") so the asides stay
+ * countable.
+ */
+function meanwhileBox(tag, at, total) {
+    const data = tag.attrs || {};
+    const event = say(data.event || '').trim();
+    const importance = say(data.importance || '').trim();
+
+    return '<div class="mz-meanwhile">'
+        + '<button class="mz-mw-head" type="button" aria-expanded="false">'
+        + `<span class="mz-mw-slash">${iconHtml('mz-i-cut')}</span>`
+        + '<span class="mz-mw-label">Meanwhile</span>'
+        + (total > 1 ? `<span class="mz-mw-count">${at} / ${total}</span>` : '')
+        + iconHtml('mz-i-next', 'mz-mw-chev')
+        + '</button>'
+        + '<div class="mz-mw-body"><div class="mz-mw-in"><div>'
+        + (event ? `<p class="mz-mw-ev">${escapeHtml(event)}</p>` : '')
+        + (importance
+            ? `<p class="mz-mw-why"><b>Why it matters</b><span>${escapeHtml(importance)}</span></p>`
+            : '')
+        + '</div></div></div>'
+        + '</div>';
+}
+
 /**
  * The message as SillyTavern would draw it, with Meziverse's own scene rows
  * and inline marks.
@@ -146,9 +176,13 @@ export function toHtml(message, index, { compact = false, persona = '' } = {}) {
     const raw = typeof message?.mes === 'string' ? message.mes : '';
     if (!raw.trim()) return '';
 
+    const cues = splitCues(raw);
+    const total = cues.reduce((n, cue) => n + (cue.type === 'box' ? 1 : 0), 0);
+
     const parts = [];
     let run = '';
     let marks = [];
+    let at = 0;
 
     // One formatMessage call per run of prose, so a mark in the middle of a
     // paragraph does not break the paragraph: its slot rides through the
@@ -170,13 +204,22 @@ export function toHtml(message, index, { compact = false, persona = '' } = {}) {
         marks = [];
     };
 
-    for (const cue of splitCues(raw)) {
+    for (const cue of cues) {
         if (cue.type === 'scene') {
             flushRun();
             // The tag vanishes from the prose either way; the row is a
             // Meziverse feature and only appears while mode is on.
             const row = modeOn() ? sceneRow(cue.tag, { compact, persona }) : '';
             if (row) parts.push(row);
+            continue;
+        }
+
+        if (cue.type === 'box') {
+            flushRun();
+            // The box is a Meziverse feature too: the tag vanishes from the
+            // prose either way, and the count is render-side.
+            at += 1;
+            if (modeOn()) parts.push(meanwhileBox(cue.tag, at, total));
             continue;
         }
 

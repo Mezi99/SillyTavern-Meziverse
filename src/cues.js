@@ -100,6 +100,16 @@ function onClick(event) {
         return;
     }
 
+    // A meanwhile box grows or folds where it stands. Boxes are inline
+    // narration, not overlays: each is toggled on its own, and the press
+    // falls through to the popover's own dismissal below.
+    const head = event.target.closest?.('.mz-mw-head');
+    if (head) {
+        const box = head.closest('.mz-meanwhile');
+        const open = box.classList.toggle('is-open');
+        head.setAttribute('aria-expanded', String(open));
+    }
+
     const mark = event.target.closest?.('.mz-mark');
     if (mark) {
         clearTimer();

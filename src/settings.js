@@ -22,6 +22,8 @@ const DEFAULTS = {
     cuePopovers: 'both',
     // How a memory arrives: as a pill, or opening on arrival.
     cueMemories: 'pill',
+    // How the meanwhile boxes arrive: closed, or the latest one open.
+    cueMeanwhile: 'closed',
     uiScale: 1,
     narrSize: 18.5,
     narrFont: 'inter',
