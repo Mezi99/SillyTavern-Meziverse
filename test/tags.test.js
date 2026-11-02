@@ -114,6 +114,58 @@ test('splitCues folds hidden blocks out of the prose', () => {
     assert.deepEqual(cues, [{ type: 'text', text: 'ab' }]);
 });
 
+test('a mark leaves its tag whole and sits where the tag stood', () => {
+    const cues = splitCues('She smiled. <lie character="Mara" type="deceiving" truth="she knew" reason="fear" />Then he left.');
+
+    assert.deepEqual(cues.map(cue => cue.type), ['text', 'mark', 'text']);
+    assert.equal(cues[0].text, 'She smiled. ');
+    assert.deepEqual(cues[1].tag.attrs, {
+        character: 'Mara',
+        type: 'deceiving',
+        truth: 'she knew',
+        reason: 'fear',
+    });
+    assert.equal(cues[2].text, 'Then he left.');
+});
+
+test('a mark on a line of its own joins the end of the previous paragraph', () => {
+    const cues = splitCues('She smiled.\n<lie character="Mara" />Then he left.');
+
+    assert.deepEqual(cues.map(cue => cue.type), ['text', 'mark', 'text']);
+    assert.equal(cues[0].text, 'She smiled.');
+    assert.equal(cues[2].text, '\nThen he left.');
+});
+
+test('marks stack at the paragraph end in reading order', () => {
+    const cues = splitCues('She smiled.\n<lie character="Mara" />\n<filter reason="behind him" />Then he left.');
+
+    assert.deepEqual(cues.map(cue => cue.type), ['text', 'mark', 'mark', 'text']);
+    assert.equal(cues[0].text, 'She smiled.');
+    assert.equal(cues[3].text, '\n\nThen he left.');
+});
+
+test('a mark at the very start of the message stays where it is', () => {
+    const cues = splitCues('<filter event="steps" reason="behind him" />Nothing before.');
+
+    assert.deepEqual(cues.map(cue => cue.type), ['mark', 'text']);
+    assert.equal(cues[1].text, 'Nothing before.');
+});
+
+test('marks split the prose around them and scenes still cut runs', () => {
+    const cues = splitCues('a<lie type="omitting" />b<scene date="Day 1" />c');
+
+    assert.deepEqual(cues.map(cue => cue.type), ['text', 'mark', 'text', 'scene', 'text']);
+    assert.equal(cues[0].text, 'a');
+    assert.equal(cues[2].text, 'b');
+    assert.equal(cues[4].text, 'c');
+});
+
+test('an unclosed mark draws nothing and hides its tail', () => {
+    const cues = splitCues('one <lie character="Ma');
+
+    assert.deepEqual(cues, [{ type: 'text', text: 'one ' }]);
+});
+
 test('parseMessage caches on identity and rereads when mes changes', () => {
     const message = { mes: '<scene date="Day 1" />' };
 

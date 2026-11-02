@@ -18,6 +18,8 @@ const DEFAULTS = {
     theme: 'ink-jade',
     background: 'none',
     reducedMotion: false,
+    // How the inline cue popovers open: on hover and tap, or tap only.
+    cuePopovers: 'both',
     uiScale: 1,
     narrSize: 18.5,
     narrFont: 'inter',

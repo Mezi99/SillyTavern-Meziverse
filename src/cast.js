@@ -34,6 +34,7 @@ let lastScene = null;
 let lastSignature = '';
 let lastNames = '';
 let lastThoughts = [];
+let lastTells = [];
 let busyName = '';
 let busyChat = null;
 let pending = null;
@@ -112,6 +113,7 @@ export function renderCast(scene) {
     if (resetScroll) track.scrollLeft = 0;
 
     applyThoughts();
+    applyTells();
     refreshCastSizing();
     requestAnimationFrame(refreshCastSizing);
 }
@@ -219,6 +221,65 @@ function thoughtBubble() {
 
 function textOf(value) {
     return typeof value === 'string' ? value : '';
+}
+
+/* ---------- told lies ---------- */
+
+// The hairline crack over a liar's portrait. It is a bonus: the mark in
+// the prose carries the tell on its own.
+const FRACTURE = '<svg class="mz-fracture" viewBox="0 0 100 166" preserveAspectRatio="none" aria-hidden="true">'
+    + '<path d="M64 0 L56 17 L67 33 L52 52 L61 70 L46 88 L55 104 L42 124 L49 142 L40 166"/>'
+    + '<path d="M52 52 L36 60 L30 76"/>'
+    + '<path d="M55 104 L70 112 L74 128"/>'
+    + '</svg>';
+
+/**
+ * Cracks the portraits of everyone the shown turn caught in a lie — one
+ * crack per liar, whoever is on the stage. A liar who is not in the scene's
+ * present keeps the mark in the prose alone. Reapplied whenever the cast
+ * is redrawn.
+ *
+ * @param {string[]} characters
+ */
+export function renderTells(characters) {
+    lastTells = Array.isArray(characters) ? characters : [];
+    applyTells();
+}
+
+/** Lights the crack while that liar's mark has its popover open. */
+export function tellTold(name, on) {
+    if (!host || !track) return;
+
+    const key = textOf(name).trim().toLowerCase();
+    if (!key) return;
+
+    for (const figure of track.querySelectorAll('.mz-port')) {
+        if (textOf(figure.dataset.name).trim().toLowerCase() === key) {
+            figure.classList.toggle('is-told', !!on);
+        }
+    }
+}
+
+function applyTells() {
+    if (!host || !track) return;
+
+    const told = new Set();
+    if (modeOn()) {
+        for (const name of lastTells) {
+            const key = textOf(name).trim().toLowerCase();
+            if (key) told.add(key);
+        }
+    }
+
+    for (const figure of track.querySelectorAll('.mz-port')) {
+        const key = textOf(figure.dataset.name).trim().toLowerCase();
+        const has = told.has(key);
+        figure.classList.toggle('has-tell', has);
+
+        const crack = figure.querySelector('.mz-fracture');
+        if (has && !crack) figure.insertAdjacentHTML('beforeend', FRACTURE);
+        if (!has && crack) crack.remove();
+    }
 }
 
 /** Fits poster height to the space above the pane and the available width. */

@@ -1,0 +1,150 @@
+/* ==========================================================================
+   Meziverse — cues
+   The in-narration tags. The narration stays quiet: each cue is one small,
+   calm control in the prose, and the weight is revealed only on demand.
+
+     lie        a round glyph at the tag's position, shaped by its kind, plus
+                a crack on the liar's portrait. Hover or tap opens a popover
+                with the truth.
+     filter     the same round glyph, a closed eye. The same popover, the
+                same behaviour, saying what was missed and why.
+
+   All cue text is Inter (var(--mz-font-ui)), like the rest of the UI.
+   ========================================================================== */
+
+#mz-root {
+    --mz-cue-lie: var(--mz-bad);               /* a crack in the story */
+    --mz-cue-blind: var(--mz-tone-desire-low); /* what you cannot perceive */
+}
+
+/* ---------- the round mark and the popover it opens ---------- */
+
+.mz-mark {
+    --c: var(--mz-text-muted);
+    position: relative;
+    display: inline-grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    margin: 0 .15em 0 .3em;
+    vertical-align: .12em;
+    border: 1px solid color-mix(in srgb, var(--c) 42%, transparent);
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--c) 9%, transparent);
+    color: var(--c);
+    cursor: pointer;
+    transition: background var(--mz-dur-fast), transform var(--mz-dur-fast) var(--mz-ease), box-shadow var(--mz-dur-fast);
+}
+
+.mz-mark .ico { width: 12px; height: 12px; }
+
+.mz-mark[data-cue="lie"] { --c: var(--mz-cue-lie); }
+.mz-mark[data-cue="blind"] { --c: var(--mz-cue-blind); }
+
+.mz-mark:hover,
+.mz-mark:focus-visible { background: color-mix(in srgb, var(--c) 20%, transparent); transform: scale(1.1); }
+
+.mz-mark[aria-expanded="true"] {
+    background: var(--c);
+    color: var(--mz-bg);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 18%, transparent);
+}
+
+/* a touch target bigger than the glyph, without growing the glyph */
+.mz-mark::after { content: ""; position: absolute; inset: -9px; }
+
+/* The popover: one element, moved next to whichever mark opened it. It is
+   fixed-positioned by script, so the reading pane's own scrolling or
+   clipping never cuts it. */
+.mz-pop {
+    --c: var(--mz-text-muted);
+    position: fixed;
+    z-index: calc(var(--mz-z-sheet) + 2);
+    top: 0;
+    left: 0;
+    width: min(330px, calc(100% - 24px));
+    display: grid;
+    gap: 8px;
+    padding: 12px 14px 13px;
+    border: 1px solid color-mix(in srgb, var(--c) 38%, transparent);
+    border-radius: var(--mz-r);
+    background: color-mix(in srgb, var(--mz-bg) 92%, transparent);
+    backdrop-filter: var(--mz-blur);
+    box-shadow: var(--mz-shadow);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(4px);
+    transition: opacity var(--mz-dur-fast) var(--mz-ease), transform var(--mz-dur-fast) var(--mz-ease), visibility 0s linear var(--mz-dur-fast);
+}
+
+.mz-pop.is-open { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+.mz-pop[data-cue="lie"] { --c: var(--mz-cue-lie); }
+.mz-pop[data-cue="blind"] { --c: var(--mz-cue-blind); }
+
+/* a small notch pointing at the mark; --nx is set by script */
+.mz-pop::after {
+    content: "";
+    position: absolute;
+    left: var(--nx, 24px);
+    bottom: -5px;
+    width: 9px;
+    height: 9px;
+    border: inherit;
+    border-width: 0 1px 1px 0;
+    background: inherit;
+    rotate: 45deg;
+    translate: -50% 0;
+}
+
+.mz-pop.is-below::after { bottom: auto; top: -5px; border-width: 1px 0 0 1px; }
+
+.mz-pop-h {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font: 600 var(--mz-text-2xs) var(--mz-font-ui);
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--c);
+}
+
+.mz-pop-h .ico { width: 13px; height: 13px; }
+.mz-pop-h span { margin-left: auto; font-weight: 500; letter-spacing: .06em; text-transform: none; color: var(--mz-text-dim); }
+
+.mz-pop dl { display: grid; gap: 7px; margin: 0; }
+.mz-pop dt { font: 500 var(--mz-text-2xs) var(--mz-font-ui); letter-spacing: .12em; text-transform: uppercase; color: var(--mz-text-dim); }
+.mz-pop dd { margin: 1px 0 0; font: 400 var(--mz-text-md) / 1.45 var(--mz-font-ui); color: var(--mz-text); }
+.mz-pop dd.is-why { font-weight: 300; color: var(--mz-text-muted); }
+.mz-pop dd.is-lead { font-size: var(--mz-text-lg); line-height: 1.4; }
+
+/* ---------- the tell on the liar's portrait ---------- */
+
+/* Only a hairline crack on the stage — no button, no badge, at any portrait
+   size. The mark in the prose carries the tell on its own. */
+.mz-port .mz-fracture {
+    position: absolute;
+    z-index: 2;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity var(--mz-dur) var(--mz-ease);
+}
+
+.mz-port .mz-fracture path {
+    fill: none;
+    stroke: var(--mz-cue-lie);
+    stroke-width: 1.4;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    vector-effect: non-scaling-stroke;
+    filter: drop-shadow(0 0 4px color-mix(in srgb, var(--mz-cue-lie) 70%, transparent));
+}
+
+.mz-port.has-tell .mz-fracture { opacity: .8; }
+.mz-port.has-tell.is-told .mz-fracture { opacity: 1; animation: mz-crack 900ms var(--mz-ease) 1; }
+
+@keyframes mz-crack {
+    0% { opacity: .2; }
+    30% { opacity: 1; }
+    100% { opacity: 1; }
+}

@@ -10,6 +10,7 @@
 
 import { acceptEdit, branchChat, cancelEdit, chatMessages, copyMessage, ctx, currentChatId, deleteEditedMessage, editMessage, editorTextarea, on, personaName, setPromptHidden, swipeMessage, swipeSupported, swipingAllowed } from './st.js';
 import { renderInto, toHtml } from './prose.js';
+import { closePopover } from './cues.js';
 import { resolveScene } from './scene.js';
 import { icon } from './icons.js';
 
@@ -86,6 +87,9 @@ export function createTranscript({
     }
 
     function fillProse(element, message, index, { waiting = false, compact = false } = {}) {
+        // The marks the popover hangs on are about to be replaced.
+        closePopover();
+
         const html = toHtml(message, index, { compact, persona: personaName() });
         if (html) {
             renderInto(element, html);

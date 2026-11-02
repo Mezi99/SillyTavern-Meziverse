@@ -4,12 +4,14 @@
  * SillyTavern does the formatting, so regex scripts, Markdown, quotes, rules
  * and every display extension behave exactly as they do in the native chat.
  * The only work here is removing Meziverse's own tags and putting an inline
- * scene row at every complete `<scene>`.
+ * scene row at every complete `<scene>` and an inline mark at every `lie` or
+ * `filter`.
  */
 
-import { formatMessage } from './st.js';
+import { formatMessage, say } from './st.js';
 import { splitCues, stripTags } from './tags.js';
 import { describeScene, isUsableScene } from './scene.js';
+import { iconHtml } from './icons.js';
 import { modeOn } from './settings.js';
 
 const OPENING_BREAKS = /^(?:\s|<br\s*\/?>)+/i;
@@ -62,8 +64,63 @@ function sceneRow(tag, { compact, persona }) {
         + '</aside>';
 }
 
+/* ---------- inline marks ---------- */
+
+// A private-use slot stands in for a mark inside the text SillyTavern
+// formats; the mark's own markup is swapped in afterwards.
+const SLOT_OPEN = String.fromCharCode(0xe100);
+const SLOT_CLOSE = String.fromCharCode(0xe101);
+const SLOT_RE = new RegExp(`${SLOT_OPEN}(\\d+)${SLOT_CLOSE}`, 'g');
+
+function slot(number) {
+    return SLOT_OPEN + number + SLOT_CLOSE;
+}
+
+/** A lie's kind: the glyph tells them apart, the popover tells the truth. */
+const LIE_KINDS = {
+    lying: { icon: 'mz-i-crack', word: 'lying', verb: 'is lying' },
+    deceiving: { icon: 'mz-i-mask', word: 'deceiving', verb: 'is deceiving' },
+    omitting: { icon: 'mz-i-gap', word: 'omitting', verb: 'is omitting' },
+};
+
+function attr(name, value) {
+    return value ? ` ${name}="${escapeHtml(String(value))}"` : '';
+}
+
+/** One inline cue as the small mark it leaves in the prose. */
+function markHtml(tag) {
+    if (!tag) return '';
+
+    const data = tag.attrs || {};
+
+    if (tag.name === 'lie') {
+        const kind = LIE_KINDS[String(data.type || '').trim().toLowerCase()] || LIE_KINDS.lying;
+        const who = say(data.character || '').trim();
+        const label = `${who || 'Someone'} ${kind.verb}`;
+
+        return '<button class="mz-mark" type="button" data-cue="lie"'
+            + ` data-mz-type="${kind.word}"`
+            + attr('data-mz-character', say(data.character))
+            + attr('data-mz-truth', say(data.truth))
+            + attr('data-mz-reason', say(data.reason))
+            + ` aria-expanded="false" aria-label="${escapeHtml(label)}">${iconHtml(kind.icon)}</button>`;
+    }
+
+    if (tag.name === 'filter') {
+        return '<button class="mz-mark" type="button" data-cue="blind"'
+            + attr('data-mz-event', say(data.event))
+            + attr('data-mz-reason', say(data.reason))
+            + ' aria-expanded="false" aria-label="Something you cannot perceive">'
+            + iconHtml('mz-i-eye-off')
+            + '</button>';
+    }
+
+    return '';
+}
+
 /**
- * The message as SillyTavern would draw it, with Meziverse's own scene rows.
+ * The message as SillyTavern would draw it, with Meziverse's own scene rows
+ * and inline marks.
  *
  * @param {object} message
  * @param {number} index its index in the chat, which regex scripts may use
@@ -75,9 +132,32 @@ export function toHtml(message, index, { compact = false, persona = '' } = {}) {
     if (!raw.trim()) return '';
 
     const parts = [];
+    let run = '';
+    let marks = [];
+
+    // One formatMessage call per run of prose, so a mark in the middle of a
+    // paragraph does not break the paragraph: its slot rides through the
+    // formatting and is swapped for the mark afterwards.
+    const flushRun = () => {
+        if (!run.trim()) {
+            run = '';
+            marks = [];
+            return;
+        }
+
+        const formatted = tidy(formatMessage({ ...message, mes: run }, index));
+        const html = formatted || escapeHtml(run).replace(/\r\n|\r|\n/g, '<br>');
+        if (html.trim()) {
+            parts.push(html.replace(SLOT_RE, (all, n) => markHtml(marks[Number(n)])));
+        }
+
+        run = '';
+        marks = [];
+    };
 
     for (const cue of splitCues(raw)) {
         if (cue.type === 'scene') {
+            flushRun();
             // The tag vanishes from the prose either way; the row is a
             // Meziverse feature and only appears while mode is on.
             const row = modeOn() ? sceneRow(cue.tag, { compact, persona }) : '';
@@ -85,13 +165,17 @@ export function toHtml(message, index, { compact = false, persona = '' } = {}) {
             continue;
         }
 
-        if (!cue.text.trim()) continue;
+        if (cue.type === 'mark') {
+            if (!modeOn()) continue;
+            run += slot(marks.length);
+            marks.push(cue.tag);
+            continue;
+        }
 
-        const formatted = tidy(formatMessage({ ...message, mes: cue.text }, index));
-        const html = formatted || escapeHtml(cue.text).replace(/\r\n|\r|\n/g, '<br>');
-        if (html.trim()) parts.push(html);
+        run += cue.text;
     }
 
+    flushRun();
     return parts.join('');
 }
 

@@ -10,8 +10,10 @@ import { chatMessages, currentChatId, on, sendUserMessage, stopGeneration, click
 import { settings, saveSettings, modeOn } from './settings.js';
 import { injectSprite } from './icons.js';
 import { createTranscript } from './transcript.js';
-import { mountCast, refreshCastSizing, renderCast, renderThoughts, BUBBLE_ROOM } from './cast.js';
+import { mountCast, refreshCastSizing, renderCast, renderThoughts, renderTells, BUBBLE_ROOM } from './cast.js';
 import { resolveLedger } from './ledger.js';
+import { parseMessage } from './tags.js';
+import { mountCues, closePopover } from './cues.js';
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr } from './notify.js';
 
@@ -138,6 +140,9 @@ const FRAME_HTML = `
 
     <div class="mz-veil" data-mz-action="dismiss"></div>
 
+    <!-- the one popover shared by the inline cues -->
+    <div class="mz-pop" role="status"></div>
+
     <section class="mz-card" data-mz="card" role="dialog" aria-modal="true" aria-label="Full profile" aria-hidden="true">
         <div class="mz-card-frame" data-mz="card-body"></div>
     </section>
@@ -226,6 +231,17 @@ const FRAME_HTML = `
             <div class="mz-set-row">
                 <span class="mz-set-label"><b>Reduced motion</b><small>Fades and slides become instant.</small></span>
                 <button class="mz-switch" type="button" role="switch" aria-checked="false" aria-label="Reduced motion" data-mz-action="motion"><i></i></button>
+            </div>
+        </div>
+
+        <div class="mz-set-group">
+            <h3>Cues</h3>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Popovers</b><small>How the truth behind a mark opens.</small></span>
+                <div class="mz-seg" role="group" aria-label="Popovers">
+                    <button type="button" data-mz-pick-cuepop="both">Hover and tap</button>
+                    <button type="button" data-mz-pick-cuepop="tap">Tap only</button>
+                </div>
             </div>
         </div>
 
@@ -379,6 +395,7 @@ export function mount() {
         onShown: ({ entry, scene }) => {
             applyScene(scene);
             applyLedger(entry);
+            applyTells(entry);
         },
     });
 
@@ -391,6 +408,7 @@ export function mount() {
     applyNarration();
     applyNarrationFont();
     applyProseColors();
+    applyCuePopovers();
     applyPaneOpacity();
     applyLogWidth(Number(settings().logWidth) || LOG_W_DEFAULT);
 
@@ -402,6 +420,7 @@ export function mount() {
     wireFullscreen();
     wireKeys();
     wireEvents();
+    mountCues(frame);
 
     window.addEventListener('resize', () => {
         if (!isOpen() || resizeQueued) return;
@@ -627,10 +646,20 @@ function stepValue(steps, current, dir) {
     return steps[Math.max(0, Math.min(steps.length - 1, index + dir))];
 }
 
+/** Lights the chosen way the cue popovers open. */
+function applyCuePopovers() {
+    const pick = settings().cuePopovers === 'tap' ? 'tap' : 'both';
+
+    root.querySelectorAll('[data-mz-pick-cuepop]').forEach(button => {
+        const isOn = button.dataset.mzPickCuepop === pick;
+        button.classList.toggle('is-on', isOn);
+        button.setAttribute('aria-pressed', String(isOn));
+    });
+}
+
 function applyBackground() {
     const useSt = settings().background === 'st';
     frame.classList.toggle('is-bg-st', useSt);
-
     root.querySelectorAll('[data-mz-pick-bg]').forEach(button => {
         const isOn = button.dataset.mzPickBg === (useSt ? 'st' : 'none');
         button.classList.toggle('is-on', isOn);
@@ -761,6 +790,23 @@ function applyLedger(entry) {
     const ledger = lastEntry ? resolveLedger(chatMessages(), lastEntry.index) : null;
     renderDock(ledger);
     renderThoughts(ledger ? ledger.profiles : []);
+}
+
+/**
+ * Cracks the portraits of everyone the shown turn caught in a lie. The
+ * marks in the prose carry the tell on their own; this is the stage echo.
+ */
+function applyTells(entry) {
+    const { tags } = entry?.message ? parseMessage(entry.message) : { tags: [] };
+    const liars = [];
+
+    for (const tag of tags) {
+        if (tag.name !== 'lie' || !tag.closed) continue;
+        const who = String(tag.attrs.character || '').trim();
+        if (who && !liars.includes(who)) liars.push(who);
+    }
+
+    renderTells(liars);
 }
 
 /* ---------- reading pane ---------- */
@@ -1210,6 +1256,14 @@ function wireActions() {
             return;
         }
 
+        const cuePop = event.target.closest('[data-mz-pick-cuepop]');
+        if (cuePop) {
+            settings().cuePopovers = cuePop.dataset.mzPickCuepop;
+            applyCuePopovers();
+            saveSettings();
+            return;
+        }
+
         const prosePick = event.target.closest('[data-mz-pick-prose]');
         if (prosePick) {
             settings().proseColors = prosePick.dataset.mzPickProse;
@@ -1375,6 +1429,8 @@ function wireKeys() {
 
             event.preventDefault();
             event.stopPropagation();
+            // The cues' popover goes first, then everything else.
+            if (closePopover()) return;
             if (isCardOpen()) closeCard();
             else if (isDockOpen()) closeDock();
             else if (transcript?.isLogOpen()) transcript.closeLog();

@@ -24,6 +24,9 @@ const KEEP = new Set(['speech', 'flashback']);
 /* Body tags whose words are private: strip wrapper and body together. */
 const HIDDEN = new Set(['think', 'ledger', 'playerguide', 'directorguide', 'vkit']);
 
+/* Inline cues that leave a mark in the prose where the tag stood. */
+const MARKS = new Set(['lie', 'filter']);
+
 const NAMES = new Set([...SELF, ...KEEP, ...HIDDEN]);
 
 const OPEN = /<([A-Za-z][A-Za-z0-9_-]*)/y;
@@ -124,10 +127,15 @@ export function scenesOf(tags) {
 
 /**
  * Splits a message at complete scene tags, so prose and inline scene rows can
- * be interleaved. Non-scene tags are stripped exactly as in `stripTags`.
+ * be interleaved, and at the inline cues (`lie`, `filter`) that leave a mark
+ * in the prose. Non-cue tags are stripped exactly as in `stripTags`.
+ *
+ * A mark goes where its tag stood, at the end of the text before it. A tag
+ * that starts its own line moves to the end of the previous paragraph, so a
+ * mark never floats alone; its line's whitespace follows it.
  *
  * @param {string} mes
- * @returns {Array<{type:'text', text:string}|{type:'scene', tag:object}>}
+ * @returns {Array<{type:'text', text:string}|{type:'scene', tag:object}|{type:'mark', tag:object}>}
  */
 export function splitCues(mes) {
     const text = typeof mes === 'string' ? mes : '';
@@ -135,11 +143,13 @@ export function splitCues(mes) {
 
     const cues = [];
     let prose = '';
+    let runHasText = false;
     let cursor = 0;
 
     const flush = () => {
         if (!prose) return;
         cues.push({ type: 'text', text: prose });
+        if (prose.trim()) runHasText = true;
         prose = '';
     };
 
@@ -150,6 +160,29 @@ export function splitCues(mes) {
         if (tag.name === 'scene' && tag.closed) {
             flush();
             cues.push({ type: 'scene', tag });
+            runHasText = false;
+            cursor = tag.end;
+            continue;
+        }
+
+        if (MARKS.has(tag.name)) {
+            // A half tag draws nothing at all, and hides its tail.
+            if (!tag.closed) {
+                cursor = text.length;
+                break;
+            }
+
+            // The mark moves to the previous paragraph's end when its tag
+            // began a line of its own and there is a paragraph to join.
+            const spacing = /[ \t\r\n]*$/.exec(prose)[0];
+            const head = prose.slice(0, prose.length - spacing.length);
+            const attach = spacing.includes('\n') && (runHasText || !!head.trim());
+
+            prose = attach ? head : head + spacing;
+            flush();
+            cues.push({ type: 'mark', tag });
+            prose = attach ? spacing : '';
+
             cursor = tag.end;
             continue;
         }

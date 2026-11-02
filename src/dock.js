@@ -23,7 +23,7 @@ import { icon } from './icons.js';
 import { castAvatar } from './cast.js';
 import { entryOn, modeOn } from './settings.js';
 import { meterMax, parseStakes } from './ledger.js';
-import { personaName } from './st.js';
+import { say } from './st.js';
 
 const BOXES_MAX = 3;
 const PROFILES_MAX = 6;
@@ -629,13 +629,6 @@ function recapRecord(recap) {
 }
 
 /* ---------- one standing ---------- */
-
-/** Story text as display text: `{{user}}` is the persona's own name. */
-function say(value) {
-    const raw = String(value ?? '');
-    const name = personaName();
-    return name ? raw.replace(/\{\{\s*user\s*\}\}/gi, name) : raw;
-}
 
 /**
  * The level bar: a track of ten, filled to the level. The tone turns at
