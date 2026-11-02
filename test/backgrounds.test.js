@@ -228,6 +228,26 @@ test('buildWatcherRequest serves the store and the story, and knows force', () =
     assert.ok(watcherSystemPrompt({ force: true }).includes('fresh image'), 'force switches matching off');
 });
 
+test('watcherSystemPrompt keeps the answer format while the core stays tunable', () => {
+    assert.ok(watcherSystemPrompt().includes('grouped by scene blocks'), 'mode ON leans on the scene structure');
+    assert.ok(watcherSystemPrompt({ mode: false }).includes('no scene markers'), 'mode OFF gets the plain-prose hand');
+
+    const custom = watcherSystemPrompt({ core: 'Describe places like a haiku.' });
+    assert.ok(custom.startsWith('Describe places like a haiku.'));
+    assert.ok(custom.includes('"state":"same|known|new"'), 'the answer format is appended whatever the core says');
+
+    const forced = watcherSystemPrompt({ force: true, core: 'Describe places like a haiku.' });
+    assert.ok(forced.includes('fresh image'), 'force switches matching off');
+});
+
+test('buildWatcherRequest uses the core and the mode it is given', () => {
+    const store = normalizeStore();
+    const request = buildWatcherRequest({ store, messages: [msg('<scene location="A" /> x')], systemCore: 'My own rules.' });
+    assert.ok(request.systemPrompt.startsWith('My own rules.'));
+    assert.ok(request.systemPrompt.includes('"state":"same|known|new"'));
+    assert.equal(request.responseLength, 600);
+});
+
 test('parseWatcherReply reads the JSON, the text protocol, or a bare description', () => {
     assert.deepEqual(
         parseWatcherReply('{"state":"same","knownId":null,"place":"Pier 9","prompt":""}'),

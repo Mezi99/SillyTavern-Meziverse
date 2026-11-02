@@ -50,6 +50,28 @@ const LOG = '[Meziverse] bg';
 let chainSeq = 0;
 let chainAbort = null;
 let repliesSinceWatch = 0;
+let lastRequest = null;
+
+/**
+ * The exact question the watcher was last asked - system prompt and assembled
+ * story blocks - for the settings panel that lets the prompts be tuned.
+ */
+export function getLastWatcherRequest() {
+    return lastRequest;
+}
+
+/**
+ * A stage notice the chain holds while it works and drops when the stage
+ * ends. It goes through toastr, so the scene shows it as a Meziverse notice
+ * while open and SillyTavern shows its own toast when the scene is closed.
+ */
+function stage(message) {
+    const handle = globalThis.toastr?.info?.(message, '', { timeOut: 0 });
+    return () => {
+        if (typeof handle?.dismiss === 'function') handle.dismiss();
+        else if (handle) globalThis.toastr?.clear?.(handle);
+    };
+}
 
 /**
  * Stops whatever the chain is doing now. Anything already in flight becomes
@@ -159,42 +181,57 @@ async function runWatcherChain({ store, place, force }) {
     const controller = new AbortController();
     chainAbort = controller;
 
+    const mode = modeOn();
     const request = buildWatcherRequest({
         store,
         messages: chatMessages(),
-        mode: modeOn(),
+        mode,
         count: Math.max(1, Number(settings().bgContextReplies) || 2),
         persona: personaName(),
+        systemCore: mode ? settings().bgPromptOn : settings().bgPromptOff,
         force,
     });
+    lastRequest = { systemPrompt: request.systemPrompt, prompt: request.prompt, at: Date.now() };
 
     console.debug(`${LOG} asking the watcher`, { place, force });
 
-    const reply = await generateRaw({
-        prompt: request.prompt,
-        systemPrompt: request.systemPrompt,
-        responseLength: request.responseLength,
-        jsonSchema: request.jsonSchema,
-    });
+    const thinking = stage('Envisioning the location\u2026');
+    let answer = null;
+    let failure = null;
+    try {
+        const reply = await generateRaw({
+            prompt: request.prompt,
+            systemPrompt: request.systemPrompt,
+            responseLength: request.responseLength,
+            jsonSchema: request.jsonSchema,
+        });
 
-    if (my !== chainSeq) return { status: 'superseded' };
+        if (my !== chainSeq) return { status: 'superseded' };
 
-    let answer = reply.ok ? parseWatcherReply(reply.text) : null;
-    if (!answer) {
-        // The watcher failed. Mode ON still knows the place from the tags and
-        // draws from the template; mode OFF has nothing to fall back on.
-        if (!place) return { status: 'error', error: reply.error || 'The watcher call failed.' };
-        answer = { state: 'new', knownId: null, place, prompt: fallbackLocationPrompt(currentScene()) };
+        answer = reply.ok ? parseWatcherReply(reply.text) : null;
+        if (!answer) {
+            // The watcher failed. Mode ON still knows the place from the tags
+            // and draws from the template; mode OFF has nothing to fall back on.
+            if (!place) {
+                failure = reply.error || 'The watcher call failed.';
+            } else {
+                answer = { state: 'new', knownId: null, place, prompt: fallbackLocationPrompt(currentScene()) };
+            }
+        }
+
+        if (force && answer && answer.state !== 'new') {
+            answer = {
+                state: 'new',
+                knownId: null,
+                place: answer.place || place,
+                prompt: answer.prompt || fallbackLocationPrompt(currentScene()),
+            };
+        }
+    } finally {
+        thinking();
     }
 
-    if (force && answer.state !== 'new') {
-        answer = {
-            state: 'new',
-            knownId: null,
-            place: answer.place || place,
-            prompt: answer.prompt || fallbackLocationPrompt(currentScene()),
-        };
-    }
+    if (failure) return { status: 'error', error: failure };
 
     console.debug(`${LOG} watcher answered`, answer);
 
@@ -217,6 +254,7 @@ async function runWatcherChain({ store, place, force }) {
         if (record) {
             saveChatMetadata();
             const done = await applyRecord(store, target || record.place, record);
+            if (done) globalThis.toastr?.success?.(`Background set: ${record.place}`);
             return done
                 ? { status: 'cached', record }
                 : { status: 'error', error: 'The background could not be set.' };
@@ -243,13 +281,19 @@ async function generateBackground({ store, place, description, force, my, signal
 
     console.debug(`${LOG} drawing`, { place, prompt });
 
-    const result = await imagine({
-        prompt,
-        negative: bgNegative,
-        width: size?.width,
-        height: size?.height,
-        signal,
-    });
+    const painting = stage(place ? `Painting ${place}\u2026` : 'Painting the location\u2026');
+    let result;
+    try {
+        result = await imagine({
+            prompt,
+            negative: bgNegative,
+            width: size?.width,
+            height: size?.height,
+            signal,
+        });
+    } finally {
+        painting();
+    }
 
     if (!result.ok) return { status: result.aborted ? 'cancelled' : 'error', error: result.error };
     if (my !== chainSeq) return { status: 'superseded' };
@@ -266,6 +310,7 @@ async function generateBackground({ store, place, description, force, my, signal
     await forceSetBackground(result.path);
     saveChatMetadata();
     console.debug(`${LOG} background set`, { place, path: result.path });
+    globalThis.toastr?.success?.(place ? `Background set: ${place}` : 'Background set');
 
     return { status: 'generated', record };
 }

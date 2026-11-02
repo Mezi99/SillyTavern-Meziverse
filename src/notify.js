@@ -29,14 +29,19 @@ function ensureStack() {
 }
 
 /**
- * Shows a notice: it drops in from above, lingers, then fades.
+ * Shows a notice: it drops in from above, lingers, then fades. With
+ * `options.sticky` it stays until its returned handle dismisses it - for
+ * stages a long job passes through, where a fading notice would lie about
+ * the work being done.
  *
  * @param {string} text the message, plain text
  * @param {('success'|'info'|'warning'|'error')} [kind] the accent it carries
+ * @param {{sticky?:boolean}} [options]
+ * @returns {{dismiss:() => void}|null}
  */
-export function notify(text, kind = 'info') {
+export function notify(text, kind = 'info', options = {}) {
     const host = ensureStack();
-    if (!host) return;
+    if (!host) return null;
 
     const note = document.createElement('div');
     note.className = `mz-toast is-${KINDS.has(kind) ? kind : 'info'}`;
@@ -58,12 +63,16 @@ export function notify(text, kind = 'info') {
         setTimeout(() => note.remove(), 350);
     };
 
-    timer += 1;
-    const seat = timer;
-    setTimeout(() => {
-        // many at once would march down; they hold their seats
-        if (note.isConnected) dismiss();
-    }, LINGER + seat * 0);
+    if (!options.sticky) {
+        timer += 1;
+        const seat = timer;
+        setTimeout(() => {
+            // many at once would march down; they hold their seats
+            if (note.isConnected) dismiss();
+        }, LINGER + seat * 0);
+    }
+
+    return { dismiss };
 }
 
 /**
@@ -82,13 +91,15 @@ export function interceptToastr() {
         if (typeof toastr[name] !== 'function') continue;
 
         saved.set(name, toastr[name]);
-        toastr[name] = (message => {
+        toastr[name] = ((message, _title, overrides) => {
             // toastr is called with (message, title, overrides); the message
             // is what matters, and it may arrive as a jQuery-ish object.
             const text = typeof message === 'string'
                 ? message
                 : (message && String(message)) || '';
-            notify(text, name);
+            // timeOut: 0 is toastr's own "stay until cleared" - our sticky.
+            const note = notify(text, name, { sticky: overrides?.timeOut === 0 });
+            return note ? { dismiss: () => note.dismiss() } : { dismiss() {} };
         });
     }
 

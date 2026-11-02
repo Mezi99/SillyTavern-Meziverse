@@ -8,7 +8,8 @@
 
 import { chatMessages, currentChatId, imageGenerationStatus, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer } from './st.js';
 import { settings, saveSettings, modeOn, bgAutoOn } from './settings.js';
-import { syncBackgrounds } from './bgchain.js';
+import { syncBackgrounds, getLastWatcherRequest } from './bgchain.js';
+import { DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_OFF } from './backgrounds.js';
 import { injectSprite } from './icons.js';
 import { createTranscript } from './transcript.js';
 import { mountCast, refreshCastSizing, renderCast, renderThoughts, renderTells, clearCascade } from './cast.js';
@@ -294,6 +295,21 @@ const FRAME_HTML = `
                 <span class="mz-set-label"><b>Negative</b><small>What the image must not contain.</small></span>
                 <input class="mz-select" data-mz="bg-negative" aria-label="Background negative prompt">
             </div>
+            <div class="mz-set-row mz-set-row--prompt">
+                <span class="mz-set-label"><b>Watcher prompt \u00b7 ON</b><small>What the watcher is asked where scene tags mark the places. The answer format is appended for you.</small></span>
+                <textarea class="mz-textarea" rows="8" data-mz="bg-prompt-on" aria-label="Watcher prompt, mode ON"></textarea>
+                <button class="mz-btn-ghost" type="button" data-mz-action="bg-prompt-on-reset">Restore default</button>
+            </div>
+            <div class="mz-set-row mz-set-row--prompt">
+                <span class="mz-set-label"><b>Watcher prompt \u00b7 OFF</b><small>The plain-prose hand, for presets without scene tags.</small></span>
+                <textarea class="mz-textarea" rows="8" data-mz="bg-prompt-off" aria-label="Watcher prompt, mode OFF"></textarea>
+                <button class="mz-btn-ghost" type="button" data-mz-action="bg-prompt-off-reset">Restore default</button>
+            </div>
+            <div class="mz-set-row mz-set-row--prompt">
+                <span class="mz-set-label"><b>Last request</b><small>Exactly what the watcher was last asked, footers included.</small></span>
+                <button class="mz-btn-ghost" type="button" data-mz-action="bg-show-request">Show last request</button>
+                <pre class="mz-bg-request" data-mz="bg-request" hidden></pre>
+            </div>
             <div class="mz-set-row">
                 <span class="mz-set-label"><b>Try it</b><small>Draws a fresh background for the place the story is at now.</small></span>
                 <button class="mz-btn-ghost" type="button" data-mz-action="bg-test">Draw one now</button>
@@ -395,6 +411,9 @@ export function mount() {
         bgCtxValue: root.querySelector('[data-mz="bg-ctx-value"]'),
         bgStyle: root.querySelector('[data-mz="bg-style"]'),
         bgNegative: root.querySelector('[data-mz="bg-negative"]'),
+        bgPromptOn: root.querySelector('[data-mz="bg-prompt-on"]'),
+        bgPromptOff: root.querySelector('[data-mz="bg-prompt-off"]'),
+        bgRequest: root.querySelector('[data-mz="bg-request"]'),
         sceneCluster: root.querySelector('.mz-chatbar-left'),
         date: root.querySelector('[data-mz="date"]'),
         time: root.querySelector('[data-mz="time"]'),
@@ -639,6 +658,8 @@ function applyBgControls() {
     if (els.bgCtxValue) els.bgCtxValue.textContent = String(Math.max(1, Number(settings().bgContextReplies) || 2));
     if (els.bgStyle) els.bgStyle.value = settings().bgStyle ?? '';
     if (els.bgNegative) els.bgNegative.value = settings().bgNegative ?? '';
+    if (els.bgPromptOn) els.bgPromptOn.value = settings().bgPromptOn ?? DEFAULT_BG_PROMPT_ON;
+    if (els.bgPromptOff) els.bgPromptOff.value = settings().bgPromptOff ?? DEFAULT_BG_PROMPT_OFF;
 
     root.querySelectorAll('[data-mz-pick-bgsize]').forEach(button => {
         const isOn = button.dataset.mzPickBgsize === (settings().bgSize === 'st' ? 'st' : 'landscape');
@@ -848,7 +869,16 @@ function applyCueMeanwhile() {
     });
 }
 
-function applyBackground() {
+/**
+ * Mirrors the background SillyTavern has right now into the scene's backdrop.
+ *
+ * `forcedUrl` is the CSS url() from a FORCE_SET_BACKGROUND event, and taking
+ * it from the payload matters: listeners run in registration order, and ours
+ * may fire before SillyTavern's own handler has painted #bg1 - probing the
+ * DOM at that moment would copy the previous background into the scene. On
+ * the probe paths (opening the scene, chat changes) #bg1 is settled and safe.
+ */
+function applyBackground(forcedUrl) {
     const useSt = settings().background === 'st';
     frame.classList.toggle('is-bg-st', useSt);
     root.querySelectorAll('[data-mz-pick-bg]').forEach(button => {
@@ -862,9 +892,12 @@ function applyBackground() {
         return;
     }
 
-    const source = document.getElementById('bg1');
-    let image = source ? getComputedStyle(source).backgroundImage : '';
-    if (!image || image === 'none') image = getComputedStyle(document.body).backgroundImage;
+    let image = typeof forcedUrl === 'string' && forcedUrl.includes('url(') ? forcedUrl : '';
+    if (!image) {
+        const source = document.getElementById('bg1');
+        image = source ? getComputedStyle(source).backgroundImage : '';
+        if (!image || image === 'none') image = getComputedStyle(document.body).backgroundImage;
+    }
 
     if (image && image !== 'none' && image.includes('url(')) {
         frame.style.setProperty('--mz-st-bg', image);
@@ -1624,6 +1657,25 @@ function wireActions() {
             case 'bg-test':
                 drawBackgroundNow();
                 break;
+            case 'bg-prompt-on-reset':
+                settings().bgPromptOn = DEFAULT_BG_PROMPT_ON;
+                applyBgControls();
+                saveSettings();
+                break;
+            case 'bg-prompt-off-reset':
+                settings().bgPromptOff = DEFAULT_BG_PROMPT_OFF;
+                applyBgControls();
+                saveSettings();
+                break;
+            case 'bg-show-request':
+                if (els.bgRequest) {
+                    const request = getLastWatcherRequest();
+                    els.bgRequest.textContent = request
+                        ? `${request.systemPrompt}\n\n\u2014\u2014 sent as \u2014\u2014\n\n${request.prompt}`
+                        : 'Nothing has been asked yet in this session.';
+                    els.bgRequest.hidden = !els.bgRequest.hidden;
+                }
+                break;
             case 'reset-pane':
                 applyPaneHeight(PANE_DEFAULT, true);
                 break;
@@ -1666,6 +1718,16 @@ function wireActions() {
 
     els.bgNegative?.addEventListener('change', () => {
         settings().bgNegative = els.bgNegative.value.trim();
+        saveSettings();
+    });
+
+    els.bgPromptOn?.addEventListener('input', () => {
+        settings().bgPromptOn = els.bgPromptOn.value;
+        saveSettings();
+    });
+
+    els.bgPromptOff?.addEventListener('input', () => {
+        settings().bgPromptOff = els.bgPromptOff.value;
         saveSettings();
     });
 
@@ -1759,8 +1821,12 @@ function wireEvents() {
     on('CHAT_RENAMED', () => {
         if (isOpen()) refresh();
     });
-    on('FORCE_SET_BACKGROUND', () => {
-        if (isOpen()) applyBackground();
+    on('FORCE_SET_BACKGROUND', info => {
+        if (!isOpen()) return;
+        applyBackground(info?.url);
+        // Insurance for listener order: one deferred re-read settles the
+        // scene on whatever #bg1 holds once every handler has run.
+        setTimeout(() => applyBackground(), 0);
     });
 
     // Dry runs (another extension assembling its prompt) never reach the chat:

@@ -337,27 +337,50 @@ export const WATCHER_SCHEMA = Object.freeze({
     additionalProperties: false,
 });
 
-const WATCHER_RULES = `You are a background-art assistant for a visual-novel style roleplay. You receive the CURRENT BACKGROUND (the place name and image description shown now), a list of KNOWN BACKGROUNDS, a RECENT PLACES timeline, and the LATEST STORY text (grouped by scene blocks when available; the LAST block is where the story is now).
+/**
+ * The creative core of the watcher's question, one per mode. These are the
+ * parts meant to be tuned: the settings sheet edits copies of them, and the
+ * answer format below is appended by code so parsing survives any edit.
+ *
+ * Mode ON sees the story grouped by scene blocks and leans on that structure;
+ * mode OFF gets plain prose, where the location may change inside a single
+ * paragraph or hold for many messages.
+ */
+export const DEFAULT_BG_PROMPT_ON = `You are a background-art assistant for a visual-novel style roleplay. You receive the CURRENT BACKGROUND (the place name and image description shown now), a list of KNOWN BACKGROUNDS, a RECENT PLACES timeline, and the LATEST STORY grouped by scene blocks - each block's header names the place, time and weather its narration happens in. The LAST block is where the story is now.
 
-Task 1 - VERIFY: decide whether the place at the end of the LATEST STORY is the same place as the CURRENT BACKGROUND. Place names are free text written by another model: "Pier No9", "Pier 9" and "the ninth pier" may all be the same place. Judge by meaning, not by spelling. If the place is the same, answer "same".
+VERIFY first: is the place at the end of the LATEST STORY the same place as the CURRENT BACKGROUND? Place names are free text written by another model: "Pier No9", "Pier 9" and "the ninth pier" may all be the same place. Judge by meaning, not by spelling. If it is the same place, answer state "same".
 
-Task 2 - MATCH: if the place is genuinely different from the CURRENT BACKGROUND but clearly equals one of the KNOWN BACKGROUNDS, answer "known" with that background's id.
+If the place is genuinely different but clearly equals one of the KNOWN BACKGROUNDS, answer state "known" with that background's id.
 
-Task 3 - DESCRIBE: if the place is genuinely new (or the current background no longer fits it), answer "new" and write an image-generation prompt describing ONLY that place as an establishing shot for a visual-novel background. Describe what a camera would see: the space, architecture, objects, materials, weather, time of day, lighting, mood, and a clear vantage point. Rules: 40 to 90 words of comma-separated visual phrases; the place is the subject - no characters, no people, no silhouettes, no names, no actions, no emotions, no sounds; anchor lighting and sky on the story's time of day and weather when stated; never mention "background", styles, quality tags or prompts; write only the description.
+Otherwise answer state "new" and write an image prompt that describes ONLY the current place as an establishing shot for a visual-novel background. You write prompts for a text-to-image model: describe what a camera would see at that place - the space, architecture, objects, materials, weather, time of day, lighting, mood, and a clear vantage point. Rules: 40 to 90 words of comma-separated visual phrases; the place is the subject - no characters, no people, no silhouettes, no names, no actions, no emotions, no sounds; anchor lighting and sky on the block's time of day and weather when stated; never mention "background", styles, quality tags or anything about prompts. Output only the description in "prompt".`;
 
-Answer with one JSON object and nothing else:
+export const DEFAULT_BG_PROMPT_OFF = `You are a background-art assistant for a visual-novel style roleplay. You receive the CURRENT BACKGROUND (the place name and image description shown now), a list of KNOWN BACKGROUNDS, a RECENT PLACES timeline, and the LATEST STORY as plain story text. There are no scene markers here: the location may change abruptly inside a paragraph or stay put for many messages. Read the whole excerpt for where the characters are at its END.
+
+VERIFY first: is the place at the end of the LATEST STORY the same place as the CURRENT BACKGROUND? Place names are free text written by another model: "Pier No9", "Pier 9" and "the ninth pier" may all be the same place. Judge by meaning, not by spelling. If it is the same place, answer state "same".
+
+If the place is genuinely different but clearly equals one of the KNOWN BACKGROUNDS, answer state "known" with that background's id.
+
+Otherwise answer state "new" and write an image prompt that describes ONLY the current place as an establishing shot for a visual-novel background. You write prompts for a text-to-image model: describe what a camera would see at that place - the space, architecture, objects, materials, weather, time of day, lighting, mood, and a clear vantage point. Rules: 40 to 90 words of comma-separated visual phrases; the place is the subject - no characters, no people, no silhouettes, no names, no actions, no emotions, no sounds; anchor lighting and sky on the story's time of day and weather when stated; never mention "background", styles, quality tags or anything about prompts. Output only the description in "prompt".`;
+
+const WATCHER_FORMAT = `Answer with one JSON object and nothing else:
 {"state":"same|known|new","knownId":null,"place":"short name of the current place","prompt":"image prompt or empty"}`;
 
+const WATCHER_FORCE = 'The user asked for a fresh image of the place the story is at now: answer "new" with a fresh description even when the place matches a known background.';
+
 /**
- * The watcher's system prompt. With `force` (the brush button) it must draw
- * something even when nothing changed, so matching is switched off.
+ * The watcher's system prompt: the editable core for the mode (or the
+ * default core when none is set), with the answer format always appended.
+ * With `force` (the brush button) it must draw something even when nothing
+ * changed, so matching is switched off.
  *
- * @param {{force?:boolean}} [options]
+ * @param {{mode?:boolean, force?:boolean, core?:string}} [options]
  * @returns {string}
  */
-export function watcherSystemPrompt({ force = false } = {}) {
-    if (!force) return WATCHER_RULES;
-    return `${WATCHER_RULES}\n\nThe user asked for a fresh image of the place the story is at now: answer "new" with a fresh description even when the place matches a known background.`;
+export function watcherSystemPrompt({ mode = true, force = false, core = '' } = {}) {
+    const base = String(core ?? '').trim() || (mode ? DEFAULT_BG_PROMPT_ON : DEFAULT_BG_PROMPT_OFF);
+    return force
+        ? `${base}\n\n${WATCHER_FORMAT}\n\n${WATCHER_FORCE}`
+        : `${base}\n\n${WATCHER_FORMAT}`;
 }
 
 /**
@@ -479,10 +502,10 @@ export function formatLatestStory(messages, { mode = true, count = 2, at, person
  * The watcher's whole question: what is on screen, what this chat already has,
  * where the story has been, and the latest story itself.
  *
- * @param {{store:object, messages:Array, mode?:boolean, count?:number, at?:number, persona?:string, force?:boolean}} options
+ * @param {{store:object, messages:Array, mode?:boolean, count?:number, at?:number, persona?:string, force?:boolean, systemCore?:string}} options
  * @returns {{systemPrompt:string, prompt:string, responseLength:number, jsonSchema:object}}
  */
-export function buildWatcherRequest({ store, messages, mode = true, count = 2, at, persona = '', force = false } = {}) {
+export function buildWatcherRequest({ store, messages, mode = true, count = 2, at, persona = '', force = false, systemCore = '' } = {}) {
     const blocks = [];
 
     const current = currentRecord(store);
@@ -501,9 +524,9 @@ export function buildWatcherRequest({ store, messages, mode = true, count = 2, a
     blocks.push(`LATEST STORY\n${formatLatestStory(messages, { mode, count, at, persona }) || 'empty'}`);
 
     return {
-        systemPrompt: watcherSystemPrompt({ force }),
+        systemPrompt: watcherSystemPrompt({ mode, force, core: systemCore }),
         prompt: blocks.join('\n\n'),
-        responseLength: 400,
+        responseLength: 600,
         jsonSchema: WATCHER_SCHEMA,
     };
 }

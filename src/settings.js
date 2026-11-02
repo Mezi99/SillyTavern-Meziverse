@@ -6,6 +6,7 @@
  */
 
 import { ctx } from './st.js';
+import { DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_OFF } from './backgrounds.js';
 
 const DEFAULTS = {
     // Meziverse mode: the master switch every feature sits under. Phase 5
@@ -28,6 +29,10 @@ const DEFAULTS = {
     bgStyle: 'anime style, visual novel background art, detailed environment, cinematic lighting',
     bgNegative: 'people, characters, crowd, portrait, text, watermark, logo, signature, blurry, low quality',
     bgSize: 'landscape',
+    // The watcher prompts the user tunes: the scene-tagged hand (mode ON) and
+    // the plain-prose hand (mode OFF). The answer format is appended by code.
+    bgPromptOn: DEFAULT_BG_PROMPT_ON,
+    bgPromptOff: DEFAULT_BG_PROMPT_OFF,
     reducedMotion: false,
     // How the inline cue popovers open: on hover and tap, or tap only.
     cuePopovers: 'both',
