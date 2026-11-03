@@ -6,7 +6,7 @@
  * own: it hands the context over and lets the caller decide.
  */
 
-import { normalizeStore, toCssBgUrl } from './backgrounds.js';
+import { normalizeStore, setStamp, toCssBgUrl } from './backgrounds.js';
 
 /**
  * SillyTavern's own context object, or null while the app is still loading.
@@ -577,6 +577,27 @@ export async function branchChat(mesId) {
 }
 
 /* ---------- location backgrounds ---------- */
+
+/**
+ * Stamps one reply's variant with the background record in effect for it.
+ * The write goes through the message object SillyTavern will serialise -
+ * `extra.meziverse.bg`, mirrored into the variant's own `swipe_info` slot -
+ * so it rides the message through swipes, deletions and branches untouched.
+ * Persisting is the chain's business: one `saveChatMetadata()` per landing
+ * covers the stamp and any store change together.
+ *
+ * @param {number} index the message to stamp
+ * @param {number} swipeId the variant of it the chain resolved
+ * @param {string} recordId
+ * @returns {boolean} whether the reply carries that stamp now
+ */
+export function stampMessageBg(index, swipeId, recordId) {
+    const message = chatMessages()[Number(index)];
+    if (!message || typeof message !== 'object') return false;
+
+    setStamp(message, Number(swipeId) || 0, recordId);
+    return true;
+}
 
 /**
  * The open chat's background store, normalized and live.

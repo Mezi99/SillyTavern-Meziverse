@@ -8,7 +8,12 @@
 
 import { chatMessages, currentChatId, errorText, imageGenerationStatus, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer } from './st.js';
 import { settings, saveSettings, modeOn, bgAutoOn } from './settings.js';
-import { syncBackgrounds, getLastWatcherRequest } from './bgchain.js';
+import {
+    forceBackground,
+    getLastWatcherRequest,
+    setShownTurn,
+    syncShownBackground,
+} from './bgchain.js';
 import { DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_OFF } from './backgrounds.js';
 import { injectSprite } from './icons.js';
 import { createTranscript } from './transcript.js';
@@ -498,6 +503,7 @@ export function mount() {
         swipeNext: els.swipeNext,
         swipeCount: els.swipeCount,
         onShown: ({ entry, scene }) => {
+            setShownTurn(entry?.index ?? null);
             applyScene(scene);
             applyLedger(entry);
             applyTells(entry);
@@ -589,6 +595,10 @@ export function open() {
 export function close() {
     if (!isOpen()) return;
 
+    // The chain follows the chat's end again: the shown turn only governs
+    // while the scene is showing one.
+    setShownTurn(null);
+
     if (frame.contains(document.activeElement)) document.activeElement.blur();
 
     leaveFullscreen();
@@ -679,8 +689,9 @@ function applyBrush() {
 
 /**
  * The brush and the settings test button: one fresh background for the place
- * the story is at now, whatever the watcher thinks of it. Silent when it
- * works - the background changing is the notice - and honest when it cannot.
+ * the shown turn carries, whatever the watcher thinks of it - and the reply
+ * keeps it, replacing the picture it had. Silent when it works - the
+ * background changing is the notice - and honest when it cannot.
  */
 async function drawBackgroundNow() {
     if (els.bgBrushButton?.classList.contains('is-busy')) return;
@@ -694,7 +705,7 @@ async function drawBackgroundNow() {
 
     els.bgBrushButton?.classList.add('is-busy');
     try {
-        const result = await syncBackgrounds({ force: true });
+        const result = await forceBackground();
         if (result.status === 'error' || result.status === 'unavailable') {
             globalThis.toastr?.error?.(result.error || 'The background could not be drawn.');
         }
@@ -705,15 +716,16 @@ async function drawBackgroundNow() {
     }
 }
 
-/* Scrolling into another place brings that place's picture back - from the
-   cache only; nothing is drawn or asked while reading. Debounced, so a fast
-   scroll through many turns settles on the last one. */
+/* Scrolling into another turn brings that turn's own picture back - from the
+   history the replies carry, swap-only; nothing is drawn or asked while
+   reading. Debounced, so a fast scroll through many turns settles on the
+   last one. */
 let bgSwapTimer = null;
 
 function queueBackgroundSwap() {
     clearTimeout(bgSwapTimer);
     bgSwapTimer = setTimeout(() => {
-        syncBackgrounds({ generate: false }).catch?.(error => {
+        syncShownBackground().catch?.(error => {
             console.warn('[Meziverse] bg swap failed', error);
         });
     }, 200);

@@ -1,11 +1,12 @@
 /**
- * Location backgrounds: the per-chat place cache, and the pure decisions the
- * background chain makes with it.
+ * Location backgrounds: the per-chat place cache, the per-response stamps over
+ * it, and the pure decisions the background chain makes with both.
  *
  * Pure like scene.js - the store is a plain object that lives in
- * `chatMetadata.meziverse.bg` (SillyTavern persists it for us), and nothing
- * here touches the DOM, the network, or SillyTavern itself. On top of this
- * layer the runtime chain adds three things: the watcher LLM call that
+ * `chatMetadata.meziverse.bg` (SillyTavern persists it for us), stamps ride
+ * the messages themselves (`extra.meziverse.bg`, mirrored per swipe), and
+ * nothing here touches the DOM, the network, or SillyTavern itself. On top of
+ * this layer the runtime chain adds three things: the watcher LLM call that
  * verifies whether the place actually changed and writes image prompts, image
  * generation through SillyTavern's Image Generation, and setting the result as
  * the chat background.
@@ -283,25 +284,161 @@ export function knownBackgroundsList(store, { limit = 12 } = {}) {
     }));
 }
 
+/* ---------- per-response stamps ---------- */
+
 /**
- * What the chain should do about the place the story is at now: nothing (it is
- * already on screen), apply a cached image (the place was seen before), or ask
- * the watcher (a genuinely new place - or a spelling drift only the LLM can
- * recognise, which it answers with `aliasLocation` instead).
+ * The background one message variant carries: the record id stamped on it, or
+ * null. The active variant reads from `message.extra` (the mirror SillyTavern
+ * keeps in step around swipes); any variant can be read from its `swipe_info`
+ * slot. Stamps are record ids, never image paths - a place has one canonical
+ * record, and the brush replaces that record's image everywhere it appears.
+ *
+ * @param {object} message
+ * @param {number|null} [swipeId] the variant to read; the active one by default
+ * @returns {string|null}
+ */
+export function stampOf(message, swipeId = null) {
+    if (!message || typeof message !== 'object') return null;
+
+    const slot = swipeId === null || swipeId === undefined
+        ? null
+        : message.swipe_info?.[Number(swipeId)];
+
+    const fromSlot = slot?.extra?.meziverse?.bg;
+    if (typeof fromSlot === 'string' && fromSlot.trim()) return fromSlot.trim();
+
+    const fromExtra = message.extra?.meziverse?.bg;
+    return typeof fromExtra === 'string' && fromExtra.trim() ? fromExtra.trim() : null;
+}
+
+/**
+ * Writes a stamp onto one message variant. Pure mutation of a plain message:
+ * the `swipe_info` slot is the variant's own home, and `message.extra` - the
+ * live mirror of whatever variant is active - is only touched while that
+ * variant IS the active one, so a chain landing mid-swipe can never write its
+ * result onto the wrong variant.
+ *
+ * @param {object} message
+ * @param {number} swipeId the variant being stamped
+ * @param {string} recordId
+ * @returns {boolean} whether anything changed
+ */
+export function setStamp(message, swipeId, recordId) {
+    const id = String(recordId ?? '').trim();
+    if (!message || typeof message !== 'object' || !id) return false;
+
+    const slot = message.swipe_info?.[Number(swipeId)];
+    let changed = false;
+
+    if (slot && typeof slot === 'object') {
+        if (!slot.extra || typeof slot.extra !== 'object') slot.extra = {};
+        if (!slot.extra.meziverse || typeof slot.extra.meziverse !== 'object') slot.extra.meziverse = {};
+        if (slot.extra.meziverse.bg !== id) {
+            slot.extra.meziverse.bg = id;
+            changed = true;
+        }
+    }
+
+    const active = !Array.isArray(message.swipes) || message.swipes.length === 0
+        || Number(message.swipe_id ?? 0) === Number(swipeId);
+    if (active) {
+        if (!message.extra || typeof message.extra !== 'object') message.extra = {};
+        if (!message.extra.meziverse || typeof message.extra.meziverse !== 'object') message.extra.meziverse = {};
+        if (message.extra.meziverse.bg !== id) {
+            message.extra.meziverse.bg = id;
+            changed = true;
+        }
+    }
+
+    return changed;
+}
+
+/**
+ * The background in effect at one point in the chat: the message's own stamp
+ * (its active variant, then the nearest stamped variant - a swipe taken from
+ * another variant keeps that variant's picture), then the nearest stamp at or
+ * before it, walking back. User turns and gaps inherit the previous reply's
+ * image exactly that way - nothing is written on them.
+ *
+ * @param {Array} messages
+ * @param {number} index the message being asked about
+ * @returns {{id:string, index:number}|null} the stamp and the message that owns it
+ */
+export function resolveStampId(messages, index) {
+    const list = Array.isArray(messages) ? messages : [];
+    const at = Number.isInteger(index) ? Math.min(index, list.length - 1) : list.length - 1;
+
+    const message = list[at];
+    if (message) {
+        const active = Number(message.swipe_id ?? 0);
+        const own = stampOf(message, active);
+        if (own) return { id: own, index: at };
+
+        if (Array.isArray(message.swipe_info) && message.swipe_info.length > 1) {
+            const order = message.swipe_info
+                .map((_, i) => i)
+                .filter(i => i !== active)
+                .sort((a, b) => Math.abs(a - active) - Math.abs(b - active) || a - b);
+            for (const i of order) {
+                const id = stampOf(message, i);
+                if (id) return { id, index: at };
+            }
+        }
+    }
+
+    for (let i = at - 1; i >= 0; i -= 1) {
+        const id = stampOf(list[i]);
+        if (id) return { id, index: i };
+    }
+
+    return null;
+}
+
+/**
+ * The record one point in the chat shows, per `resolveStampId` - or null when
+ * this chat carries no history yet.
+ *
+ * @param {object} store
+ * @param {Array} messages
+ * @param {number} index
+ * @returns {object|null}
+ */
+export function resolveStampRecord(store, messages, index) {
+    const hit = resolveStampId(messages, index);
+    return (hit && store?.records?.[hit.id]) || null;
+}
+
+/**
+ * What the chain should do about one reply's place: nothing (the reply keeps
+ * the picture it carried), apply a cached image (the place was seen before),
+ * or ask the watcher (a genuinely new place - or a spelling drift only the
+ * LLM can recognise, which it answers with `aliasLocation` instead).
+ *
+ * `baseline` is the record in effect before the reply being resolved - its
+ * own stamp when re-resolving, the story's carried picture otherwise. Given
+ * no baseline the on-screen record stands in, which is the same thing for the
+ * ordinary end-of-chat flow.
  *
  * @param {object} store
  * @param {string} key the resolved location, e.g. scene placeFull
+ * @param {{baseline?:object|null}} [options]
  * @returns {{action:'none'|'apply'|'watch', record:object|null}}
  */
-export function decide(store, key) {
+export function decide(store, key, { baseline } = {}) {
     const ensured = normalizeStore(store);
     const normKey = locationKey(key);
 
     if (!normKey) return { action: 'none', record: null };
-    if (normKey === ensured.currentKey) return { action: 'none', record: currentRecord(ensured) };
+
+    const prior = baseline !== undefined ? baseline : currentRecord(ensured);
 
     const record = lookupRecord(ensured, normKey);
-    if (record) return { action: 'apply', record };
+    if (record) {
+        if (prior && record.id === prior.id) return { action: 'none', record: prior };
+        return { action: 'apply', record };
+    }
+
+    if (prior && normKey === locationKey(prior.place)) return { action: 'none', record: prior };
 
     return { action: 'watch', record: null };
 }
@@ -499,17 +636,19 @@ export function formatLatestStory(messages, { mode = true, count = 2, at, person
 }
 
 /**
- * The watcher's whole question: what is on screen, what this chat already has,
- * where the story has been, and the latest story itself.
+ * The watcher's whole question: what the reply carried in, what this chat
+ * already has, where the story has been, and the story up to the reply being
+ * resolved. Everything is scoped to `at` - a run that lands late still asks
+ * about its own reply, not the chat's end.
  *
- * @param {{store:object, messages:Array, mode?:boolean, count?:number, at?:number, persona?:string, force?:boolean, systemCore?:string}} options
+ * @param {{store:object, messages:Array, mode?:boolean, count?:number, at?:number, persona?:string, force?:boolean, systemCore?:string, current?:object|null}} options
  * @returns {{systemPrompt:string, prompt:string, responseLength:number, jsonSchema:object}}
  */
-export function buildWatcherRequest({ store, messages, mode = true, count = 2, at, persona = '', force = false, systemCore = '' } = {}) {
+export function buildWatcherRequest({ store, messages, mode = true, count = 2, at, persona = '', force = false, systemCore = '', current } = {}) {
     const blocks = [];
 
-    const current = currentRecord(store);
-    blocks.push(`CURRENT BACKGROUND\n${current ? `${current.place}\n${current.prompt}` : 'none yet'}`);
+    const shown = current !== undefined ? current : currentRecord(store);
+    blocks.push(`CURRENT BACKGROUND\n${shown ? `${shown.place}\n${shown.prompt}` : 'none yet'}`);
 
     const known = knownBackgroundsList(store, { limit: 12 });
     blocks.push(`KNOWN BACKGROUNDS\n${known.length

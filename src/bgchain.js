@@ -1,31 +1,35 @@
 /**
- * The chain that keeps the chat background in step with the story's place.
+ * The chain that ties each reply to the background its story deserves.
  *
- * One entry - `syncBackgrounds` - answers a single question: does the image on
- * screen still fit where the story is now? It pays for a new image only when
- * the answer is no: the scene tags name a different place (mode ON), the
- * user's every-N-replies pace is due (mode OFF), or the brush button demands
- * a fresh picture outright.
+ * One entry - `requestBackground` - resolves ONE reply (a message and the
+ * swipe variant of it): does the picture it carries still fit where its story
+ * is? It pays for a new image only when the answer is no: the tags name a
+ * different place (mode ON), the user's every-N-replies pace is due (mode
+ * OFF), or the brush button demands a fresh picture outright. The result is
+ * stamped on the reply itself (`extra.meziverse.bg`), so scrolling back
+ * through the chat brings each reply's own picture back, and a run that lands
+ * late still resolves - and stamps - its own reply, never the chat's end.
  *
- * The pure parts (deciding, asking, parsing) live in backgrounds.js and the
- * SillyTavern calls in st.js; this file is the choreography between them.
- * Silent on success by design - nothing is toasted or asked, prompts go to the
- * console for debugging, and failures come back as statuses the UI may show.
- * One job at a time: a newer request supersedes the one before it.
+ * The pure parts (stamps, deciding, asking, parsing) live in backgrounds.js
+ * and the SillyTavern calls in st.js; this file is the choreography between
+ * them. Jobs run one at a time in order, a newer job for the same reply
+ * replaces the older one, and a chat change cancels everything. Failures come
+ * back as statuses the UI may show; success is quiet apart from the stage
+ * notices.
  */
 
 import {
     aliasLocation,
     buildWatcherRequest,
     compileBgPrompt,
-    currentRecord,
     decide,
     fallbackLocationPrompt,
-    locationKey,
-    normalizeStore,
     parseWatcherReply,
     recoverCurrentKey,
     resolveRecordId,
+    resolveStampId,
+    resolveStampRecord,
+    stampOf,
     storeRecord,
     LANDSCAPE_SIZE,
 } from './backgrounds.js';
@@ -34,6 +38,7 @@ import {
     chatMessages,
     customBackground,
     currentChatId,
+    errorText,
     forceSetBackground,
     generateRaw,
     imagine,
@@ -41,6 +46,7 @@ import {
     on,
     personaName,
     saveChatMetadata,
+    stampMessageBg,
 } from './st.js';
 import { bgAutoOn, modeOn, settings } from './settings.js';
 import { resolveScene } from './scene.js';
@@ -49,7 +55,10 @@ const LOG = '[Meziverse] bg';
 
 let chainSeq = 0;
 let chainAbort = null;
+let running = null;
+let queue = [];
 let repliesSinceWatch = 0;
+let shownIndex = null;
 let lastRequest = null;
 
 /**
@@ -58,6 +67,22 @@ let lastRequest = null;
  */
 export function getLastWatcherRequest() {
     return lastRequest;
+}
+
+/**
+ * The turn on screen, from the transcript. Null while the scene is not
+ * showing a turn (closed, or freshly opened): the chain then follows the
+ * chat's end, because the background belongs to the chat even with no scene
+ * open.
+ */
+export function setShownTurn(index) {
+    shownIndex = Number.isInteger(index) ? index : null;
+}
+
+/** The index whose picture the screen should show right now. */
+function shownTarget() {
+    if (Number.isInteger(shownIndex)) return shownIndex;
+    return Math.max(0, chatMessages().length - 1);
 }
 
 /**
@@ -75,10 +100,11 @@ function stage(message) {
 
 /**
  * Stops whatever the chain is doing now. Anything already in flight becomes
- * stale and its result is discarded, never applied.
+ * stale and its result is discarded, never applied; queued work is dropped.
  */
 export function cancelBackgroundWork() {
     chainSeq += 1;
+    for (const job of queue.splice(0)) job.resolve({ status: 'superseded' });
     if (chainAbort) {
         chainAbort.abort();
         chainAbort = null;
@@ -91,110 +117,251 @@ export function resetBackgroundPacing() {
 }
 
 /**
- * Wires the chain to the story: every finished reply, swipe or edit runs it
- * once, and a chat change cancels whatever was in flight and re-derives the
- * current place from the background SillyTavern itself restored. The chain
- * follows the chat whether the scene is open or not - the background belongs
- * to the chat, not to the window.
+ * Wires the chain to the story: every finished reply re-resolves the reply
+ * itself, swipes resolve variants this chat has not seen, edits re-resolve the
+ * edited reply, and a chat change cancels whatever was in flight and
+ * re-derives the current picture from the background SillyTavern itself
+ * restored. The chain follows the chat whether the scene is open or not.
  */
 export function initBackgrounds() {
     on('CHAT_CHANGED', () => {
         cancelBackgroundWork();
         resetBackgroundPacing();
+        setShownTurn(null);
         recoverCurrentKey(bgStore(), customBackground());
     });
 
-    const follow = () => {
-        syncBackgrounds({ generate: true }).catch?.(error => {
+    const refreshed = () => {
+        requestBackground({ index: lastMessageIndex(), refresh: true }).catch?.(error => {
             console.warn(`${LOG} chain failed`, error);
         });
     };
 
-    on('GENERATION_ENDED', follow);
-    on('GENERATION_STOPPED', follow);
-    on('GROUP_WRAPPER_FINISHED', follow);
-    on('MESSAGE_SWIPED', follow);
-    on('MESSAGE_EDITED', follow);
+    on('GENERATION_ENDED', refreshed);
+    on('GENERATION_STOPPED', refreshed);
+    on('GROUP_WRAPPER_FINISHED', refreshed);
+
+    on('MESSAGE_EDITED', mesId => {
+        requestBackground({ index: Number(mesId), refresh: true }).catch?.(error => {
+            console.warn(`${LOG} chain failed`, error);
+        });
+    });
+
+    on('MESSAGE_SWIPED', mesId => {
+        const index = Number(mesId);
+        const message = chatMessages()[index];
+        if (!message) return;
+        // A variant this chat has already resolved keeps its own picture: the
+        // shown-turn swap brings it back. Only an unseen variant is resolved.
+        if (stampOf(message, Number(message.swipe_id ?? 0))) return;
+        requestBackground({ index }).catch?.(error => {
+            console.warn(`${LOG} chain failed`, error);
+        });
+    });
+}
+
+/** The last message's index, or -1 in an empty chat. */
+function lastMessageIndex() {
+    return chatMessages().length - 1;
 }
 
 /**
- * Runs the chain for where the story is now.
+ * The brush button: a fresh image for the place the shown turn carries -
+ * the nearest reply at or before it that owns a picture. The response keeps
+ * the new image (the place's record is redrawn in place, so the retry cleans
+ * the place up everywhere it appears).
  *
- * `generate: false` is the scroll case: a cached image may come back, but
- * nothing is ever drawn or asked. `force` is the brush: a fresh image of the
- * current place whatever the watcher thinks. Without `force` the chain only
- * moves while the `bgAuto` setting is on.
+ * @returns {Promise<{status:string, record?:object, error?:string}>}
+ */
+export async function forceBackground() {
+    const messages = chatMessages();
+    if (!currentChatId() || !messages.length) {
+        return { status: 'unavailable', error: 'Open a chat first.' };
+    }
+
+    const index = brushTargetIndex(messages);
+    const swipeId = Number(messages[index]?.swipe_id ?? 0);
+    return requestBackground({ index, swipeId, force: true });
+}
+
+/**
+ * The reply the brush redraws: the owner of the shown turn's picture, else
+ * the nearest reply at or before it, else the chat's end. User turns own no
+ * picture, so the brush never stamps one.
+ */
+function brushTargetIndex(messages) {
+    const at = Math.min(shownTarget(), messages.length - 1);
+    const hit = resolveStampId(messages, at);
+    if (hit) return hit.index;
+
+    for (let i = at; i >= 0; i -= 1) {
+        if (!messages[i]?.is_user) return i;
+    }
+    return Math.max(0, messages.length - 1);
+}
+
+/**
+ * Queues one reply's resolution and returns how it ended. Work runs one job
+ * at a time in order - an image in flight is never doubled - and a newer job
+ * for the same reply replaces the older one, since its inputs are the fresh
+ * ones. Without `force` nothing moves while the auto follow is off.
  *
- * @param {{generate?:boolean, force?:boolean}} [options]
+ * @param {{index:number, swipeId?:number, force?:boolean, refresh?:boolean}} job
  * @returns {Promise<{status:'off'|'unchanged'|'cached'|'generated'|'superseded'|'cancelled'|'unavailable'|'error', record?:object, error?:string}>}
  */
-export async function syncBackgrounds({ generate = true, force = false } = {}) {
-    if (!force && !bgAutoOn()) return { status: 'off' };
-    if (!currentChatId()) {
-        return force
-            ? { status: 'unavailable', error: 'Open a chat first.' }
-            : { status: 'unchanged' };
+function requestBackground({ index, swipeId, force = false, refresh = false }) {
+    const targetIndex = Number.isInteger(index) ? index : lastMessageIndex();
+    const fromMessage = Number(chatMessages()[targetIndex]?.swipe_id ?? 0) || 0;
+    const target = {
+        index: targetIndex,
+        swipeId: swipeId === undefined || swipeId === null ? fromMessage : (Number(swipeId) || 0),
+    };
+
+    if (!force && !bgAutoOn()) return Promise.resolve({ status: 'off' });
+
+    const wanted = (force ? 2 : 0) + (refresh ? 1 : 0);
+
+    if (running && !running.stale && running.index === target.index && running.swipeId === target.swipeId) {
+        if (strength(running) >= wanted) return running.promise;
+        // Its inputs are stale now: drop it and let the fresh job stand in
+        // line. Marked so a third request merges into the queued job instead
+        // of trusting a dying one.
+        running.stale = true;
+        cancelRunning();
     }
 
-    const store = bgStore();
-    const place = currentPlace();
-
-    if (force) return runWatcherChain({ store, place, force: true });
-
-    if (modeOn()) {
-        const step = decide(store, place);
-        if (step.action === 'none') return { status: 'unchanged' };
-
-        if (step.action === 'apply') {
-            const done = await applyRecord(store, place, step.record);
-            return done
-                ? { status: 'cached', record: step.record }
-                : { status: 'error', error: 'The background could not be set.' };
-        }
-
-        return generate
-            ? runWatcherChain({ store, place, force: false })
-            : { status: 'unchanged' };
+    const queued = queue.find(job => job.index === target.index && job.swipeId === target.swipeId);
+    if (queued) {
+        queued.force = queued.force || force;
+        queued.refresh = queued.refresh || refresh;
+        return queued.promise;
     }
 
-    // Mode OFF: no tags to compare, so the watcher is asked at the user's pace.
-    if (!generate) return { status: 'unchanged' };
-    repliesSinceWatch += 1;
-    const every = Math.max(1, Number(settings().bgEveryN) || 1);
-    if (repliesSinceWatch < every) return { status: 'unchanged' };
-    repliesSinceWatch = 0;
+    let resolve;
+    const promise = new Promise(done => { resolve = done; });
+    queue.push({ ...target, force, refresh, resolve, promise });
+    pump();
+    return promise;
+}
 
-    return runWatcherChain({ store, place: '', force: false });
+/** How strongly a job wants to run: forcing beats re-resolving beats arriving. */
+function strength(job) {
+    return (job.force ? 2 : 0) + (job.refresh ? 1 : 0);
+}
+
+/** Drops the running job: its result is stale the moment it lands. */
+function cancelRunning() {
+    chainSeq += 1;
+    if (chainAbort) {
+        chainAbort.abort();
+        chainAbort = null;
+    }
+}
+
+async function pump() {
+    if (running || !queue.length) return;
+
+    const job = queue.shift();
+    running = job;
+    chainAbort = new AbortController();
+    const my = ++chainSeq;
+
+    try {
+        job.resolve(await runTarget({ ...job, my, signal: chainAbort.signal }));
+    } catch (error) {
+        console.warn(`${LOG} chain failed`, error);
+        job.resolve({ status: 'error', error: errorText(error) });
+    } finally {
+        chainAbort = null;
+        running = null;
+        pump();
+    }
 }
 
 /**
- * Asks the watcher where the story is, then acts on the answer: "same" folds
- * the spelling onto the image already up, "known" brings back a cached image,
- * "new" draws one.
+ * Resolves one reply: the cheap paths first (the reply already carries the
+ * right picture, or its place is cached), the watcher and the image only for
+ * places this chat has not drawn.
  */
-async function runWatcherChain({ store, place, force }) {
-    const ready = imageGenerationStatus();
-    if (!ready.ok) return { status: 'unavailable', error: ready.text };
+async function runTarget({ index, swipeId, force, refresh, my, signal }) {
+    const messages = chatMessages();
+    const message = messages[index];
+    if (!message) return { status: 'unchanged' };
 
-    const my = ++chainSeq;
-    if (chainAbort) chainAbort.abort();
-    const controller = new AbortController();
-    chainAbort = controller;
+    // User turns own no picture: they inherit the previous reply's at read
+    // time, and nothing is ever stamped on them.
+    if (message.is_user) return { status: 'unchanged' };
 
+    const store = bgStore();
+    const persona = personaName();
     const mode = modeOn();
+
+    // What the reply carried in: its own stamp when re-resolving (an edit or
+    // the brush), else the picture the story brought to it - which is how a
+    // reply that drew nothing keeps the last picture.
+    const own = stampOf(message, swipeId);
+    if (own && !force && !refresh) {
+        return { status: 'unchanged', record: store.records[own] || undefined };
+    }
+
+    // Where this reply is: the scene governing ITS turn (the last usable one
+    // at or before it), never the chat's end.
+    const scene = resolveScene(messages, index, { persona })?.scene || null;
+    const place = mode ? (scene?.placeFull || '') : '';
+
+    const carried = own ?? resolveStampId(messages, index)?.id ?? null;
+    const baseline = (carried && store.records[carried]) || null;
+
+    if (!force) {
+        if (mode) {
+            const step = decide(store, place, { baseline });
+            if (step.action === 'none') {
+                stampLanded(index, swipeId, step.record?.id ?? baseline?.id);
+                return { status: 'unchanged', record: step.record || baseline || undefined };
+            }
+            if (step.action === 'apply') {
+                if (my !== chainSeq) return { status: 'superseded' };
+                stampLanded(index, swipeId, step.record.id);
+                return { status: 'cached', record: step.record };
+            }
+        } else {
+            // Mode OFF has no tags to compare: the watcher is asked at the
+            // user's pace, and every reply between keeps the last picture.
+            repliesSinceWatch += 1;
+            const every = Math.max(1, Number(settings().bgEveryN) || 1);
+            if (repliesSinceWatch < every) {
+                stampLanded(index, swipeId, baseline?.id);
+                return { status: 'unchanged', record: baseline || undefined };
+            }
+            repliesSinceWatch = 0;
+        }
+    }
+
+    return runWatcherChain({ store, messages, index, swipeId, place, scene, baseline, mode, persona, force, my, signal });
+}
+
+/**
+ * Asks the watcher about the reply's own story, then acts on the answer:
+ * "same" folds the spelling onto the picture the reply carried, "known"
+ * brings back a cached image, "new" draws one.
+ */
+async function runWatcherChain({ store, messages, index, swipeId, place, scene, baseline, mode, persona, force, my, signal }) {
     const request = buildWatcherRequest({
         store,
-        messages: chatMessages(),
+        messages,
         mode,
         count: Math.max(1, Number(settings().bgContextReplies) || 2),
-        persona: personaName(),
-        systemCore: mode ? settings().bgPromptOn : settings().bgPromptOff,
+        at: index,
+        persona,
         force,
+        systemCore: mode ? settings().bgPromptOn : settings().bgPromptOff,
+        current: baseline,
     });
     lastRequest = { systemPrompt: request.systemPrompt, prompt: request.prompt, at: Date.now() };
 
-    console.debug(`${LOG} asking the watcher`, { place, force });
+    console.debug(`${LOG} asking the watcher`, { index, place, force });
 
+    const plain = () => fallbackLocationPrompt(scene || place);
     const thinking = stage('Envisioning the location\u2026');
     let answer = null;
     let failure = null;
@@ -215,16 +382,18 @@ async function runWatcherChain({ store, place, force }) {
             if (!place) {
                 failure = reply.error || 'The watcher call failed.';
             } else {
-                answer = { state: 'new', knownId: null, place, prompt: fallbackLocationPrompt(currentScene()) };
+                answer = { state: 'new', knownId: null, place, prompt: plain() };
             }
         }
 
-        if (force && answer && answer.state !== 'new') {
+        // The brush must draw something, and "same" with nothing carried in
+        // has nothing to keep - both draw fresh.
+        if (answer && (force || (answer.state === 'same' && !baseline)) && answer.state !== 'new') {
             answer = {
                 state: 'new',
                 knownId: null,
                 place: answer.place || place,
-                prompt: answer.prompt || fallbackLocationPrompt(currentScene()),
+                prompt: answer.prompt || plain(),
             };
         }
     } finally {
@@ -235,29 +404,25 @@ async function runWatcherChain({ store, place, force }) {
 
     console.debug(`${LOG} watcher answered`, answer);
 
+    // Mode ON knows the place from the tags; mode OFF leans on the watcher's
+    // own naming, and only a nameless answer falls back to its first phrase.
+    const target = place || answer.place || firstPhrase(answer.prompt) || 'the story';
+
     if (answer.state === 'same') {
         // The same place, spelled differently: fold the spelling onto the
-        // image already up, so the next skip-gate compares equal for free.
-        const current = currentRecord(store);
-        if (place && current) {
-            aliasLocation(store, place, current.id);
-            saveChatMetadata();
-        }
-        return { status: 'unchanged' };
+        // picture the reply carried, so the next skip-gate compares equal.
+        if (target && baseline) aliasLocation(store, target, baseline.id);
+        stampLanded(index, swipeId, baseline?.id);
+        return { status: 'unchanged', record: baseline || undefined };
     }
-
-    const target = place || answer.place;
 
     if (answer.state === 'known') {
         const id = resolveRecordId(store, answer.knownId);
         const record = id ? aliasLocation(store, target || store.records[id].place, id) : null;
         if (record) {
-            saveChatMetadata();
-            const done = await applyRecord(store, target || record.place, record);
-            if (done) globalThis.toastr?.success?.(`Background set: ${record.place}`);
-            return done
-                ? { status: 'cached', record }
-                : { status: 'error', error: 'The background could not be set.' };
+            stampLanded(index, swipeId, record.id);
+            globalThis.toastr?.success?.(`Background set: ${record.place}`);
+            return { status: 'cached', record };
         }
         // A stale id (hand-edited or pruned chat data): draw fresh instead,
         // from the watcher's own description when it wrote one.
@@ -265,16 +430,21 @@ async function runWatcherChain({ store, place, force }) {
 
     return generateBackground({
         store,
+        index,
+        swipeId,
         place: target,
-        description: answer.prompt || fallbackLocationPrompt(currentScene()),
+        description: answer.prompt || plain(),
         force,
         my,
-        signal: controller.signal,
+        signal,
     });
 }
 
-/** Draws one image for a place and makes it the chat background. */
-async function generateBackground({ store, place, description, force, my, signal }) {
+/** Draws one image for a reply's place and makes it that reply's picture. */
+async function generateBackground({ store, index, swipeId, place, description, force, my, signal }) {
+    const ready = imageGenerationStatus();
+    if (!ready.ok) return { status: 'unavailable', error: ready.text };
+
     const { bgStyle, bgNegative, bgSize } = settings();
     const prompt = compileBgPrompt(description, bgStyle);
     const size = bgSize === 'landscape' ? LANDSCAPE_SIZE : null;
@@ -298,6 +468,8 @@ async function generateBackground({ store, place, description, force, my, signal
     if (!result.ok) return { status: result.aborted ? 'cancelled' : 'error', error: result.error };
     if (my !== chainSeq) return { status: 'superseded' };
 
+    // `overwrite` is the brush's "replace it" - the place has one canonical
+    // record and the retry redraws it everywhere it appears, newest wins.
     const record = storeRecord(store, {
         key: place,
         place,
@@ -307,8 +479,7 @@ async function generateBackground({ store, place, description, force, my, signal
     });
     if (!record) return { status: 'error', error: 'The background could not be remembered.' };
 
-    await forceSetBackground(result.path);
-    saveChatMetadata();
+    stampLanded(index, swipeId, record.id);
     console.debug(`${LOG} background set`, { place, path: result.path });
     globalThis.toastr?.success?.(place ? `Background set: ${place}` : 'Background set');
 
@@ -316,24 +487,72 @@ async function generateBackground({ store, place, description, force, my, signal
 }
 
 /**
- * Shows a cached image again. The key only moves onto the record once
- * SillyTavern confirms the background - a failed swap stays retryable.
+ * The landing of every result: the reply keeps its picture, the chat is
+ * saved, and the screen is re-asserted to the SHOWN turn - so a chain landing
+ * late updates its own reply's history and never yanks the picture out from
+ * under whatever turn is being read.
  */
-async function applyRecord(store, key, record) {
-    const done = await forceSetBackground(record.path);
-    if (!done) return false;
-
-    normalizeStore(store).currentKey = locationKey(key) || locationKey(record.place);
+function stampLanded(index, swipeId, recordId) {
+    if (recordId) stampMessageBg(index, swipeId, recordId);
     saveChatMetadata();
-    return true;
+    void syncShownBackground();
 }
 
-/** The scene governing the turn at the end of the chat - where the story is. */
-function currentScene() {
-    return resolveScene(chatMessages(), undefined, { persona: personaName() })?.scene || null;
+/**
+ * Puts the background the shown turn carries back on screen - the read path
+ * for scrolling through the chat, and the settling point for every landing.
+ * Swap-only: nothing is asked or drawn while reading. Chats without history
+ * fall back to the cached picture of the shown place; a user turn inherits the
+ * nearest reply's picture before it.
+ *
+ * @returns {Promise<{status:'cached'|'unchanged', record?:object}>}
+ */
+export async function syncShownBackground() {
+    const messages = chatMessages();
+    const store = bgStore();
+    const index = shownTarget();
+
+    const record = resolveStampRecord(store, messages, index);
+    if (record) {
+        await showRecord(store, record);
+        return { status: 'cached', record };
+    }
+
+    // No history at or before here: the cached picture of the shown place is
+    // the best guess - still never a generation.
+    if (!modeOn()) return { status: 'unchanged' };
+
+    const place = resolveScene(messages, index, { persona: personaName() })?.scene?.placeFull || '';
+    const step = decide(store, place, { baseline: null });
+    if (step.action === 'apply' && step.record) {
+        await showRecord(store, step.record);
+        return { status: 'cached', record: step.record };
+    }
+
+    return { status: 'unchanged' };
 }
 
-/** Its place, as the chat bar shows it, or '' when the tags know no place. */
-function currentPlace() {
-    return currentScene()?.placeFull || '';
+/**
+ * Shows a record's image as the chat background and marks its place current.
+ * Idempotent - the same picture is never re-set - and a failed set stays
+ * retryable, because the stamp still holds the record.
+ */
+async function showRecord(store, record) {
+    await forceSetBackground(record.path);
+
+    // currentKey follows the screen; normalizeStore prunes keys not in the
+    // map, so pick one this record is actually registered under.
+    const key = Object.entries(store.keys || {}).find(([, id]) => id === record.id)?.[0];
+    if (key && store.currentKey !== key) {
+        store.currentKey = key;
+        saveChatMetadata();
+    }
+}
+
+/** A place name for an answer that named none: its description's first phrase. */
+function firstPhrase(description) {
+    const text = String(description ?? '').trim();
+    if (!text) return '';
+    const cut = text.split(/[.,;]/)[0].trim();
+    return cut.length > 60 ? `${cut.slice(0, 57).trim()}...` : cut;
 }

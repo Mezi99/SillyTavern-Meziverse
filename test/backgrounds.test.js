@@ -20,6 +20,9 @@ import {
     parseWatcherReply,
     recoverCurrentKey,
     resolveRecordId,
+    resolveStampId,
+    setStamp,
+    stampOf,
     storeRecord,
     toCssBgUrl,
     watcherSystemPrompt,
@@ -291,4 +294,99 @@ test('fallbackLocationPrompt describes the place plainly when the watcher fails'
         'The Docks, Tuesday, March 4 9:40 PM, Rain, wide establishing shot, empty place, detailed environment',
     );
     assert.equal(fallbackLocationPrompt('Pier 9'), 'Pier 9, wide establishing shot, empty place, detailed environment');
+});
+
+/* ---------- per-response stamps ---------- */
+
+test('setStamp writes the variant slot and mirrors only the active variant', () => {
+    const message = { extra: {}, swipes: ['a', 'b'], swipe_id: 1, swipe_info: [{ extra: {} }, { extra: {} }] };
+
+    assert.equal(stampOf(message), null, 'nothing stamped yet');
+
+    assert.equal(setStamp(message, 0, 'bg_3'), true);
+    assert.equal(stampOf(message, 0), 'bg_3', 'the variant keeps its own stamp');
+    assert.equal(stampOf(message), null, 'the active variant is untouched');
+    assert.equal(message.extra.meziverse, undefined, 'the mirror follows the active variant only');
+
+    assert.equal(setStamp(message, 1, 'bg_4'), true);
+    assert.equal(stampOf(message), 'bg_4', 'the active variant mirrors its stamp');
+    assert.equal(stampOf(message, 1), 'bg_4');
+    assert.equal(setStamp(message, 1, 'bg_4'), false, 'restamping the same record changes nothing');
+
+    assert.equal(setStamp(message, 1, ''), false, 'an empty stamp is refused');
+});
+
+test('setStamp covers replies without swipes', () => {
+    const message = { extra: {} };
+    assert.equal(setStamp(message, 0, 'bg_2'), true);
+    assert.equal(stampOf(message), 'bg_2');
+    assert.equal(stampOf(message, 0), 'bg_2', 'the mirror is all there is');
+});
+
+test("resolveStampId keeps each reply's own picture and feeds user turns", () => {
+    const messages = [
+        msg('greeting'),
+        { mes: 'reply one', extra: {}, swipes: ['x'], swipe_id: 0, swipe_info: [{ extra: {} }] },
+        { mes: 'user turn', extra: {}, is_user: true },
+        msg('reply two'),
+    ];
+    setStamp(messages[1], 0, 'bg_5');
+    setStamp(messages[3], 0, 'bg_9');
+
+    assert.deepEqual(resolveStampId(messages, 1), { id: 'bg_5', index: 1 });
+    assert.deepEqual(resolveStampId(messages, 2), { id: 'bg_5', index: 1 }, 'a user turn takes the previous reply\'s picture');
+    assert.deepEqual(resolveStampId(messages, 3), { id: 'bg_9', index: 3 }, 'a later picture supersedes walking back');
+    assert.equal(resolveStampId(messages, 0), null, 'nothing before the first stamp');
+});
+
+test('resolveStampId finds the variant a fresh swipe was taken from', () => {
+    const message = { mes: 'swipes', extra: {}, swipes: ['a', 'b', 'c'], swipe_id: 2, swipe_info: [{ extra: {} }, { extra: {} }, { extra: {} }] };
+    setStamp(message, 0, 'bg_1');
+
+    assert.deepEqual(resolveStampId([message], 0), { id: 'bg_1', index: 0 }, 'an unseen variant inherits the nearest stamped one');
+
+    setStamp(message, 1, 'bg_2');
+    assert.deepEqual(resolveStampId([message], 0), { id: 'bg_2', index: 0 }, 'the nearer variant wins');
+
+    setStamp(message, 2, 'bg_3');
+    assert.deepEqual(resolveStampId([message], 0), { id: 'bg_3', index: 0 }, 'its own stamp rules');
+});
+
+test('decide carries what the reply already has, by meaning', () => {
+    const store = normalizeStore();
+    const pier = storeRecord(store, { place: 'The city | Docks | Pier 9', prompt: 'a pier', path: '/b/pier.png' });
+    const roof = storeRecord(store, { place: 'Rooftop', prompt: 'a roof', path: '/b/roof.png' });
+
+    assert.equal(decide(store, 'The city | Docks | Pier 9', { baseline: pier }).action, 'none', 'same place as carried: nothing to do');
+    assert.equal(decide(store, 'the city | docks | PIER 9', { baseline: pier }).action, 'none', 'spelling drift is still the same picture');
+    assert.equal(decide(store, 'Rooftop', { baseline: pier }).action, 'apply', 'a known place brings its cached picture');
+    assert.equal(decide(store, 'Somewhere New', { baseline: pier }).action, 'watch', 'anything else goes to the watcher');
+
+    assert.equal(decide(store, 'Rooftop', { baseline: null }).action, 'apply', 'with nothing carried in, a known place still applies');
+    assert.equal(decide(store, 'Somewhere New', { baseline: null }).action, 'watch');
+    assert.equal(decide(store, '', { baseline: pier }).action, 'none', 'no place known: nothing changes');
+
+    // A record registered under one key but named another still counts as the
+    // same picture when the reply carries it.
+    const drift = normalizeStore();
+    const aliased = storeRecord(drift, { key: 'pier 9', place: 'Pier No9', prompt: 'a pier', path: '/b/pier.png' });
+    assert.equal(decide(drift, 'Pier No9', { baseline: aliased }).action, 'none', 'the name the carried picture goes by is a skip too');
+});
+
+test("buildWatcherRequest asks about its own reply, not the chat's end", () => {
+    const store = normalizeStore();
+    const prior = storeRecord(store, { place: 'Pier 9', prompt: 'a pier at dusk', path: '/b/pier.png' });
+    const messages = [
+        msg('<scene location="Pier 9" /> at the pier'),
+        msg('<scene location="Rooftop" /> on the roof'),
+        msg('still on the roof'),
+    ];
+
+    const request = buildWatcherRequest({ store, messages, at: 1, current: prior });
+    assert.ok(request.prompt.includes('CURRENT BACKGROUND\nPier 9\na pier at dusk'), 'the reply carried its own baseline in');
+    assert.ok(request.prompt.includes('SCENE: Rooftop'), 'the story ends at the target reply');
+    assert.ok(!request.prompt.includes('still on the roof'), 'later replies are not part of its story');
+
+    const plain = buildWatcherRequest({ store, messages });
+    assert.ok(plain.prompt.includes('CURRENT BACKGROUND\nPier 9\na pier at dusk'), 'with no baseline given, the on-screen record stands in');
 });
