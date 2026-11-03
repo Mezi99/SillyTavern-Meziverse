@@ -266,6 +266,61 @@ body.mz-open .popup { z-index: 9500 !important; }
     box-shadow: 0 0 6px color-mix(in srgb, var(--mz-accent) 55%, transparent);
 }
 
+/* The background switch and the brush ride with the mode switch: the same
+   pill, one more promise kept beside it. */
+.mz-bgauto { margin-left: 6px; }
+
+.mz-brush {
+    margin-left: 2px;
+    align-self: center;
+}
+
+.mz-brush.is-busy {
+    opacity: .5;
+    pointer-events: none;
+}
+
+.mz-brush.is-off { opacity: .35; }
+
+.mz-set-row input.mz-select { max-width: 320px; }
+
+/* The watcher prompts are edited in place: label above, room to write. */
+.mz-set-row--prompt {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+}
+
+.mz-set-row--prompt .mz-btn-ghost { justify-self: start; }
+
+.mz-textarea {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--mz-line);
+    border-radius: var(--mz-r-sm);
+    background: var(--mz-surface-2);
+    color: var(--mz-text);
+    font-family: var(--mz-font-ui);
+    font-size: var(--mz-text-xs);
+    line-height: 1.55;
+    resize: vertical;
+}
+
+.mz-bg-request {
+    margin: 0;
+    padding: 10px;
+    border: 1px solid var(--mz-line);
+    border-radius: var(--mz-r-sm);
+    background: var(--mz-surface-2);
+    color: var(--mz-text-dim);
+    font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+    font-size: var(--mz-text-2xs);
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 280px;
+    overflow: auto;
+}
+
 .mz-chatname {
     display: flex;
     align-items: baseline;

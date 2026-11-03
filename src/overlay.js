@@ -6,8 +6,10 @@
  * only owns the chrome around it.
  */
 
-import { chatMessages, currentChatId, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer } from './st.js';
-import { settings, saveSettings, modeOn } from './settings.js';
+import { chatMessages, currentChatId, errorText, imageGenerationStatus, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer } from './st.js';
+import { settings, saveSettings, modeOn, bgAutoOn } from './settings.js';
+import { syncBackgrounds, getLastWatcherRequest } from './bgchain.js';
+import { DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_OFF } from './backgrounds.js';
 import { injectSprite } from './icons.js';
 import { createTranscript } from './transcript.js';
 import { mountCast, refreshCastSizing, renderCast, renderThoughts, renderTells, clearCascade } from './cast.js';
@@ -18,7 +20,7 @@ import { closeFloats } from './floats.js';
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr } from './notify.js';
 
-const VERSION = '2.3.0';
+const VERSION = '2.4.0';
 const PANE_DEFAULT = 300;
 const LOG_W_DEFAULT = 720;
 const LOG_H_SHARE = 0.7;
@@ -54,7 +56,7 @@ const FRAME_HTML = `
     <div class="mz-scrim" aria-hidden="true"></div>
 
     <header class="mz-header">
-        <div class="mz-brand"><b>Meziverse</b><small class="mz-version">v${VERSION}</small><button class="mz-mode" type="button" role="switch" aria-checked="true" title="Meziverse mode \u2014 scene info and features" aria-label="Meziverse mode" data-mz-action="mode"><i aria-hidden="true"></i><span data-mz="mode-label">mode \u00b7 on</span></button></div>
+        <div class="mz-brand"><b>Meziverse</b><small class="mz-version">v${VERSION}</small><button class="mz-mode" type="button" role="switch" aria-checked="true" title="Meziverse mode \u2014 scene info and features" aria-label="Meziverse mode" data-mz-action="mode"><i aria-hidden="true"></i><span data-mz="mode-label">mode \u00b7 on</span></button><button class="mz-mode mz-bgauto" type="button" role="switch" aria-checked="false" title="Backgrounds follow the story" aria-label="Automatic location backgrounds" data-mz-action="bg-auto"><i aria-hidden="true"></i><span data-mz="bg-auto-label">bg \u00b7 off</span></button><button class="mz-ibtn mz-brush" type="button" title="Draw a background for this place" aria-label="Draw a background for this place" data-mz-action="bg-generate">${svg('brush')}</button></div>
         <div class="mz-chatname" data-mz="chatname"><b class="is-empty">No chat open</b></div>
         <div class="mz-header-tools">
             <button class="mz-ibtn" type="button" title="Full screen" aria-label="Full screen" data-mz-action="fullscreen">${svg('expand')}</button>
@@ -257,6 +259,64 @@ const FRAME_HTML = `
         </div>
 
         <div class="mz-set-group">
+            <h3>Backgrounds</h3>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Follow the story</b><small>A new background when the place changes; the brush draws one on demand.</small></span>
+                <button class="mz-switch" type="button" role="switch" aria-checked="false" aria-label="Automatic location backgrounds" data-mz-action="bg-auto"><i></i></button>
+            </div>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Mode OFF pace</b><small>Without scene tags, ask the watcher every N replies.</small></span>
+                <div class="mz-step">
+                    <button type="button" data-mz-step="bg-every" data-dir="-1" aria-label="Ask less often">\u2212</button>
+                    <span data-mz="bg-every-value">3</span>
+                    <button type="button" data-mz-step="bg-every" data-dir="1" aria-label="Ask more often">+</button>
+                </div>
+            </div>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Context replies</b><small>How many of the latest replies the watcher reads.</small></span>
+                <div class="mz-step">
+                    <button type="button" data-mz-step="bg-ctx" data-dir="-1" aria-label="Fewer replies">\u2212</button>
+                    <span data-mz="bg-ctx-value">2</span>
+                    <button type="button" data-mz-step="bg-ctx" data-dir="1" aria-label="More replies">+</button>
+                </div>
+            </div>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Image size</b><small>Wide landscape, or whatever Image Generation is set to.</small></span>
+                <div class="mz-seg" role="group" aria-label="Image size">
+                    <button type="button" data-mz-pick-bgsize="landscape">Landscape</button>
+                    <button type="button" data-mz-pick-bgsize="st">Image Generation</button>
+                </div>
+            </div>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Style</b><small>Appended to every description the watcher writes.</small></span>
+                <input class="mz-select" data-mz="bg-style" aria-label="Background style suffix">
+            </div>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Negative</b><small>What the image must not contain.</small></span>
+                <input class="mz-select" data-mz="bg-negative" aria-label="Background negative prompt">
+            </div>
+            <div class="mz-set-row mz-set-row--prompt">
+                <span class="mz-set-label"><b>Watcher prompt \u00b7 ON</b><small>What the watcher is asked where scene tags mark the places. The answer format is appended for you.</small></span>
+                <textarea class="mz-textarea" rows="8" data-mz="bg-prompt-on" aria-label="Watcher prompt, mode ON"></textarea>
+                <button class="mz-btn-ghost" type="button" data-mz-action="bg-prompt-on-reset">Restore default</button>
+            </div>
+            <div class="mz-set-row mz-set-row--prompt">
+                <span class="mz-set-label"><b>Watcher prompt \u00b7 OFF</b><small>The plain-prose hand, for presets without scene tags.</small></span>
+                <textarea class="mz-textarea" rows="8" data-mz="bg-prompt-off" aria-label="Watcher prompt, mode OFF"></textarea>
+                <button class="mz-btn-ghost" type="button" data-mz-action="bg-prompt-off-reset">Restore default</button>
+            </div>
+            <div class="mz-set-row mz-set-row--prompt">
+                <span class="mz-set-label"><b>Last request</b><small>Exactly what the watcher was last asked, footers included.</small></span>
+                <button class="mz-btn-ghost" type="button" data-mz-action="bg-show-request">Show last request</button>
+                <pre class="mz-bg-request" data-mz="bg-request" hidden></pre>
+            </div>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Try it</b><small>Draws a fresh background for the place the story is at now.</small></span>
+                <button class="mz-btn-ghost" type="button" data-mz-action="bg-test">Draw one now</button>
+            </div>
+        </div>
+
+        <div class="mz-set-group">
             <h3>Cues</h3>
             <div class="mz-set-row">
                 <span class="mz-set-label"><b>Popovers</b><small>How the truth behind a mark opens.</small></span>
@@ -345,6 +405,15 @@ export function mount() {
         chatNameText: root.querySelector('[data-mz="chatname"] b'),
         modeButton: root.querySelector('[data-mz-action="mode"]'),
         modeLabel: root.querySelector('[data-mz="mode-label"]'),
+        bgAutoLabel: root.querySelector('[data-mz="bg-auto-label"]'),
+        bgBrushButton: root.querySelector('[data-mz-action="bg-generate"]'),
+        bgEveryValue: root.querySelector('[data-mz="bg-every-value"]'),
+        bgCtxValue: root.querySelector('[data-mz="bg-ctx-value"]'),
+        bgStyle: root.querySelector('[data-mz="bg-style"]'),
+        bgNegative: root.querySelector('[data-mz="bg-negative"]'),
+        bgPromptOn: root.querySelector('[data-mz="bg-prompt-on"]'),
+        bgPromptOff: root.querySelector('[data-mz="bg-prompt-off"]'),
+        bgRequest: root.querySelector('[data-mz="bg-request"]'),
         sceneCluster: root.querySelector('.mz-chatbar-left'),
         date: root.querySelector('[data-mz="date"]'),
         time: root.querySelector('[data-mz="time"]'),
@@ -440,6 +509,9 @@ export function mount() {
     applyTheme();
     applyMotion();
     applyMode();
+    applyBgAuto();
+    applyBgControls();
+    applyBrush();
     applyScale();
     applyNarration();
     applyNarrationFont();
@@ -568,6 +640,88 @@ function applyMode() {
     els.modeButton?.classList.toggle('is-on', on);
     els.modeButton?.setAttribute('aria-checked', String(on));
     if (els.modeLabel) els.modeLabel.textContent = on ? 'mode \u00b7 on' : 'mode \u00b7 off';
+}
+
+/** Syncs the background switch - header pill and settings row - with the setting. */
+function applyBgAuto() {
+    const on = bgAutoOn();
+    for (const button of root.querySelectorAll('[data-mz-action="bg-auto"]')) {
+        button.classList.toggle('is-on', on);
+        button.setAttribute('aria-checked', String(on));
+    }
+    if (els.bgAutoLabel) els.bgAutoLabel.textContent = on ? 'bg \u00b7 auto' : 'bg \u00b7 off';
+}
+
+/** Syncs the background settings rows with the settings they edit. */
+function applyBgControls() {
+    if (els.bgEveryValue) els.bgEveryValue.textContent = String(Math.max(1, Number(settings().bgEveryN) || 3));
+    if (els.bgCtxValue) els.bgCtxValue.textContent = String(Math.max(1, Number(settings().bgContextReplies) || 2));
+    if (els.bgStyle) els.bgStyle.value = settings().bgStyle ?? '';
+    if (els.bgNegative) els.bgNegative.value = settings().bgNegative ?? '';
+    if (els.bgPromptOn) els.bgPromptOn.value = settings().bgPromptOn ?? DEFAULT_BG_PROMPT_ON;
+    if (els.bgPromptOff) els.bgPromptOff.value = settings().bgPromptOff ?? DEFAULT_BG_PROMPT_OFF;
+
+    root.querySelectorAll('[data-mz-pick-bgsize]').forEach(button => {
+        const isOn = button.dataset.mzPickBgsize === (settings().bgSize === 'st' ? 'st' : 'landscape');
+        button.classList.toggle('is-on', isOn);
+        button.setAttribute('aria-pressed', String(isOn));
+    });
+}
+
+/** The brush stands aside - with the reason in its title - when Image Generation cannot draw. */
+function applyBrush() {
+    const ready = imageGenerationStatus();
+    els.bgBrushButton?.classList.toggle('is-off', !ready.ok);
+    if (els.bgBrushButton) {
+        els.bgBrushButton.title = ready.ok ? 'Draw a background for this place' : ready.text;
+    }
+}
+
+/**
+ * The brush and the settings test button: one fresh background for the place
+ * the story is at now, whatever the watcher thinks of it. Silent when it
+ * works - the background changing is the notice - and honest when it cannot.
+ */
+async function drawBackgroundNow() {
+    if (els.bgBrushButton?.classList.contains('is-busy')) return;
+
+    const ready = imageGenerationStatus();
+    if (!ready.ok) {
+        globalThis.toastr?.error?.(ready.text);
+        applyBrush();
+        return;
+    }
+
+    els.bgBrushButton?.classList.add('is-busy');
+    try {
+        const result = await syncBackgrounds({ force: true });
+        if (result.status === 'error' || result.status === 'unavailable') {
+            globalThis.toastr?.error?.(result.error || 'The background could not be drawn.');
+        }
+    } catch (error) {
+        globalThis.toastr?.error?.(`The background could not be drawn: ${errorText(error)}`);
+    } finally {
+        els.bgBrushButton?.classList.remove('is-busy');
+    }
+}
+
+/* Scrolling into another place brings that place's picture back - from the
+   cache only; nothing is drawn or asked while reading. Debounced, so a fast
+   scroll through many turns settles on the last one. */
+let bgSwapTimer = null;
+
+function queueBackgroundSwap() {
+    clearTimeout(bgSwapTimer);
+    bgSwapTimer = setTimeout(() => {
+        syncBackgrounds({ generate: false }).catch?.(error => {
+            console.warn('[Meziverse] bg swap failed', error);
+        });
+    }, 200);
+}
+
+/** A stepped number with a floor and a ceiling. */
+function stepNumber(value, dir, min, max) {
+    return Math.min(max, Math.max(min, value + (dir > 0 ? 1 : -1)));
 }
 
 function applyScale() {
@@ -717,7 +871,16 @@ function applyCueMeanwhile() {
     });
 }
 
-function applyBackground() {
+/**
+ * Mirrors the background SillyTavern has right now into the scene's backdrop.
+ *
+ * `forcedUrl` is the CSS url() from a FORCE_SET_BACKGROUND event, and taking
+ * it from the payload matters: listeners run in registration order, and ours
+ * may fire before SillyTavern's own handler has painted #bg1 - probing the
+ * DOM at that moment would copy the previous background into the scene. On
+ * the probe paths (opening the scene, chat changes) #bg1 is settled and safe.
+ */
+function applyBackground(forcedUrl) {
     const useSt = settings().background === 'st';
     frame.classList.toggle('is-bg-st', useSt);
     root.querySelectorAll('[data-mz-pick-bg]').forEach(button => {
@@ -731,9 +894,12 @@ function applyBackground() {
         return;
     }
 
-    const source = document.getElementById('bg1');
-    let image = source ? getComputedStyle(source).backgroundImage : '';
-    if (!image || image === 'none') image = getComputedStyle(document.body).backgroundImage;
+    let image = typeof forcedUrl === 'string' && forcedUrl.includes('url(') ? forcedUrl : '';
+    if (!image) {
+        const source = document.getElementById('bg1');
+        image = source ? getComputedStyle(source).backgroundImage : '';
+        if (!image || image === 'none') image = getComputedStyle(document.body).backgroundImage;
+    }
 
     if (image && image !== 'none' && image.includes('url(')) {
         frame.style.setProperty('--mz-st-bg', image);
@@ -837,6 +1003,7 @@ function applyScene(record) {
 
     measureChatbar();
     renderCast(scene);
+    queueBackgroundSwap();
 }
 
 /**
@@ -1345,6 +1512,14 @@ function wireActions() {
             return;
         }
 
+        const bgSize = event.target.closest('[data-mz-pick-bgsize]');
+        if (bgSize) {
+            settings().bgSize = bgSize.dataset.mzPickBgsize;
+            applyBgControls();
+            saveSettings();
+            return;
+        }
+
         const cuePop = event.target.closest('[data-mz-pick-cuepop]');
         if (cuePop) {
             settings().cuePopovers = cuePop.dataset.mzPickCuepop;
@@ -1380,9 +1555,16 @@ function wireActions() {
         const step = event.target.closest('[data-mz-step]');
         if (step) {
             const dir = Number(step.dataset.dir) || 0;
-            if (step.dataset.mzStep === 'ui') {
+            const which = step.dataset.mzStep;
+            if (which === 'ui') {
                 settings().uiScale = stepValue(UI_STEPS, Number(settings().uiScale) || 1, dir);
                 applyScale();
+            } else if (which === 'bg-every') {
+                settings().bgEveryN = stepNumber(Number(settings().bgEveryN) || 3, dir, 1, 60);
+                applyBgControls();
+            } else if (which === 'bg-ctx') {
+                settings().bgContextReplies = stepNumber(Number(settings().bgContextReplies) || 2, dir, 1, 5);
+                applyBgControls();
             } else {
                 settings().narrSize = stepValue(NARR_STEPS, Number(settings().narrSize) || 18.5, dir);
                 applyNarration();
@@ -1468,6 +1650,34 @@ function wireActions() {
                 applyScene(lastShown);
                 applyLedger(lastEntry);
                 break;
+            case 'bg-auto':
+                settings().bgAuto = !settings().bgAuto;
+                applyBgAuto();
+                saveSettings();
+                break;
+            case 'bg-generate':
+            case 'bg-test':
+                drawBackgroundNow();
+                break;
+            case 'bg-prompt-on-reset':
+                settings().bgPromptOn = DEFAULT_BG_PROMPT_ON;
+                applyBgControls();
+                saveSettings();
+                break;
+            case 'bg-prompt-off-reset':
+                settings().bgPromptOff = DEFAULT_BG_PROMPT_OFF;
+                applyBgControls();
+                saveSettings();
+                break;
+            case 'bg-show-request':
+                if (els.bgRequest) {
+                    const request = getLastWatcherRequest();
+                    els.bgRequest.textContent = request
+                        ? `${request.systemPrompt}\n\n\u2014\u2014 sent as \u2014\u2014\n\n${request.prompt}`
+                        : 'Nothing has been asked yet in this session.';
+                    els.bgRequest.hidden = !els.bgRequest.hidden;
+                }
+                break;
             case 'reset-pane':
                 applyPaneHeight(PANE_DEFAULT, true);
                 break;
@@ -1500,6 +1710,26 @@ function wireActions() {
     els.paneOpacity?.addEventListener('input', () => {
         settings().paneOpacity = Number(els.paneOpacity.value);
         applyPaneOpacity();
+        saveSettings();
+    });
+
+    els.bgStyle?.addEventListener('change', () => {
+        settings().bgStyle = els.bgStyle.value.trim();
+        saveSettings();
+    });
+
+    els.bgNegative?.addEventListener('change', () => {
+        settings().bgNegative = els.bgNegative.value.trim();
+        saveSettings();
+    });
+
+    els.bgPromptOn?.addEventListener('input', () => {
+        settings().bgPromptOn = els.bgPromptOn.value;
+        saveSettings();
+    });
+
+    els.bgPromptOff?.addEventListener('input', () => {
+        settings().bgPromptOff = els.bgPromptOff.value;
         saveSettings();
     });
 
@@ -1593,8 +1823,12 @@ function wireEvents() {
     on('CHAT_RENAMED', () => {
         if (isOpen()) refresh();
     });
-    on('FORCE_SET_BACKGROUND', () => {
-        if (isOpen()) applyBackground();
+    on('FORCE_SET_BACKGROUND', info => {
+        if (!isOpen()) return;
+        applyBackground(info?.url);
+        // Insurance for listener order: one deferred re-read settles the
+        // scene on whatever #bg1 holds once every handler has run.
+        setTimeout(() => applyBackground(), 0);
     });
 
     // Dry runs (another extension assembling its prompt) never reach the chat:
