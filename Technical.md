@@ -1,6 +1,6 @@
 # Meziverse — how it works
 
-Technical notes for version 2.3.0. Written for whoever picks this up next — including future us.
+Technical notes for version 2.4.0. Written for whoever picks this up next — including future us.
 
 ## The one rule: Ride SillyTavern
 
@@ -20,29 +20,38 @@ The single deliberate exception: `body.mz-open .popup` gets a z-lift so ST's own
 index.js            entry point; waits for ST, mounts the scene, adds the two ways in
 src/
   launcher.js       wand-menu item + Extensions-panel block
-  overlay.js         the fullscreen chrome: headers, settings sheet, composer, menus, toasts
+  overlay.js        the fullscreen chrome: headers, settings sheet, composer, menus, toasts
   transcript.js     the reading pane + log window: rendering, edit state machine, message actions
-  st.js              the ONLY file that talks to SillyTavern (see below)
-  settings.js        defaults + read/write of extensionSettings.meziverse + modeOn() / entryOn()
-  notify.js          notify() helper + toastr interception while the scene is open
-  tags.js            tolerant tag tokenizer + stripTags (pure: no DOM, no ST)
-  scene.js           scene resolution: last-usable rule, date/time split, location levels, cast names
-  prose.js           message text → styled prose + inline scene rows
-  ledger.js          LEDGER parsing: row normalizers, full-state resolution, deltas (pure)
-  dock.js            the ledger rails: icon menus, glance columns, popups, cards, meters
-  cast.js            the cast strip: posters, per-chat portraits, thought bubbles, upload
-  icons.js           inline SVG sprite (mz-i-* symbols)
+  st.js             the ONLY file that talks to SillyTavern (see below)
+  settings.js       defaults + read/write of extensionSettings.meziverse + modeOn() / entryOn()
+  notify.js         notify() helper + toastr interception while the scene is open
+  tags.js           tolerant tag tokenizer + stripTags (pure: no DOM, no ST)
+  scene.js          scene resolution: last-usable rule, date/time split, location levels, cast names
+  prose.js          message text → styled prose + inline scene rows
+  ledger.js         LEDGER parsing: row normalizers, full-state resolution, deltas (pure)
+  dock.js           the ledger rails: icon menus, glance columns, popups, cards, meters
+  cast.js           the cast strip: posters, per-chat portraits, thought bubbles, upload
+  memory.js         the flashback row splitter: sentences at their own ends (pure)
+  cues.js           the inline cues: marks + popover, the mindscape, meanwhile boxes
+  floats.js         one floating thing at a time: the registry behind the Esc chain
+  backgrounds.js    the background store + the watcher's question and answer (pure)
+  bgchain.js        the background chain: decide, ask, draw, set; stage notices, triggers
+  icons.js          inline SVG sprite (mz-i-* symbols)
 test/
-  tags.test.js       synthetic tokenizer tests
-  scene.test.js      synthetic scene tests
-  ledger.test.js     synthetic ledger tests
+  tags.test.js      synthetic tokenizer tests
+  scene.test.js     synthetic scene tests
+  ledger.test.js    synthetic ledger tests
+  memory.test.js    synthetic splitter tests
+  backgrounds.test.js  synthetic store/watcher tests
+  st.test.js        synthetic error-text tests
 css/
   00-primitives.css  colours, fonts, sizes, timings, motion — raw variables
   10-semantics.css   semantic tokens; one block per theme (ink-jade / ink-amber / ink-rose)
   20-shell.css       all chrome: frame, headers, pane, log, composer, menus, toasts, settings
   30-story.css       scene features: scene rows, cast strip, portrait plates, thought bubbles
   40-dock.css        the ledger rails: menus, glance columns, popups, cards, meters
-style.css            @imports the five sheets (manifest points here)
+  50-cues.css        the inline cues: marks, popovers, mindscape, meanwhile boxes
+style.css            @imports the six sheets (manifest points here)
 ```
 
 `st.js` is the seam: every touch of ST internals is supposed to live there (`ctx()`, `whenReady()`, event wiring, and wrappers like `clickComposerControl`, `clickOptionsMenu`, `stComposer`, the edit/swipe/branch/copy/hide wrappers). When ST changes an internal, there is one place to fix.
@@ -95,6 +104,22 @@ Four in-band tags decorate the prose itself: `lie`, `filter`, `flashback`, `mean
 - **Settings** (Cues group): Popovers (hover and tap / tap only), Memories (pill / open on arrival), Meanwhile (closed / latest one open). The last two fire once per arrival, on the latest turn, after generation settles.
 - **Mobile** (< 760 px): the cue popover stays anchored to its mark — a deliberate deviation from the bottom-sheet rule; the meanwhile box drops its inner indent; the mindscape clamps to the frame.
 
+## The story backgrounds (the fourth feature family)
+
+The chat's background follows the story's place. The decision layer is pure (`backgrounds.js`), the choreography is `bgchain.js`, and every call into SillyTavern stays at the seam (`st.js`).
+
+- **The store** lives in `chatMetadata.meziverse.bg` beside the cast portraits, saved through ST's own `saveChatMetadata()`: one record per drawn place (id, place name, prompt, image path), `currentKey` for the image on screen, ids never recycled. `locationKey` folds case, whitespace and location levels so a place keeps one record whatever the spelling, and a place the watcher calls "same" has its new spelling aliased onto the image already up — the cache grows by meaning, not by string.
+- **The skip-gate is a string compare, never the change-detector.** `decide()` answers three ways: the key is current → nothing; the key is known → swap in the cached image; anything else → ask the watcher. Spelling drift ("Pier 9" vs "Pier No9") deliberately falls through, and the watcher verifies sameness **by meaning**.
+- **The watcher** is the chat LLM through `ctx.generateRaw` — only what we pass, nothing of ST's prompt plumbing. `buildWatcherRequest` assembles the question: CURRENT BACKGROUND (the place and image description on screen), KNOWN BACKGROUNDS, RECENT PLACES, and the LATEST STORY — grouped by scene blocks in mode ON (the last block is where the story is), plain prose in mode OFF. The baseline is the background **on screen**, not the previous reply, and only the reply's final location counts — mid-reply hops are ignored. Answers parse as one JSON object (`same` / `known` + id / `new` + place + image prompt) with a plain-text fallback (`SAME`, `KNOWN <id>`, `NEW`…); the JSON format is appended to the system prompt **by code**, so user edits to the prompt cores cannot break parsing. `getLastWatcherRequest()` keeps the last question verbatim for the settings panel.
+- **The prompt cores are editable** (`bgPromptOn` / `bgPromptOff`, defaults `DEFAULT_BG_PROMPT_ON/OFF`): 40–90 words of comma-separated visual phrases, the place as the subject — no characters, no names, no actions, no quality tags; lighting and sky anchored on the story's time of day and weather.
+- **Drawing rides ST's Image Generation** (`sd`, declared `optional` in `manifest.json`): the `/imagine` callback invoked with `quiet:'true', gallery:'false', extend:'false'` — no chat message, no sd rewrite or review window. Quiet discards the prompt, so we keep our own record. The image comes back as a path and becomes the background by emitting `FORCE_SET_BACKGROUND {url, path}` — ST then locks, registers and persists it (Backgrounds → Chat). `imageGenerationStatus()` turns the missing/unconfigured case into words, not a stack trace.
+- **The scene mirror takes the URL from the event payload.** Our `FORCE_SET_BACKGROUND` listener may run before ST's own handler repaints `#bg1` (registration order); probing the DOM at that moment copies the *previous* image into the scene. So the payload's `url()` is applied directly, with one deferred re-read as insurance.
+- **One job at a time.** A chain sequence supersedes older runs — in-flight work is aborted and its result discarded — and every run reports a status: `off | unchanged | cached | generated | superseded | cancelled | unavailable | error`. Triggers: `GENERATION_ENDED/STOPPED`, `GROUP_WRAPPER_FINISHED`, `MESSAGE_SWIPED`, `MESSAGE_EDITED` run the chain with generation allowed; scroll-back applies cached images only (`generate:false` — never asks, never draws); `CHAT_CHANGED` cancels, resets the mode-OFF pace, and re-derives the current key from the background ST itself restored. The chain follows the chat whether the scene is open or not — the backdrop belongs to the chat, not to the window.
+- **Stage notices** ride the toastr interception as sticky notices (`timeOut: 0`): "Envisioning the location…" while the watcher answers, "Painting {place}…" while the image draws — dropped when their stage ends — then a brief "Background set: {place}". Every error seam goes through `errorText()` (`st.js`), which unwraps throwables: never "[object Object]".
+- **Settings** (Backgrounds group): auto follow, the every-N-replies pace for mode OFF, context replies (2 default), size (landscape / square), style, negative, the two prompts with "Restore default" and "Show last request", and "Draw one now" — the brush, which runs the chain with `force`: a fresh image whatever the watcher answers, no review window.
+
+Known limits, by design for now: the mode-ON skip-gate never consults the watcher when the location string is unchanged (a radically reimagined same-name place needs the brush); mode-OFF detection is deliberately basic — a fixed every-N pace.
+
 ## The composer
 
 Our textarea and ST's `#send_textarea` stay **mirrored both ways** while the scene is open:
@@ -119,11 +144,11 @@ Settings: theme, background (none = navy-teal gradient, or ST's current), interf
 
 ## Notices
 
-While the scene is open, ST's `toastr` is intercepted: `notify.js` swaps in functions that render Meziverse-style toasts dropping from under the header, tinted by kind (success = accent, info = neutral, warning/error = warn/bad tokens), lingering 5 s. On close, ST's toastr is restored untouched.
+While the scene is open, ST's `toastr` is intercepted — but its contract survives. The wrapper calls the **real** toastr and returns its real toast element (ST's own consumers keep that element and hand it back to `toastr.clear`, so it must stay intact), while each toast is mirrored as a Meziverse notice dropping from under the header, tinted by kind (success = accent, info = neutral, warning/error = warn/bad tokens). `clear` / `clearAll` dismiss the mirrors too, and `timeOut: 0` means sticky — the background chain's stage notices ride that convention. Message text follows one rule at every seam: never "[object Object]". On close, ST's toastr is restored untouched.
 
 ## Events we listen to
 
-`CHAT_CHANGED/LOADED/CREATED/DELETED/RENAMED`, `MESSAGE_SENT/RECEIVED/SWIPED/SWIPE_DELETED/EDITED/DELETED/UPDATED`, `MORE_MESSAGES_LOADED`, `GENERATION_ENDED/STOPPED` → full refresh; `STREAM_TOKEN_RECEIVED` → queued refresh. `is-generating` on the frame (send → stop, inputs readonly) tracks generation state.
+`CHAT_CHANGED/LOADED/CREATED/DELETED/RENAMED`, `MESSAGE_SENT/RECEIVED/SWIPED/SWIPE_DELETED/EDITED/DELETED/UPDATED`, `MORE_MESSAGES_LOADED`, `GENERATION_ENDED/STOPPED` → full refresh; `STREAM_TOKEN_RECEIVED` → queued refresh. `GENERATION_STARTED/ENDED/STOPPED` and `GROUP_WRAPPER_FINISHED` → `is-generating` on the frame (send → stop, inputs readonly). `FORCE_SET_BACKGROUND` → the scene's background mirror. The background chain listens to `CHAT_CHANGED` (cancel + re-derive) and `GENERATION_ENDED/STOPPED`, `GROUP_WRAPPER_FINISHED`, `MESSAGE_SWIPED/EDITED` (run once).
 
 ## Conventions worth keeping
 
@@ -135,4 +160,4 @@ While the scene is open, ST's `toastr` is intercepted: `notify.js` swaps in func
 
 ## What comes next (not built yet)
 
-The **speech bubbles** — the one inline piece left, with `speech` still reading as plain prose — then backgrounds, then the preset phase: mode ownership, trim, Features/Style, and the prompt work (`ctx().setExtensionPrompt('meziverse_state', …)`) where the state Meziverse already parses gets pushed back at the model. Milestone firing (`shift` totals crossing ±100) is deliberately unimplemented: the idea is to detect the crossing in the extension and fire it from there rather than trust prompt memory. The phone is the intended UI, and its buttons are placeholders for now. See `LocalHelpFiles/Frame VN Tracker Extension (Design Spec v0.1).md` — that spec is authoritative for the M-series.
+The **speech bubbles** — the one inline piece left, with `speech` still reading as plain prose — then the preset phase: mode ownership, trim, Features/Style, and the prompt work (`ctx().setExtensionPrompt('meziverse_state', …)`) where the state Meziverse already parses gets pushed back at the model. Background add-ons queue up on `v2.4.1` (the recorded candidates: a mode-ON deep check for radical same-name place changes, richer mode-OFF detection, a per-place regenerate UI — the plan doc remembers them). Milestone firing (`shift` totals crossing ±100) is deliberately unimplemented: the idea is to detect the crossing in the extension and fire it from there rather than trust prompt memory. The phone is the intended UI, and its buttons are placeholders for now. See `LocalHelpFiles/Frame VN Tracker Extension (Design Spec v0.1).md` — that spec is authoritative for the M-series.

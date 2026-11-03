@@ -1,5 +1,32 @@
 # Meziverse — version log
 
+## 2.4.0 — 2026-11-03
+
+The fourth feature family — the story backgrounds. The chat's backdrop now comes from where the story is: the chat's own LLM reads the reply, decides what place it ends in, and SillyTavern's Image Generation paints it.
+
+### The chain
+- Every finished reply, swipe or edit runs one question: **does the image on screen still fit where the story is now?** Only the reply's final location counts — mid-reply hops are ignored — and the baseline is the background currently on screen, not the previous reply.
+- Sameness is judged **by meaning, not spelling**: "Pier No9", "Pier 9" and "the ninth pier" are one place. The string compare is only a skip-gate; any drift falls through to the watcher (the chat LLM), whose verdict folds the new spelling onto the image already up.
+- A place seen before returns instantly from **this chat's cache** — every drawn place keeps its image, its name and its prompt per chat. A genuinely new place is drawn fresh: the watcher writes the image prompt (the location only — no characters, no names, no actions; lighting anchored on the story's time of day and weather), the image is made by ST's own Image Generation, and it is set as the chat background the ST way. It lands in **Backgrounds → Chat** like a background you'd set by hand. No chat message is ever posted.
+
+### The bar
+- `bg · auto` rides beside `mode · on`. On: a new background when the place changes. Off: the chain holds — the brush draws on demand, or your pace does, a fresh background every N replies.
+- The brush paints where the story is now, straight through — no prompt-review window.
+
+### Stage notices
+- The chain speaks while it works and falls silent when it doesn't: sticky "Envisioning the location…" and "Painting {place}…" notices drop at each stage and go when the stage ends, then a brief "Background set: {place}". Errors read as sentences — never "[object Object]".
+
+### The Backgrounds settings group
+- Auto follow, every-N-replies pace, context replies (how much of the story the watcher reads), size (landscape / square), style, negative prompt, and **Draw one now**.
+- **Two editable watcher prompts** — the scene-tagged hand (mode ON) and the plain-prose hand (mode OFF) — each with Restore default, and **Show last request** for exactly what was sent to the LLM, footers included. The JSON answer format is appended by code, so no edit can break the answer parsing.
+
+### Notes
+- Needs ST's Image Generation (the `sd` extension, declared `optional` in `manifest.json`) enabled and configured; without it the chain explains itself in words instead of failing. Backgrounds follow the chat whether the scene is open or not — the backdrop belongs to the chat, not to the window.
+- Known limits, by design for now: the mode-ON skip-gate never consults the watcher when the location string is unchanged (a radically reimagined same-name place needs the brush); mode-OFF detection is deliberately basic — a fixed every-N pace.
+- Fixes along the way: the scene mirror now takes the background URL from the `FORCE_SET_BACKGROUND` payload (reading the DOM raced ST's own repaint and copied the previous image), and the toastr interception keeps toastr's full contract — the real element back in hand, clears mirrored — so ST's own consumers keep working behind the scene.
+- The version rides beside the wordmark ("Meziverse v2.4.0"); `manifest.json` matches.
+- The synthetic suite stands at 132 tests.
+
 ## 2.3.0 — 2026-11-02
 
 The third feature family — the inline narration cues. Four tags now leave their mark in the prose itself: a lie, a blind spot, a memory, and the world elsewhere.
