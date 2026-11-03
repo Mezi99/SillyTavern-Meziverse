@@ -1,5 +1,27 @@
 # Meziverse — version log
 
+## 2.4.1 — 2026-11-03
+
+Every reply remembers its own background. Shuffling back through the messages shuffles the pictures back with the turns — the history level, which also ties each response to its image as data, for the maps and book features to come.
+
+### The stamps
+- Each reply — each swipe variant — carries the background record in effect for it: `extra.meziverse.bg`, mirrored into the variant's own `swipe_info` slot (ST's per-swipe home), so stamps ride swipes, deletions and branches untouched. User turns get nothing and inherit the previous reply's image — scrolling onto a user turn shows the reply before it.
+- Resolution at any point in the chat: the variant's own stamp, then the nearest stamped variant of the same message (a fresh swipe taken from another variant keeps that variant's picture), then back over earlier messages.
+- Stamps point at **records**, never image paths: one canonical image per place. The brush redraws the shown turn's place and replaces the record **in place** — each manual retry wins over the last (`bg_18`, then `bg_19`…) — and every reply at that place shows the newest, everywhere.
+
+### The chain, target-scoped
+- Every run resolves ONE reply (a message and a swipe variant of it) and carries its target through: the watcher reads the story **up to that reply** and takes the picture *that reply* carried in as the baseline — so a run landing late writes the prompt that belongs to its own turn, never the chat's end.
+- Jobs run one at a time in order (an image in flight is never doubled), a newer job for the same reply replaces the older (force beats re-resolving beats arriving), and a chat change cancels everything. Every landing stamps the reply, saves the chat, and re-asserts the shown turn — a late result never yanks the picture out from under what is being read.
+- Swiping resolves only variants this chat has not seen: a variant already stamped brings its own picture back by swap, instantly, with no watcher call.
+
+### Both modes
+- The whole image feature set runs in Meziverse mode ON and OFF alike. Mode ON decides by the scene tags; mode OFF resolves at the every-N-replies pace and keeps the last picture between.
+
+### Notes
+- Scroll-back is swap-only — never asks, never draws — with a cached-place fallback for chats without history. (The old scroll-back swap resolved the chat's end whatever turn was shown, so this history behaviour is genuinely new.)
+- The version rides beside the wordmark ("Meziverse v2.4.1"); `manifest.json` matches.
+- The synthetic suite stands at 138 tests.
+
 ## 2.4.0 — 2026-11-03
 
 The fourth feature family — the story backgrounds. The chat's backdrop now comes from where the story is: the chat's own LLM reads the reply, decides what place it ends in, and SillyTavern's Image Generation paints it.
