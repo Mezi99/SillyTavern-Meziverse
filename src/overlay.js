@@ -6,7 +6,7 @@
  * only owns the chrome around it.
  */
 
-import { chatMessages, currentChatId, imageGenerationStatus, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer } from './st.js';
+import { chatMessages, currentChatId, errorText, imageGenerationStatus, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer } from './st.js';
 import { settings, saveSettings, modeOn, bgAutoOn } from './settings.js';
 import { syncBackgrounds, getLastWatcherRequest } from './bgchain.js';
 import { DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_OFF } from './backgrounds.js';
@@ -698,6 +698,8 @@ async function drawBackgroundNow() {
         if (result.status === 'error' || result.status === 'unavailable') {
             globalThis.toastr?.error?.(result.error || 'The background could not be drawn.');
         }
+    } catch (error) {
+        globalThis.toastr?.error?.(`The background could not be drawn: ${errorText(error)}`);
     } finally {
         els.bgBrushButton?.classList.remove('is-busy');
     }

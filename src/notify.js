@@ -76,9 +76,26 @@ export function notify(text, kind = 'info', options = {}) {
 }
 
 /**
+ * The message as plain text, whatever shape it arrived in. Throwables speak
+ * through their message; anything else that would show as "[object Object]"
+ * is left for the real toast to render, never mirrored raw.
+ */
+function messageText(message) {
+    if (typeof message === 'string') return message;
+    if (!message) return '';
+    if (typeof message.message === 'string' && message.message.trim()) return message.message;
+    const text = String(message);
+    return text === '[object Object]' ? '' : text;
+}
+
+/**
  * Wraps SillyTavern's toastr for as long as the scene is open, so its
- * notices are seen. Its message text is kept; its look becomes ours.
- * Returns a function that restores toastr exactly as it was.
+ * notices are seen: the real toast is still shown - consumers hold its
+ * element and hand it back to `toastr.clear` later (the image loader does
+ * exactly that), so the contract must survive the mirror - and each toast
+ * is re-rendered as a notice of ours inside the scene. Clearing a toast
+ * clears its mirror too. Returns a function that restores toastr exactly as
+ * it was.
  */
 export function interceptToastr() {
     const toastr = globalThis.toastr;
@@ -86,24 +103,52 @@ export function interceptToastr() {
 
     const methods = ['success', 'info', 'warning', 'error'];
     const saved = new Map();
+    const mirrors = new Map();
 
     for (const name of methods) {
         if (typeof toastr[name] !== 'function') continue;
 
         saved.set(name, toastr[name]);
-        toastr[name] = ((message, _title, overrides) => {
-            // toastr is called with (message, title, overrides); the message
-            // is what matters, and it may arrive as a jQuery-ish object.
-            const text = typeof message === 'string'
-                ? message
-                : (message && String(message)) || '';
+        toastr[name] = (message, title, overrides) => {
+            const element = saved.get(name).call(toastr, message, title, overrides);
+
             // timeOut: 0 is toastr's own "stay until cleared" - our sticky.
-            const note = notify(text, name, { sticky: overrides?.timeOut === 0 });
-            return note ? { dismiss: () => note.dismiss() } : { dismiss() {} };
-        });
+            const note = notify(messageText(message), name, { sticky: overrides?.timeOut === 0 });
+            if (element && note) {
+                mirrors.set(element, note);
+                if (overrides?.timeOut !== 0) {
+                    // A fading note outlives nothing; drop its mirror entry.
+                    setTimeout(() => mirrors.delete(element), LINGER + 1000);
+                }
+            }
+            return element;
+        };
+    }
+
+    if (typeof toastr.clear === 'function') {
+        saved.set('clear', toastr.clear);
+        toastr.clear = (element, options) => {
+            const note = mirrors.get(element);
+            if (note) {
+                note.dismiss();
+                mirrors.delete(element);
+            }
+            return saved.get('clear').call(toastr, element, options);
+        };
+    }
+
+    if (typeof toastr.clearAll === 'function') {
+        saved.set('clearAll', toastr.clearAll);
+        toastr.clearAll = () => {
+            for (const note of mirrors.values()) note.dismiss();
+            mirrors.clear();
+            return saved.get('clearAll').call(toastr);
+        };
     }
 
     return () => {
         for (const [name, original] of saved) toastr[name] = original;
+        for (const note of mirrors.values()) note.dismiss();
+        mirrors.clear();
     };
 }

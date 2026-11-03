@@ -664,6 +664,29 @@ function dedupeChatBackgrounds() {
 /* ---------- image generation ---------- */
 
 /**
+ * A throwable as plain text for a message a person will read. Never
+ * "[object Object]": errors speak through their message, anything else
+ * through JSON, and only the truly opaque get a shrug.
+ *
+ * @param {*} error
+ * @returns {string}
+ */
+export function errorText(error) {
+    if (!error) return 'unknown failure';
+    if (typeof error === 'string') return error;
+    if (typeof error.message === 'string' && error.message.trim()) return error.message;
+
+    try {
+        const json = JSON.stringify(error);
+        if (json && json !== '{}' && json !== '""') return json;
+    } catch {
+        // circular or exotic: fall through to the shrug
+    }
+
+    return 'unexpected failure';
+}
+
+/**
  * Whether SillyTavern's own Image Generation is set up well enough to draw
  * backgrounds: its settings exist and its /imagine command is registered.
  * The extension does the API keys, sources and models; we only need this gate.
@@ -751,7 +774,7 @@ export async function imagine({ prompt, negative, width, height, signal } = {}) 
         console.warn('[Meziverse] Image Generation failed', error);
         return {
             ok: false,
-            error: `Image Generation failed: ${error?.message || error}`,
+            error: `Image Generation failed: ${errorText(error)}`,
             aborted: false,
         };
     }
@@ -789,6 +812,6 @@ export async function generateRaw({ prompt, systemPrompt, responseLength, jsonSc
         return { ok: true, text: String(result ?? '').trim(), error: '' };
     } catch (error) {
         console.warn('[Meziverse] the watcher call failed', error);
-        return { ok: false, text: '', error: `The watcher call failed: ${error?.message || error}` };
+        return { ok: false, text: '', error: `The watcher call failed: ${errorText(error)}` };
     }
 }
