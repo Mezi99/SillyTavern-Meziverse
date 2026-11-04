@@ -531,7 +531,8 @@ body.mz-open .popup { z-index: 9500 !important; }
         color-mix(in srgb, var(--mz-bg) calc(var(--mz-pane-alpha, .9) * 100%), transparent),
         color-mix(in srgb, var(--mz-bg-2) calc(var(--mz-pane-alpha, .9) * 100%), transparent)
     );
-    backdrop-filter: var(--mz-blur);
+    /* the pane's own blur, tunable in settings; the chrome keeps --mz-blur */
+    backdrop-filter: saturate(140%) blur(var(--mz-pane-blur, 16px));
     box-shadow: var(--mz-shadow);
     transition: height var(--mz-dur) var(--mz-ease), background var(--mz-dur) var(--mz-ease);
 }

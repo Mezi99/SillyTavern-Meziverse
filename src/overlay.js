@@ -212,6 +212,13 @@ const FRAME_HTML = `
                     <span data-mz="pane-opacity-value">90%</span>
                 </div>
             </div>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Pane blur</b><small>How sharply the background reads through the reading pane. None keeps it clean.</small></span>
+                <div class="mz-range">
+                    <input type="range" min="0" max="24" step="2" data-mz="pane-blur" aria-label="Pane blur">
+                    <span data-mz="pane-blur-value">16 px</span>
+                </div>
+            </div>
         </div>
 
         <div class="mz-set-group" data-mz-pane="general">
@@ -479,6 +486,8 @@ export function mount() {
         fontSelect: root.querySelector('[data-mz="font"]'),
         paneOpacity: root.querySelector('[data-mz="pane-opacity"]'),
         paneOpacityValue: root.querySelector('[data-mz="pane-opacity-value"]'),
+        paneBlur: root.querySelector('[data-mz="pane-blur"]'),
+        paneBlurValue: root.querySelector('[data-mz="pane-blur-value"]'),
         prosePickers: root.querySelector('[data-mz="prose-pickers"]'),
         colorInputs: [...root.querySelectorAll('[data-mz-color]')],
         fullscreenButton: root.querySelector('[data-mz-action="fullscreen"]'),
@@ -563,6 +572,7 @@ export function mount() {
     applyCueMemories();
     applyCueMeanwhile();
     applyPaneOpacity();
+    applyPaneBlur();
     applyLogWidth(Number(settings().logWidth) || LOG_W_DEFAULT);
 
     wireActions();
@@ -611,6 +621,7 @@ export function open() {
     applyBackground();
     applyProseColors();
     applyPaneOpacity();
+    applyPaneBlur();
     applyLogWidth(Number(settings().logWidth) || LOG_W_DEFAULT);
     if (Number(settings().logHeight) > 0) applyLogHeight(settings().logHeight);
     setGenerating(stGenerating(), { force: true });
@@ -844,6 +855,18 @@ function applyPaneOpacity() {
 
     if (els.paneOpacity) els.paneOpacity.value = String(percent);
     if (els.paneOpacityValue) els.paneOpacityValue.textContent = `${percent}%`;
+}
+
+/* The reading pane's blur, in pixels of backdrop blur under it. Only the
+   pane; the chrome keeps its own blur. None keeps the background sharp. */
+function applyPaneBlur() {
+    const raw = Number(settings().paneBlur);
+    const amount = Number.isFinite(raw) ? Math.min(24, Math.max(0, Math.round(raw / 2) * 2)) : 16;
+
+    root.style.setProperty('--mz-pane-blur', `${amount}px`);
+
+    if (els.paneBlur) els.paneBlur.value = String(amount);
+    if (els.paneBlurValue) els.paneBlurValue.textContent = `${amount} px`;
 }
 
 /* Reads the prose inks SillyTavern's chat has right now. A hidden probe
@@ -1810,6 +1833,12 @@ function wireActions() {
     els.paneOpacity?.addEventListener('input', () => {
         settings().paneOpacity = Number(els.paneOpacity.value);
         applyPaneOpacity();
+        saveSettings();
+    });
+
+    els.paneBlur?.addEventListener('input', () => {
+        settings().paneBlur = Number(els.paneBlur.value);
+        applyPaneBlur();
         saveSettings();
     });
 
