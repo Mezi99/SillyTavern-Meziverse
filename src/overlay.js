@@ -7,7 +7,7 @@
  */
 
 import { chatMessages, currentChatId, errorText, imageGenerationStatus, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer } from './st.js';
-import { settings, saveSettings, modeOn, bgAutoOn } from './settings.js';
+import { settings, saveSettings, entryOn, modeOn, bgAutoOn } from './settings.js';
 import {
     forceBackground,
     getLastWatcherRequest,
@@ -89,7 +89,7 @@ const FRAME_HTML = `
     <div class="mz-cast" role="group" aria-label="Cast"></div>
 
     <div class="mz-glance mz-glance--l" data-mz="glance-l"></div>
-    <div class="mz-glance" data-mz="glance" hidden></div>
+    <div class="mz-glance" data-mz="glance"></div>
     <section class="mz-fly mz-fly--r" data-mz="fly" role="dialog" aria-modal="false" aria-label="Ledger" hidden>
         <div class="mz-fly-head">
             <h2 data-mz="fly-title"></h2>
@@ -182,7 +182,13 @@ const FRAME_HTML = `
             <button class="mz-ibtn" type="button" title="Close settings" aria-label="Close settings" data-mz-action="close-settings">${svg('close')}</button>
         </header>
 
-        <div class="mz-set-group">
+        <div class="mz-seg mz-set-tabs" role="tablist" aria-label="Settings sections">
+            <button class="is-on" type="button" role="tab" aria-selected="true" data-mz-tab="general">General</button>
+            <button type="button" role="tab" aria-selected="false" data-mz-tab="image">Image generation</button>
+            <button type="button" role="tab" aria-selected="false" data-mz-tab="mode">Meziverse mode</button>
+        </div>
+
+        <div class="mz-set-group" data-mz-pane="general">
             <h3>Appearance</h3>
             <div class="mz-set-row">
                 <span class="mz-set-label"><b>Theme</b><small>Ink and one metal. Everything follows it.</small></span>
@@ -206,7 +212,7 @@ const FRAME_HTML = `
             </div>
         </div>
 
-        <div class="mz-set-group">
+        <div class="mz-set-group" data-mz-pane="general">
             <h3>Type</h3>
             <div class="mz-set-row">
                 <span class="mz-set-label"><b>Interface scale</b><small>Menus, headers and buttons.</small></span>
@@ -255,7 +261,7 @@ const FRAME_HTML = `
             </div>
         </div>
 
-        <div class="mz-set-group">
+        <div class="mz-set-group" data-mz-pane="general">
             <h3>Motion</h3>
             <div class="mz-set-row">
                 <span class="mz-set-label"><b>Reduced motion</b><small>Fades and slides become instant.</small></span>
@@ -263,26 +269,18 @@ const FRAME_HTML = `
             </div>
         </div>
 
-        <div class="mz-set-group">
+        <div class="mz-set-group" data-mz-pane="image">
             <h3>Backgrounds</h3>
             <div class="mz-set-row">
                 <span class="mz-set-label"><b>Follow the story</b><small>A new background when the place changes; the brush draws one on demand.</small></span>
                 <button class="mz-switch" type="button" role="switch" aria-checked="false" aria-label="Automatic location backgrounds" data-mz-action="bg-auto"><i></i></button>
             </div>
             <div class="mz-set-row">
-                <span class="mz-set-label"><b>Mode OFF pace</b><small>Without scene tags, ask the watcher every N replies.</small></span>
+                <span class="mz-set-label"><b>Background generation pace</b><small>Draws at most once every N AI replies. New places between draws keep the last picture.</small></span>
                 <div class="mz-step">
-                    <button type="button" data-mz-step="bg-every" data-dir="-1" aria-label="Ask less often">\u2212</button>
-                    <span data-mz="bg-every-value">3</span>
-                    <button type="button" data-mz-step="bg-every" data-dir="1" aria-label="Ask more often">+</button>
-                </div>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Context replies</b><small>How many of the latest replies the watcher reads.</small></span>
-                <div class="mz-step">
-                    <button type="button" data-mz-step="bg-ctx" data-dir="-1" aria-label="Fewer replies">\u2212</button>
-                    <span data-mz="bg-ctx-value">2</span>
-                    <button type="button" data-mz-step="bg-ctx" data-dir="1" aria-label="More replies">+</button>
+                    <button type="button" data-mz-step="bg-every" data-dir="-1" aria-label="Draw less often">\u2212</button>
+                    <span data-mz="bg-every-value">1</span>
+                    <button type="button" data-mz-step="bg-every" data-dir="1" aria-label="Draw more often">+</button>
                 </div>
             </div>
             <div class="mz-set-row">
@@ -301,13 +299,13 @@ const FRAME_HTML = `
                 <input class="mz-select" data-mz="bg-negative" aria-label="Background negative prompt">
             </div>
             <div class="mz-set-row mz-set-row--prompt">
-                <span class="mz-set-label"><b>Watcher prompt \u00b7 ON</b><small>What the watcher is asked where scene tags mark the places. The answer format is appended for you.</small></span>
-                <textarea class="mz-textarea" rows="8" data-mz="bg-prompt-on" aria-label="Watcher prompt, mode ON"></textarea>
+                <span class="mz-set-label"><b>Watcher prompt \u00b7 Scene tags</b><small>What the watcher is asked where scene tags mark the places. The answer format is appended for you.</small></span>
+                <textarea class="mz-textarea" rows="8" data-mz="bg-prompt-on" aria-label="Watcher prompt, scene tags"></textarea>
                 <button class="mz-btn-ghost" type="button" data-mz-action="bg-prompt-on-reset">Restore default</button>
             </div>
             <div class="mz-set-row mz-set-row--prompt">
-                <span class="mz-set-label"><b>Watcher prompt \u00b7 OFF</b><small>The plain-prose hand, for presets without scene tags.</small></span>
-                <textarea class="mz-textarea" rows="8" data-mz="bg-prompt-off" aria-label="Watcher prompt, mode OFF"></textarea>
+                <span class="mz-set-label"><b>Watcher prompt \u00b7 Plain prose</b><small>The plain-prose hand, for presets without scene tags.</small></span>
+                <textarea class="mz-textarea" rows="8" data-mz="bg-prompt-off" aria-label="Watcher prompt, plain prose"></textarea>
                 <button class="mz-btn-ghost" type="button" data-mz-action="bg-prompt-off-reset">Restore default</button>
             </div>
             <div class="mz-set-row mz-set-row--prompt">
@@ -321,7 +319,43 @@ const FRAME_HTML = `
             </div>
         </div>
 
-        <div class="mz-set-group">
+        <div class="mz-set-group" data-mz-pane="mode">
+            <h3>Tracker entries</h3>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Standing</b><small>How the world sees you.</small></span>
+                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Standing" data-mz-entry="standing"><i></i></button>
+            </div>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Profiles</b><small>Who is here: mini cards and full profiles.</small></span>
+                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Profiles" data-mz-entry="profiles"><i></i></button>
+            </div>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Shifts</b><small>The pairs that moved this turn.</small></span>
+                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Shifts" data-mz-entry="shifts"><i></i></button>
+            </div>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Threads</b><small>Live plot threads and their clocks.</small></span>
+                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Threads" data-mz-entry="threads"><i></i></button>
+            </div>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Plans</b><small>What everyone intends to do.</small></span>
+                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Plans" data-mz-entry="plans"><i></i></button>
+            </div>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Hooks</b><small>Open questions and their clues.</small></span>
+                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Hooks" data-mz-entry="hooks"><i></i></button>
+            </div>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Lore</b><small>Seeds of the world's lore.</small></span>
+                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Lore" data-mz-entry="lore"><i></i></button>
+            </div>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Story So Far</b><small>The moments the story has marked.</small></span>
+                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Story So Far" data-mz-entry="recap"><i></i></button>
+            </div>
+        </div>
+
+        <div class="mz-set-group" data-mz-pane="mode">
             <h3>Cues</h3>
             <div class="mz-set-row">
                 <span class="mz-set-label"><b>Popovers</b><small>How the truth behind a mark opens.</small></span>
@@ -413,7 +447,6 @@ export function mount() {
         bgAutoLabel: root.querySelector('[data-mz="bg-auto-label"]'),
         bgBrushButton: root.querySelector('[data-mz-action="bg-generate"]'),
         bgEveryValue: root.querySelector('[data-mz="bg-every-value"]'),
-        bgCtxValue: root.querySelector('[data-mz="bg-ctx-value"]'),
         bgStyle: root.querySelector('[data-mz="bg-style"]'),
         bgNegative: root.querySelector('[data-mz="bg-negative"]'),
         bgPromptOn: root.querySelector('[data-mz="bg-prompt-on"]'),
@@ -517,6 +550,8 @@ export function mount() {
     applyMode();
     applyBgAuto();
     applyBgControls();
+    applyEntries();
+    setSettingsTab('general');
     applyBrush();
     applyScale();
     applyNarration();
@@ -664,8 +699,7 @@ function applyBgAuto() {
 
 /** Syncs the background settings rows with the settings they edit. */
 function applyBgControls() {
-    if (els.bgEveryValue) els.bgEveryValue.textContent = String(Math.max(1, Number(settings().bgEveryN) || 3));
-    if (els.bgCtxValue) els.bgCtxValue.textContent = String(Math.max(1, Number(settings().bgContextReplies) || 2));
+    if (els.bgEveryValue) els.bgEveryValue.textContent = String(Math.max(1, Number(settings().bgEveryN) || 1));
     if (els.bgStyle) els.bgStyle.value = settings().bgStyle ?? '';
     if (els.bgNegative) els.bgNegative.value = settings().bgNegative ?? '';
     if (els.bgPromptOn) els.bgPromptOn.value = settings().bgPromptOn ?? DEFAULT_BG_PROMPT_ON;
@@ -676,6 +710,32 @@ function applyBgControls() {
         button.classList.toggle('is-on', isOn);
         button.setAttribute('aria-pressed', String(isOn));
     });
+}
+
+/**
+ * The settings sheet's sections: one tab's groups on stage at a time. The
+ * groups carry their tab's name in `data-mz-pane`; hidden groups take no
+ * room, so the sheet's own gap spaces the visible ones. The open tab sticks
+ * for the session - the sheet is built once and never rebuilt.
+ */
+function setSettingsTab(name) {
+    for (const button of root.querySelectorAll('[data-mz-tab]')) {
+        const on = button.dataset.mzTab === name;
+        button.classList.toggle('is-on', on);
+        button.setAttribute('aria-selected', String(on));
+    }
+    for (const group of root.querySelectorAll('[data-mz-pane]')) {
+        group.hidden = group.dataset.mzPane !== name;
+    }
+}
+
+/** Syncs the tracker entry switches with their switches in `settings().entries`. */
+function applyEntries() {
+    for (const button of root.querySelectorAll('[data-mz-entry]')) {
+        const on = entryOn(button.dataset.mzEntry);
+        button.classList.toggle('is-on', on);
+        button.setAttribute('aria-checked', String(on));
+    }
 }
 
 /** The brush stands aside - with the reason in its title - when Image Generation cannot draw. */
@@ -992,11 +1052,11 @@ function measureChatbar() {
 function applyScene(record) {
     lastShown = record || null;
 
-    // With Meziverse mode off the whole cluster steps aside and stays empty:
-    // a non-Meziverse preset never emits tags, so placeholders would only
-    // promise scene info that can never arrive.
-    const scene = modeOn() ? lastShown?.scene || null : null;
-    if (els.sceneCluster) els.sceneCluster.hidden = !modeOn();
+    // The cluster is scene-tag UI: it shows the governing scene wherever a
+    // preset carries one, and steps aside when the story has none -
+    // placeholders would only promise scene info that can never arrive.
+    const scene = lastShown?.scene || null;
+    if (els.sceneCluster) els.sceneCluster.hidden = !scene;
 
     els.date.textContent = scene?.date || '\u2014';
     els.date.title = scene?.dateRaw || '';
@@ -1564,6 +1624,24 @@ function wireActions() {
             return;
         }
 
+        const tab = event.target.closest('[data-mz-tab]');
+        if (tab) {
+            setSettingsTab(tab.dataset.mzTab);
+            return;
+        }
+
+        const entry = event.target.closest('[data-mz-entry]');
+        if (entry) {
+            const name = entry.dataset.mzEntry;
+            settings().entries[name] = !entryOn(name);
+            applyEntries();
+            // The rails obey at once: whatever the ledger carries re-renders
+            // with the entry's menu, cards and popups on or off.
+            applyLedger(lastEntry);
+            saveSettings();
+            return;
+        }
+
         const step = event.target.closest('[data-mz-step]');
         if (step) {
             const dir = Number(step.dataset.dir) || 0;
@@ -1572,10 +1650,7 @@ function wireActions() {
                 settings().uiScale = stepValue(UI_STEPS, Number(settings().uiScale) || 1, dir);
                 applyScale();
             } else if (which === 'bg-every') {
-                settings().bgEveryN = stepNumber(Number(settings().bgEveryN) || 3, dir, 1, 60);
-                applyBgControls();
-            } else if (which === 'bg-ctx') {
-                settings().bgContextReplies = stepNumber(Number(settings().bgContextReplies) || 2, dir, 1, 5);
+                settings().bgEveryN = stepNumber(Number(settings().bgEveryN) || 1, dir, 1, 60);
                 applyBgControls();
             } else {
                 settings().narrSize = stepValue(NARR_STEPS, Number(settings().narrSize) || 18.5, dir);

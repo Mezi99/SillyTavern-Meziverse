@@ -1736,6 +1736,22 @@ body.mz-open .popup { z-index: 9500 !important; }
 .mz-seg button:hover { color: var(--mz-text); }
 .mz-seg button.is-on { color: var(--mz-text); background: var(--mz-line-strong); }
 
+/* the settings sheet's section tabs: the seg bar stretched across the
+   sheet, one tab's groups on stage at a time */
+.mz-set-tabs {
+    display: flex;
+    gap: 4px;
+    width: 100%;
+}
+.mz-set-tabs button {
+    flex: 1;
+    min-width: 0;
+    height: 28px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .mz-step {
     display: inline-flex;
     align-items: center;

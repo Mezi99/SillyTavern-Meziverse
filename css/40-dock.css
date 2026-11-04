@@ -6,31 +6,23 @@
 
 /* ---------- rail frame ---------- */
 
-/* mockup CHANGE: the pane and cast are inset by whichever glance column
-   is on screen (the menus float over the cast at the gutters) */
-.mz-frame.is-rails-l .mz-cast {
-    left: var(--mz-pane-left);
-}
-
-.mz-frame.is-rails-r .mz-cast {
-    right: var(--mz-pane-right);
-}
-
-@media (min-width: 1180px) {
-    .mz-frame.is-rails-l .mz-cast,
-    .mz-frame.is-rails-r .mz-cast {
+/* mockup CHANGE: the pane and cast are inset by the reserved glance
+   columns — one reservation both share, whatever the rails carry (the
+   menus float over the cast at the gutters) */
+@media (min-width: 760px) {
+    .mz-cast {
         left: var(--mz-pane-left);
         right: var(--mz-pane-right);
     }
 }
 
-.mz-glance[hidden],
 .mz-fly[hidden] { display: none; }
 
-/* The column runs from under the chat bar to the bottom gutter — past
-   the narration pane, which the rails ride over like the popups do.
-   The scrollbar only appears when even that height cannot take the
-   cards. */
+/* Both columns are on stage at every width where they exist — reserved
+   space beside the pane, with the menus over them — running from under
+   the chat bar to the bottom gutter, past the narration pane, which the
+   rails ride over like the popups do. The scrollbar only appears when
+   even that height cannot take the cards. */
 .mz-glance {
     position: absolute;
     z-index: calc(var(--mz-z-pane) + 1);
@@ -43,18 +35,19 @@
     gap: 8px;
     overflow-y: auto;
     scrollbar-width: thin;
-}
-
-/* the left column mirrors the right — and stays on stage even without
-   cards, because its menu carries the chat log. Only the cards come and
-   go, so the column lets clicks through where it is empty. */
-.mz-glance--l {
-    right: auto;
-    left: var(--mz-gutter);
+    /* the column lets clicks through where it holds nothing */
     pointer-events: none;
 }
 
-.mz-glance--l > * { pointer-events: auto; }
+.mz-glance > * { pointer-events: auto; }
+
+/* the left column is the right, mirrored — its menu carries the chat
+   log, so the pill hugs its own edge. Only the cards come and go. */
+.mz-glance--l {
+    right: auto;
+    left: var(--mz-gutter);
+}
+
 .mz-glance--l .mz-dock--h { align-self: flex-start; }
 
 .mz-g {

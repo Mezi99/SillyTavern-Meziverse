@@ -444,6 +444,38 @@ export function decide(store, key, { baseline } = {}) {
 }
 
 /**
+ * The shared resolution table behind both modes: given `decide`'s answer for
+ * a tagged reply (or nothing at all, when the story carries no scene tag),
+ * what the pipeline may do next, and the pace clock after the reply.
+ *
+ * Free outcomes - the reply keeps its carried picture ("none") or swaps to a
+ * cached one ("apply") - run at any pace: they cost no call and no image, so
+ * throttling them would only cost truth. Only the costly half (the watcher
+ * and the image it may ask for) waits for the "Background generation pace",
+ * and every arriving reply - swipe and edit included - advances the clock.
+ * The brush never waits and never counts.
+ *
+ * @param {{step?:{action:string, record?:object|null}|null, force?:boolean, counter?:number, every?:number}} [options]
+ *   `step` is `decide`'s answer, or null for an untagged reply (the
+ *   plain-prose fallback has no free outcomes).
+ * @returns {{go:'unchanged'|'cached'|'keep'|'watch', record:object|null, counter:number}}
+ */
+export function planResolution({ step = null, force = false, counter = 0, every = 1 } = {}) {
+    // The brush demands a fresh picture outright: it never waits for the
+    // pace and never advances the clock.
+    if (force) return { go: 'watch', record: null, counter };
+
+    const limit = Math.max(1, Number(every) || 1);
+    const next = (Number(counter) || 0) + 1;
+
+    if (step?.action === 'none') return { go: 'unchanged', record: step.record || null, counter: next };
+    if (step?.action === 'apply') return { go: 'cached', record: step.record || null, counter: next };
+
+    if (next < limit) return { go: 'keep', record: null, counter: next };
+    return { go: 'watch', record: null, counter: 0 };
+}
+
+/**
  * Whether a record's image is the one behind SillyTavern's custom-background
  * value. Tolerates the raw path and the wrapped CSS form alike.
  */
@@ -475,13 +507,13 @@ export const WATCHER_SCHEMA = Object.freeze({
 });
 
 /**
- * The creative core of the watcher's question, one per mode. These are the
+ * The creative core of the watcher's question, one per hand. These are the
  * parts meant to be tuned: the settings sheet edits copies of them, and the
  * answer format below is appended by code so parsing survives any edit.
  *
- * Mode ON sees the story grouped by scene blocks and leans on that structure;
- * mode OFF gets plain prose, where the location may change inside a single
- * paragraph or hold for many messages.
+ * The scene-tagged hand sees the story grouped by scene blocks and leans on
+ * that structure; the plain-prose hand gets raw text, where the location may
+ * change inside a single paragraph or hold for many messages.
  */
 export const DEFAULT_BG_PROMPT_ON = `You are a background-art assistant for a visual-novel style roleplay. You receive the CURRENT BACKGROUND (the place name and image description shown now), a list of KNOWN BACKGROUNDS, a RECENT PLACES timeline, and the LATEST STORY grouped by scene blocks - each block's header names the place, time and weather its narration happens in. The LAST block is where the story is now.
 
@@ -505,16 +537,16 @@ const WATCHER_FORMAT = `Answer with one JSON object and nothing else:
 const WATCHER_FORCE = 'The user asked for a fresh image of the place the story is at now: answer "new" with a fresh description even when the place matches a known background.';
 
 /**
- * The watcher's system prompt: the editable core for the mode (or the
+ * The watcher's system prompt: the editable core for the hand (or the
  * default core when none is set), with the answer format always appended.
  * With `force` (the brush button) it must draw something even when nothing
  * changed, so matching is switched off.
  *
- * @param {{mode?:boolean, force?:boolean, core?:string}} [options]
+ * @param {{tagged?:boolean, force?:boolean, core?:string}} [options]
  * @returns {string}
  */
-export function watcherSystemPrompt({ mode = true, force = false, core = '' } = {}) {
-    const base = String(core ?? '').trim() || (mode ? DEFAULT_BG_PROMPT_ON : DEFAULT_BG_PROMPT_OFF);
+export function watcherSystemPrompt({ tagged = true, force = false, core = '' } = {}) {
+    const base = String(core ?? '').trim() || (tagged ? DEFAULT_BG_PROMPT_ON : DEFAULT_BG_PROMPT_OFF);
     return force
         ? `${base}\n\n${WATCHER_FORMAT}\n\n${WATCHER_FORCE}`
         : `${base}\n\n${WATCHER_FORMAT}`;
@@ -597,16 +629,16 @@ export function extractRecentPlaces(messages, { limit = 6, at, persona = '' } = 
 /**
  * The story excerpt the watcher reads.
  *
- * Mode ON: narration grouped by scene, the tag's place, clock and weather on
- * each group's header line. The last group is the current place. Mode OFF has
- * no tags to group by, so the text goes in raw - nothing stripped, because in
- * untagged prose anything may carry the location.
+ * Tagged: narration grouped by scene, the tag's place, clock and weather on
+ * each group's header line. The last group is the current place. Untagged
+ * prose has no tags to group by, so the text goes in raw - nothing stripped,
+ * because in untagged prose anything may carry the location.
  *
  * @param {Array<{mes:string}>} messages
- * @param {{mode?:boolean, count?:number, at?:number, persona?:string}} [options]
+ * @param {{tagged?:boolean, count?:number, at?:number, persona?:string}} [options]
  * @returns {string}
  */
-export function formatLatestStory(messages, { mode = true, count = 2, at, persona = '' } = {}) {
+export function formatLatestStory(messages, { tagged = true, count = BG_STORY_REPLIES, at, persona = '' } = {}) {
     const list = Array.isArray(messages) ? messages : [];
     const end = Number.isInteger(at) ? Math.min(at, list.length - 1) : list.length - 1;
     const start = Math.max(0, end - Math.max(1, count) + 1);
@@ -616,7 +648,7 @@ export function formatLatestStory(messages, { mode = true, count = 2, at, person
         const mes = typeof list[i]?.mes === 'string' ? list[i].mes : '';
         if (!mes.trim()) continue;
 
-        if (!mode) {
+        if (!tagged) {
             turns.push(mes.trim());
             continue;
         }
@@ -636,15 +668,22 @@ export function formatLatestStory(messages, { mode = true, count = 2, at, person
 }
 
 /**
+ * How much story the watcher reads: the reply being resolved and nothing
+ * older - the image prompts are ours to keep robust, not a user's choice.
+ * (The finetuning knob: 2, for slow-paced roleplays.)
+ */
+export const BG_STORY_REPLIES = 1;
+
+/**
  * The watcher's whole question: what the reply carried in, what this chat
  * already has, where the story has been, and the story up to the reply being
  * resolved. Everything is scoped to `at` - a run that lands late still asks
  * about its own reply, not the chat's end.
  *
- * @param {{store:object, messages:Array, mode?:boolean, count?:number, at?:number, persona?:string, force?:boolean, systemCore?:string, current?:object|null}} options
+ * @param {{store:object, messages:Array, tagged?:boolean, count?:number, at?:number, persona?:string, force?:boolean, systemCore?:string, current?:object|null}} options
  * @returns {{systemPrompt:string, prompt:string, responseLength:number, jsonSchema:object}}
  */
-export function buildWatcherRequest({ store, messages, mode = true, count = 2, at, persona = '', force = false, systemCore = '', current } = {}) {
+export function buildWatcherRequest({ store, messages, tagged = true, count = BG_STORY_REPLIES, at, persona = '', force = false, systemCore = '', current } = {}) {
     const blocks = [];
 
     const shown = current !== undefined ? current : currentRecord(store);
@@ -655,15 +694,15 @@ export function buildWatcherRequest({ store, messages, mode = true, count = 2, a
         ? known.map(entry => `- ${entry.id}: ${entry.place} - ${excerpt(entry.prompt, 200)}`).join('\n')
         : 'none'}`);
 
-    const places = mode
+    const places = tagged
         ? extractRecentPlaces(messages, { limit: 6, at, persona })
         : knownBackgroundsList(store, { limit: 6 }).map(entry => entry.place).reverse();
     blocks.push(`RECENT PLACES\n${places.length ? places.join(' -> ') : 'unknown'}`);
 
-    blocks.push(`LATEST STORY\n${formatLatestStory(messages, { mode, count, at, persona }) || 'empty'}`);
+    blocks.push(`LATEST STORY\n${formatLatestStory(messages, { tagged, count, at, persona }) || 'empty'}`);
 
     return {
-        systemPrompt: watcherSystemPrompt({ mode, force, core: systemCore }),
+        systemPrompt: watcherSystemPrompt({ tagged, force, core: systemCore }),
         prompt: blocks.join('\n\n'),
         responseLength: 600,
         jsonSchema: WATCHER_SCHEMA,

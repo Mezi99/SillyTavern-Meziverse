@@ -101,10 +101,6 @@ export function mountCast(element) {
 export function renderCast(scene) {
     if (!host) return;
 
-    // The cast is a scene feature: with Meziverse mode off there is nothing
-    // to cast from and no place this strip belongs.
-    if (!modeOn()) scene = null;
-
     lastScene = scene && Array.isArray(scene.present) ? scene : null;
     names = lastScene ? lastScene.present.filter(Boolean) : [];
 
