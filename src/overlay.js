@@ -89,7 +89,7 @@ const FRAME_HTML = `
     <div class="mz-cast" role="group" aria-label="Cast"></div>
 
     <div class="mz-glance mz-glance--l" data-mz="glance-l"></div>
-    <div class="mz-glance" data-mz="glance" hidden></div>
+    <div class="mz-glance" data-mz="glance"></div>
     <section class="mz-fly mz-fly--r" data-mz="fly" role="dialog" aria-modal="false" aria-label="Ledger" hidden>
         <div class="mz-fly-head">
             <h2 data-mz="fly-title"></h2>

@@ -52,12 +52,13 @@
     --mz-chatbar-h: 48px;
     --mz-gutter: 16px;
 
-    /* the tracker glance column; the pane is inset by it whenever the
-       tracker rails are on screen */
+    /* the tracker glance columns; the pane is inset by them at every
+       width where the columns exist — reserved space, not content */
     --mz-glance-w: 232px;
     --mz-dlg-gap: 20px;
 
-    /* the pane is inset by whatever rails the window can afford */
+    /* the pane is inset by the reserved rails wherever the window can
+       afford them (below) — by the gutter otherwise */
     --mz-pane-left: var(--mz-gutter);
     --mz-pane-right: var(--mz-gutter);
 
@@ -100,23 +101,13 @@
     --mz-z-sheet: 20;
 }
 
-/* Tablet keeps the rails' glance columns because the chat header already
-   carries the scene. Above that the inset goes symmetric whenever any
-   rail is on stage, so the pane stays centred. Without the rails the
-   pane keeps the gutter, whatever is on screen. */
+/* Reservation-driven rails: at every width where the glance columns
+   exist they are on stage — menus and cards or not — so the narration
+   pane keeps one width and stays centred, whatever the rails carry.
+   Below 760px the columns do not exist (the chat bar's strip stands in
+   for both menus) and the pane keeps the gutter. */
 @media (min-width: 760px) {
-    #mz-root .mz-frame.is-rails-r {
-        --mz-pane-right: calc(var(--mz-glance-w) + var(--mz-gutter) + var(--mz-dlg-gap));
-    }
-
-    #mz-root .mz-frame.is-rails-l {
-        --mz-pane-left: calc(var(--mz-glance-w) + var(--mz-gutter) + var(--mz-dlg-gap));
-    }
-}
-
-@media (min-width: 1180px) {
-    #mz-root .mz-frame.is-rails-l,
-    #mz-root .mz-frame.is-rails-r {
+    #mz-root .mz-frame {
         --mz-pane-left: calc(var(--mz-glance-w) + var(--mz-gutter) + var(--mz-dlg-gap));
         --mz-pane-right: calc(var(--mz-glance-w) + var(--mz-gutter) + var(--mz-dlg-gap));
     }

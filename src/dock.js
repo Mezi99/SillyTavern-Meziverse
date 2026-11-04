@@ -9,8 +9,9 @@
  * The ledger entries land one at a time, each in ENTRIES with its own
  * side, popup body and feature switch; entries with `boxes` also draw
  * glance cards under their menu. An entry draws only under Meziverse
- * mode AND its own switch, and only when its rows exist: with nothing
- * to show the column steps aside and the pane keeps the width.
+ * mode AND its own switch, and only when its rows exist. The columns
+ * are reserved space, though — the pane keeps its width whatever the
+ * rails carry — so only the menus' cards come and go.
  *
  * The menu buttons snap their entry's boxes, or — for popup-only entries
  * like hooks, lore and recap — open the popup. Clicking a box or card
@@ -148,7 +149,8 @@ export function mountDock(root) {
 /**
  * Draws both rails for one resolved ledger (or null when the turn has
  * none). Rebuilds only when the board changes, so streaming frames are
- * cheap.
+ * cheap. The columns' space is reserved by the layout; what changes
+ * here is only their content.
  *
  * @param {{threads:object[], profiles:object[], standing:object[], turn:number, carried:boolean}|null} ledger
  */
@@ -159,14 +161,6 @@ export function renderDock(ledger) {
 
     const visible = Object.keys(ENTRIES).filter(visibleNow);
     if (openKey && !visible.includes(openKey)) openKey = null;
-
-    const leftOn = visible.some(key => ENTRIES[key].side === 'l');
-    const rightOn = visible.some(key => ENTRIES[key].side !== 'l');
-    frame.classList.toggle('is-rails-l', leftOn);
-    frame.classList.toggle('is-rails-r', rightOn);
-    glanceR.hidden = !rightOn;
-    // The left column is chrome too — its menu carries the chat log — so
-    // it never steps aside; only its cards come and go.
 
     const signature = JSON.stringify({ visible, state, hidden: [...hiddenParts] });
 
@@ -281,6 +275,8 @@ function buildRail() {
     const leftKeys = keys.filter(key => ENTRIES[key].side === 'l');
     const rightKeys = keys.filter(key => ENTRIES[key].side !== 'l');
 
+    // The left menu is chrome: its head is the chat log button, so it is
+    // on stage however few cards stand under it.
     const leftNav = document.createElement('nav');
     leftNav.className = 'mz-dock mz-dock--h';
     leftNav.setAttribute('aria-label', 'People');
@@ -288,12 +284,14 @@ function buildRail() {
 
     glanceL.replaceChildren(leftNav, ...boxesFor(leftKeys));
 
+    // The right menu is entry buttons only, so a pill with none would
+    // have no purpose — the column's space is reserved either way.
     const rightNav = document.createElement('nav');
     rightNav.className = 'mz-dock mz-dock--h';
     rightNav.setAttribute('aria-label', 'Story');
     rightNav.append(...rightKeys.map(menuButton));
 
-    glanceR.replaceChildren(rightNav, ...boxesFor(rightKeys));
+    glanceR.replaceChildren(...(rightKeys.length ? [rightNav] : []), ...boxesFor(rightKeys));
 
     if (railButtons) {
         railButtons.replaceChildren(logButton('mz-ibtn mz-railbtn'), ...keys.map(railButton));
