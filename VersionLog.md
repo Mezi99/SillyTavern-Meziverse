@@ -1,5 +1,27 @@
 # Meziverse — version log
 
+## 2.5.0 — 2026-11-04
+
+One scene-tag contract. The base extension — backgrounds, avatars, the scene cluster and rows, the rails frame — now works with any preset in both modes; the mode toggle gates only the Meziverse.json extras (ledger, cues, mindscape, meanwhile, thought bubbles).
+
+### One pipeline for both modes
+- A `<scene>` tag in the narration governs — date, weather, location, who is present — and one plan table branches the run on **tag presence**, never on the mode switch. Tag present → the scene's chain (skip → cached swap → watcher). No tag → the plain-prose watcher at the pace, keeping the last picture between fires.
+- Free outcomes always run at any pace — a skip stamps its "none", a known place swaps from cache — so per-response stamps stay truthful; only the costly work (the watcher call, the drawing) waits its turn. A genuinely new place between fires keeps the last picture (accepted cost).
+- Avatars follow the tag's `present` in both modes; the scene cluster, the inline scene rows and the whole image chain are mode-free. Only the extras read the mode toggle.
+- "Context replies" is gone: the watcher always gets the story context it needs — robustness is ours to guarantee, not a knob. The two prompt rows are now "Watcher prompt · Scene tags" and "· Plain prose", each picked by the tag presence of the reply being resolved.
+- The pace row reads **Background generation pace**, shared by both modes, default 1 (every AI response). Only AI turns count — user turns never; swipes and edits count; the brush never waits or counts.
+
+### Settings, three tabs
+- **General** (Appearance, Type, Motion) · **Image generation** (the whole Backgrounds group) · **Meziverse mode** (Tracker entries + Cues). The open tab sticks for the session.
+- The mode-features menu finally exists: Tracker entries carries all eight switches — standing, profiles, shifts, threads, plans, hooks, lore, story so far — each flipping its entry live, so mode-on with individual entries off is a first-class state.
+
+### Rails keep their space
+- The narration pane never changes width: at desktop widths the rails' columns are reserved whether or not they carry content, icon menus always on stage — only the glance cards are content-driven. Toggling entries or switching chats no longer shifts the layout.
+
+### Notes
+- The version rides beside the wordmark ("Meziverse v2.5.0"); `manifest.json` matches.
+- The synthetic suite stands at 140 tests.
+
 ## 2.4.1 — 2026-11-03
 
 Every reply remembers its own background. Shuffling back through the messages shuffles the pictures back with the turns — the history level, which also ties each response to its image as data, for the maps and book features to come.
