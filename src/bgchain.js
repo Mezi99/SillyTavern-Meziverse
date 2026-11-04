@@ -69,6 +69,10 @@ const LOG = '[Meziverse] bg';
 // scene hands the gate in at init; the default is off.
 let uiIsOpen = () => false;
 
+// A reply without a scene tag says so once per chat - the plain-prose
+// fallback still takes it, so the notice is a flag, not an alarm.
+let noTagNoticed = false;
+
 let chainSeq = 0;
 let chainAbort = null;
 let running = null;
@@ -147,6 +151,7 @@ export function initBackgrounds({ isOpen } = {}) {
     if (typeof isOpen === 'function') uiIsOpen = isOpen;
 
     on('CHAT_CHANGED', () => {
+        noTagNoticed = false;
         if (!uiIsOpen()) {
             // Off means off in every chat: the chat being entered is handed
             // back the same way exiting does.
@@ -397,6 +402,13 @@ async function runTarget({ index, swipeId, force, refresh, my, signal }) {
 
     // A tag names the place outright, so `decide` answers it for free; an
     // untagged reply has no such answer and only the watcher can say.
+    if (!scene && !force && !noTagNoticed) {
+        // The edge case, said out loud once per chat: the plain-prose
+        // fallback still resolves this reply below.
+        noTagNoticed = true;
+        console.warn(`${LOG} reply ${index} carries no scene tag; the plain-prose fallback takes it`);
+        globalThis.toastr?.warning?.('A reply carried no scene tag \u2014 the plain-prose fallback is handling it.', '', { timeOut: 6000 });
+    }
     const step = !force && scene ? decide(store, place, { baseline }) : null;
 
     const plan = planResolution({ step, force, counter: repliesSinceWatch, every: settings().bgEveryN });

@@ -306,7 +306,7 @@ const FRAME_HTML = `
                 <button class="mz-btn-ghost" type="button" data-mz-action="bg-prompt-on-reset">Restore default</button>
             </div>
             <div class="mz-set-row mz-set-row--prompt">
-                <span class="mz-set-label"><b>Watcher prompt \u00b7 Plain prose</b><small>The plain-prose hand, for presets without scene tags.</small></span>
+                <span class="mz-set-label"><b>Watcher prompt \u00b7 Plain prose</b><small>The fallback hand, for replies without scene tags. The answer format is appended for you.</small></span>
                 <textarea class="mz-textarea" rows="8" data-mz="bg-prompt-off" aria-label="Watcher prompt, plain prose"></textarea>
                 <button class="mz-btn-ghost" type="button" data-mz-action="bg-prompt-off-reset">Restore default</button>
             </div>
