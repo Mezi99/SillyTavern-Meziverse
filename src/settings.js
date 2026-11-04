@@ -88,8 +88,17 @@ export function settings() {
  * is in play: tags are still stripped from the prose, and whatever a
  * `<scene>` tag carries still draws.
  */
+/**
+ * The Meziverse mode is still under development, and this flag is the release
+ * switch. True - the dev builds - keeps its settings tab and the extras in
+ * play. False - a release - hides the tab whole and `modeOn()` answers false
+ * whatever the setting says: the extras stay inert and the release ships the
+ * base extension alone.
+ */
+export const DEV_EXTRAS = true;
+
 export function modeOn() {
-    return settings().mode !== false;
+    return DEV_EXTRAS && settings().mode !== false;
 }
 
 /** Whether the cast strip draws avatars. Off: no posters, no initials. */

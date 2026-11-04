@@ -7,7 +7,7 @@
  */
 
 import { chatMessages, currentChatId, errorText, imageGenerationStatus, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer } from './st.js';
-import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn } from './settings.js';
+import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, DEV_EXTRAS } from './settings.js';
 import {
     forceBackground,
     getLastWatcherRequest,
@@ -63,7 +63,7 @@ const FRAME_HTML = `
     <div class="mz-scrim" aria-hidden="true"></div>
 
     <header class="mz-header">
-        <div class="mz-brand"><b>Meziverse</b><small class="mz-version">v${VERSION}</small><button class="mz-mode" type="button" role="switch" aria-checked="true" title="Meziverse mode \u2014 scene info and features" aria-label="Meziverse mode" data-mz-action="mode"><i aria-hidden="true"></i><span data-mz="mode-label">mode \u00b7 on</span></button><button class="mz-mode mz-bgauto" type="button" role="switch" aria-checked="false" title="Backgrounds follow the story" aria-label="Automatic location backgrounds" data-mz-action="bg-auto"><i aria-hidden="true"></i><span data-mz="bg-auto-label">bg \u00b7 off</span></button><button class="mz-ibtn mz-brush" type="button" title="Draw a background for this place" aria-label="Draw a background for this place" data-mz-action="bg-generate">${svg('brush')}</button></div>
+        <div class="mz-brand"><b>Meziverse</b><small class="mz-version">v${VERSION}</small><button class="mz-mode mz-bgauto" type="button" role="switch" aria-checked="false" title="Backgrounds follow the story" aria-label="Automatic location backgrounds" data-mz-action="bg-auto"><i aria-hidden="true"></i><span data-mz="bg-auto-label">bg \u00b7 off</span></button><button class="mz-ibtn mz-brush" type="button" title="Draw a background for this place" aria-label="Draw a background for this place" data-mz-action="bg-generate">${svg('brush')}</button></div>
         <div class="mz-chatname" data-mz="chatname"><b class="is-empty">No chat open</b></div>
         <div class="mz-header-tools">
             <button class="mz-ibtn" type="button" title="Full screen" aria-label="Full screen" data-mz-action="fullscreen">${svg('expand')}</button>
@@ -337,6 +337,14 @@ const FRAME_HTML = `
         </div>
 
         <div class="mz-set-group" data-mz-pane="mode">
+            <h3>Meziverse mode</h3>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Mode on/off</b><small>The master switch for the extras - ledger, cues, mindscape, thought bubbles. Off leaves the base extension alone. Best set before the chat starts.</small></span>
+                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Meziverse mode" data-mz-action="mode"><i></i></button>
+            </div>
+        </div>
+
+        <div class="mz-set-group" data-mz-pane="mode">
             <h3>Tracker entries</h3>
             <div class="mz-set-row">
                 <span class="mz-set-label"><b>Standing</b><small>How the world sees you.</small></span>
@@ -455,12 +463,17 @@ export function mount() {
     injectSprite(root);
     root.insertAdjacentHTML('beforeend', FRAME_HTML);
 
+    // A release build (DEV_EXTRAS off) has no Meziverse mode to configure:
+    // the tab and its panes come out whole - and modeOn() keeps the extras
+    // inert whatever the stored setting says.
+    if (!DEV_EXTRAS) {
+        root.querySelectorAll('[data-mz-tab="mode"], [data-mz-pane="mode"]').forEach(element => element.remove());
+    }
+
     frame = root.querySelector('.mz-frame');
     els = {
         chatName: root.querySelector('[data-mz="chatname"]'),
         chatNameText: root.querySelector('[data-mz="chatname"] b'),
-        modeButton: root.querySelector('[data-mz-action="mode"]'),
-        modeLabel: root.querySelector('[data-mz="mode-label"]'),
         bgAutoLabel: root.querySelector('[data-mz="bg-auto-label"]'),
         bgBrushButton: root.querySelector('[data-mz-action="bg-generate"]'),
         bgEveryValue: root.querySelector('[data-mz="bg-every-value"]'),
@@ -712,12 +725,13 @@ function applyMotion() {
     els.motion.setAttribute('aria-checked', String(reduced));
 }
 
-/** Syncs the header's mode switch with the setting. */
+/** Syncs the mode switch - the Meziverse mode tab's header row - with the setting. */
 function applyMode() {
     const on = modeOn();
-    els.modeButton?.classList.toggle('is-on', on);
-    els.modeButton?.setAttribute('aria-checked', String(on));
-    if (els.modeLabel) els.modeLabel.textContent = on ? 'mode \u00b7 on' : 'mode \u00b7 off';
+    for (const button of root.querySelectorAll('[data-mz-action="mode"]')) {
+        button.classList.toggle('is-on', on);
+        button.setAttribute('aria-checked', String(on));
+    }
 }
 
 /** Syncs the avatars switch with the setting. */
