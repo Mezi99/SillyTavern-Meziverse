@@ -1,5 +1,12 @@
 # Meziverse — version log
 
+## 2.5.1 — 2026-11-04
+
+The master switch. Everything the extension does lives inside the extension, and nothing runs unless the Meziverse scene is open: closed or never opened, the chain sits idle — no watcher call, no image drawn, no metadata touched.
+
+- The scene's open state gates the whole background chain — every event handler, every run — and the prompt injection to come rides the same gate. Opening catches the chat up: the shown turn's picture re-asserted for free, the chat's end resolved once as if its reply had just arrived (a stamped end costs nothing; at most one image per open). Closing hands the chat's background back.
+- The **takeover baseline** remembers what SillyTavern had on screen before the chain's first write — its lock and its shown image — so exiting restores the pair exactly as found. A background the user took back (unlocked, or locked their own) is theirs: exiting stands down. A chat change while the scene is closed hands that chat back the same way — off means off in every chat.
+
 ## 2.5.0 — 2026-11-04
 
 One scene-tag contract. The base extension — backgrounds, avatars, the scene cluster and rows, the rails frame — now works with any preset in both modes; the mode toggle gates only the Meziverse.json extras (ledger, cues, mindscape, meanwhile, thought bubbles).
