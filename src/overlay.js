@@ -13,6 +13,8 @@ import {
     getLastWatcherRequest,
     setShownTurn,
     syncShownBackground,
+    uiClosed,
+    uiOpened,
 } from './bgchain.js';
 import { DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_OFF } from './backgrounds.js';
 import { injectSprite } from './icons.js';
@@ -25,7 +27,7 @@ import { closeFloats } from './floats.js';
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr } from './notify.js';
 
-const VERSION = '2.4.1';
+const VERSION = '2.5.0';
 const PANE_DEFAULT = 300;
 const LOG_W_DEFAULT = 720;
 const LOG_H_SHARE = 0.7;
@@ -614,6 +616,10 @@ export function open() {
     setGenerating(stGenerating(), { force: true });
     if (stGenerating()) startWatch();
     enterFullscreen();
+    // The master switch turns on: the chain catches the chat up - the shown
+    // turn's picture re-asserted, the chat's end resolved once as if its reply
+    // had just arrived (a stamped end costs nothing; at most one image).
+    void uiOpened();
     transcript.refresh({ followLatest: true });
     desiredPane = Number(settings().paneHeight) || PANE_DEFAULT;
     applyPaneHeight(desiredPane);
@@ -631,8 +637,11 @@ export function close() {
     if (!isOpen()) return;
 
     // The chain follows the chat's end again: the shown turn only governs
-    // while the scene is showing one.
+    // while the scene is showing one. And the master switch turns off: work in
+    // flight dies, the pace clock resets, and the chat's background goes back
+    // to what the chain found before it took over.
     setShownTurn(null);
+    uiClosed();
 
     if (frame.contains(document.activeElement)) document.activeElement.blur();
 
@@ -658,6 +667,10 @@ export function close() {
 function isOpen() {
     return !!root && root.classList.contains('is-open');
 }
+
+// The scene's open state, shared as the extension's master switch: the chain
+// (and the injection to come) runs only while this says on.
+export { isOpen };
 
 /* ---------- settings ---------- */
 
@@ -1920,12 +1933,14 @@ function wireEvents() {
 
     // Dry runs (another extension assembling its prompt) never reach the chat:
     // following them would wedge the composer, since no GENERATION_ENDED comes.
+    // Both directions are master-switch gated - the composer state re-syncs
+    // from ST itself whenever the scene opens.
     on('GENERATION_STARTED', (type, _options, dryRun) => {
-        if (dryRun) return;
+        if (dryRun || !isOpen()) return;
         setGenerating(true);
         startWatch();
     });
-    on('GENERATION_ENDED', () => setGenerating(false));
-    on('GENERATION_STOPPED', () => setGenerating(false));
-    on('GROUP_WRAPPER_FINISHED', () => setGenerating(false));
+    on('GENERATION_ENDED', () => { if (isOpen()) setGenerating(false); });
+    on('GENERATION_STOPPED', () => { if (isOpen()) setGenerating(false); });
+    on('GROUP_WRAPPER_FINISHED', () => { if (isOpen()) setGenerating(false); });
 }

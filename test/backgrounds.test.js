@@ -14,15 +14,18 @@ import {
     fallbackLocationPrompt,
     formatLatestStory,
     groupMessageByScene,
+    isOurBackground,
     knownBackgroundsList,
     locationKey,
     lookupRecord,
     normalizeStore,
+    noteBaseline,
     parseWatcherReply,
     planResolution,
     recoverCurrentKey,
     resolveRecordId,
     resolveStampId,
+    restorePlan,
     setStamp,
     stampOf,
     storeRecord,
@@ -63,6 +66,66 @@ test('normalizeStore fills the shape and repairs what it can', () => {
 
     const roomy = normalizeStore({ records: { bg_7: {} }, nextId: 99 });
     assert.equal(roomy.nextId, 99, 'a larger stored nextId is kept');
+});
+
+test('normalizeStore keeps a recorded baseline and prunes junk', () => {
+    const kept = normalizeStore({ baseline: { lock: 'url("/bg/x.png")', shown: ' url("/bg/y.png") ' } });
+    assert.deepEqual(kept.baseline, { lock: 'url("/bg/x.png")', shown: 'url("/bg/y.png")' });
+
+    const empty = normalizeStore({ baseline: { lock: null, shown: '' } });
+    assert.deepEqual(empty.baseline, { lock: null, shown: '' }, 'recorded as nothing is not unrecorded');
+
+    for (const junk of ['x', 5, ['a'], { lock: 3, shown: '' }, { lock: null }, null]) {
+        assert.equal(normalizeStore({ baseline: junk }).baseline, undefined, `junk baseline pruned: ${JSON.stringify(junk)}`);
+    }
+});
+
+test('noteBaseline records the takeover once and never rewrites', () => {
+    const store = normalizeStore();
+
+    const first = noteBaseline(store, { lock: 'url("/bg/user.png")', shown: 'url("/bg/user.png")' });
+    assert.deepEqual(first, { lock: 'url("/bg/user.png")', shown: 'url("/bg/user.png")' });
+
+    const second = noteBaseline(store, { lock: null, shown: 'url("/bg/other.png")' });
+    assert.deepEqual(second, first, 'the first takeover wins');
+});
+
+test('noteBaseline refuses to invent a baseline behind our own image', () => {
+    const store = normalizeStore();
+    storeRecord(store, { key: 'Pier 9', place: 'Pier 9', prompt: 'p', path: '/images/pier.png' });
+
+    // Drawn before the baseline bookkeeping existed: the lock is already
+    // ours, the pre-chain state is unknowable, so nothing is recorded.
+    assert.equal(noteBaseline(store, { lock: toCssBgUrl('/images/pier.png'), shown: '' }), undefined);
+    assert.equal(store.baseline, undefined);
+
+    assert.ok(noteBaseline(store, { lock: null, shown: '' }), 'a lockless chat records, even when found empty');
+});
+
+test('restorePlan hands back the baseline, unlocks legacy, stands down for the user', () => {
+    const ours = toCssBgUrl('/images/pier.png');
+
+    const store = normalizeStore();
+    storeRecord(store, { key: 'Pier 9', place: 'Pier 9', prompt: 'p', path: '/images/pier.png' });
+    noteBaseline(store, { lock: null, shown: 'url("/bg/global.png")' });
+
+    assert.deepEqual(restorePlan(store, ours), {
+        action: 'restore',
+        baseline: { lock: null, shown: 'url("/bg/global.png")' },
+    });
+    assert.deepEqual(restorePlan(store, 'url("/bg/user.png")'), { action: 'none' }, 'the user locked their own: theirs');
+    assert.deepEqual(restorePlan(store, null), { action: 'none' }, 'nothing of ours on screen');
+    assert.deepEqual(restorePlan(store, '   '), { action: 'none' });
+
+    const legacy = normalizeStore();
+    storeRecord(legacy, { key: 'Pier 9', place: 'Pier 9', prompt: 'p', path: '/images/pier.png' });
+    assert.deepEqual(restorePlan(legacy, ours), { action: 'unlock' }, 'drawn before baselines existed: SillyTavern unlocks');
+    assert.deepEqual(restorePlan(legacy, 'url("/bg/user.png")'), { action: 'none' }, 'even legacy stands down for the user');
+
+    assert.equal(isOurBackground(store, ours), true, 'the record path marks the background ours');
+    assert.equal(isOurBackground(store, '/images/pier.png'), true, 'the raw path too');
+    assert.equal(isOurBackground(store, 'url("/bg/user.png")'), false);
+    assert.equal(isOurBackground(normalizeStore(), ours), false, 'an empty store owns nothing');
 });
 
 test('storeRecord keeps the newest image per place and rebinds current', () => {
