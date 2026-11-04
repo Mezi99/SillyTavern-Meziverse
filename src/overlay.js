@@ -7,7 +7,7 @@
  */
 
 import { chatMessages, currentChatId, errorText, imageGenerationStatus, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer } from './st.js';
-import { settings, saveSettings, entryOn, modeOn, bgAutoOn } from './settings.js';
+import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn } from './settings.js';
 import {
     forceBackground,
     getLastWatcherRequest,
@@ -19,7 +19,7 @@ import {
 import { DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_OFF } from './backgrounds.js';
 import { injectSprite } from './icons.js';
 import { createTranscript } from './transcript.js';
-import { mountCast, refreshCastSizing, renderCast, renderThoughts, renderTells, clearCascade } from './cast.js';
+import { mountCast, refreshCastSizing, renderCast, renderThoughts, renderTells, clearCascade, redrawCast } from './cast.js';
 import { resolveLedger } from './ledger.js';
 import { parseMessage } from './tags.js';
 import { mountCues, closeMemory } from './cues.js';
@@ -186,7 +186,7 @@ const FRAME_HTML = `
 
         <div class="mz-seg mz-set-tabs" role="tablist" aria-label="Settings sections">
             <button class="is-on" type="button" role="tab" aria-selected="true" data-mz-tab="general">General</button>
-            <button type="button" role="tab" aria-selected="false" data-mz-tab="image">Image generation</button>
+            <button type="button" role="tab" aria-selected="false" data-mz-tab="image">Images</button>
             <button type="button" role="tab" aria-selected="false" data-mz-tab="mode">Meziverse mode</button>
         </div>
 
@@ -278,8 +278,16 @@ const FRAME_HTML = `
             </div>
         </div>
 
-        <div class="mz-set-group" data-mz-pane="image">
-            <h3>Backgrounds</h3>
+        <div class="mz-set-group mz-set-group--fold" data-mz-pane="image">
+            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="avatars">Avatars ${svg('chevdown')}</button></h3>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Avatars On/Off</b><small>The cast posters above the reading pane. Off leaves the background alone on stage.</small></span>
+                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Avatars" data-mz-action="avatars"><i></i></button>
+            </div>
+        </div>
+
+        <div class="mz-set-group mz-set-group--fold" data-mz-pane="image">
+            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="backgrounds">Backgrounds ${svg('chevdown')}</button></h3>
             <div class="mz-set-row">
                 <span class="mz-set-label"><b>Follow the story</b><small>A new background when the place changes; the brush draws one on demand.</small></span>
                 <button class="mz-switch" type="button" role="switch" aria-checked="false" aria-label="Automatic location backgrounds" data-mz-action="bg-auto"><i></i></button>
@@ -559,6 +567,7 @@ export function mount() {
     applyTheme();
     applyMotion();
     applyMode();
+    applyAvatars();
     applyBgAuto();
     applyBgControls();
     applyEntries();
@@ -709,6 +718,15 @@ function applyMode() {
     els.modeButton?.classList.toggle('is-on', on);
     els.modeButton?.setAttribute('aria-checked', String(on));
     if (els.modeLabel) els.modeLabel.textContent = on ? 'mode \u00b7 on' : 'mode \u00b7 off';
+}
+
+/** Syncs the avatars switch with the setting. */
+function applyAvatars() {
+    const on = avatarsOn();
+    for (const button of root.querySelectorAll('[data-mz-action="avatars"]')) {
+        button.classList.toggle('is-on', on);
+        button.setAttribute('aria-checked', String(on));
+    }
 }
 
 /** Syncs the background switch - header pill and settings row - with the setting. */
@@ -1666,6 +1684,17 @@ function wireActions() {
             return;
         }
 
+        const section = event.target.closest('[data-mz-section]');
+        if (section) {
+            // A foldable group's header opens and closes its rows. The sheet
+            // is built once, so the state sticks for the session.
+            const group = section.closest('.mz-set-group');
+            const open = group ? !group.classList.contains('is-open') : true;
+            group?.classList.toggle('is-open', open);
+            section.setAttribute('aria-expanded', String(open));
+            return;
+        }
+
         const entry = event.target.closest('[data-mz-entry]');
         if (entry) {
             const name = entry.dataset.mzEntry;
@@ -1761,6 +1790,12 @@ function wireActions() {
             case 'motion':
                 settings().reducedMotion = !settings().reducedMotion;
                 applyMotion();
+                saveSettings();
+                break;
+            case 'avatars':
+                settings().avatars = !settings().avatars;
+                applyAvatars();
+                redrawCast();
                 saveSettings();
                 break;
             case 'mode':

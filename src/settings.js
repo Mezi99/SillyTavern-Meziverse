@@ -18,6 +18,9 @@ const DEFAULTS = {
     entries: {},
     theme: 'ink-jade',
     background: 'none',
+    // The cast strip above the reading pane. Off draws no avatars at all -
+    // no posters, no initials - and the background stays alone on stage.
+    avatars: true,
     // Location backgrounds: an image generated from the story's place by
     // SillyTavern's Image Generation. Auto works everywhere - a `<scene>` tag
     // names the place outright (free outcomes run at any pace, new draws at
@@ -87,6 +90,11 @@ export function settings() {
  */
 export function modeOn() {
     return settings().mode !== false;
+}
+
+/** Whether the cast strip draws avatars. Off: no posters, no initials. */
+export function avatarsOn() {
+    return settings().avatars !== false;
 }
 
 /** Whether automatic background generation is on. The brush needs no gate. */

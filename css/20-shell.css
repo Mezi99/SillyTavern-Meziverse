@@ -1701,6 +1701,27 @@ body.mz-open .popup { z-index: 9500 !important; }
     color: var(--mz-text-muted);
 }
 
+/* Foldable sections (the Images tab): the header opens and closes its rows.
+   Closed by default; the sheet is built once and never rebuilt, so the state
+   sticks for the session on its own. */
+.mz-set-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    cursor: pointer;
+}
+.mz-set-head .ico { transition: transform var(--mz-dur) var(--mz-ease); }
+.mz-set-group--fold.is-open .mz-set-head .ico { transform: rotate(180deg); }
+.mz-set-group--fold:not(.is-open) .mz-set-row { display: none; }
+
 .mz-set-row {
     display: grid;
     grid-template-columns: 1fr auto;
