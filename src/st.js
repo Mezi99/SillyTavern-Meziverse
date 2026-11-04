@@ -682,6 +682,70 @@ function dedupeChatBackgrounds() {
     list.push(...unique);
 }
 
+/**
+ * The background-image SillyTavern's screen (`#bg1`) currently shows, as its
+ * inline CSS value - the exact string to write back to restore it. Empty when
+ * nothing was ever set inline.
+ */
+export function shownBackground() {
+    return document.getElementById('bg1')?.style.backgroundImage || '';
+}
+
+/**
+ * Hands the chat's background back to what it showed before the chain took
+ * over - the `lock`/`shown` pair captured at takeover. A lock goes back both
+ * as the chat's `custom_background` and on the screen, exactly the way
+ * SillyTavern's own lock behaves; no lock means the metadata key is removed,
+ * so the screen is left as the pair was found.
+ *
+ * @param {{lock?:string|null, shown?:string}} baseline
+ * @returns {boolean} whether the restore ran
+ */
+export function restoreBackground(baseline) {
+    const context = ctx();
+    const meta = context?.chatMetadata;
+    if (!meta || !baseline || typeof baseline !== 'object') return false;
+
+    const lock = String(baseline.lock ?? '').trim();
+    if (lock) {
+        meta.custom_background = lock;
+    } else {
+        delete meta.custom_background;
+    }
+    saveChatMetadata();
+
+    const bg1 = document.getElementById('bg1');
+    if (bg1) bg1.style.backgroundImage = lock || String(baseline.shown ?? '').trim();
+    return true;
+}
+
+/**
+ * SillyTavern's own unlock - its `/unlockbg` behavior: drop the chat's lock
+ * and hand the screen back to the global background. The fallback for a chat
+ * the chain drew before the takeover baseline existed (its pre-chain state is
+ * unknowable, so what "no lock" means is SillyTavern's to say).
+ *
+ * @returns {boolean} whether the unlock ran
+ */
+export function unlockBackground() {
+    const context = ctx();
+    const unlock = context?.SlashCommandParser?.commands?.unlockbg?.callback;
+    if (typeof unlock === 'function') {
+        try {
+            unlock();
+            return true;
+        } catch (error) {
+            console.warn('[Meziverse] could not unlock the chat background', error);
+        }
+    }
+
+    const meta = context?.chatMetadata;
+    if (!meta) return false;
+    delete meta.custom_background;
+    saveChatMetadata();
+    return true;
+}
+
 /* ---------- image generation ---------- */
 
 /**

@@ -58,7 +58,7 @@ export function locationKey(value) {
  * trusted, so a hand-edited or stale chat file can never wedge the chain.
  *
  * @param {object} [raw]
- * @returns {{version:number, currentKey:string|null, keys:Record<string,string>, records:Record<string,object>, nextId:number}}
+ * @returns {{version:number, currentKey:string|null, keys:Record<string,string>, records:Record<string,object>, nextId:number, baseline?:{lock:string|null, shown:string}}}
  */
 export function normalizeStore(raw) {
     const store = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
@@ -69,6 +69,22 @@ export function normalizeStore(raw) {
         store.currentKey = null;
     } else {
         store.currentKey = locationKey(store.currentKey);
+    }
+
+    // The takeover baseline - the background the chain found before it first
+    // wrote one - rides the store so it survives reloads. Unrecognised shapes
+    // are pruned: an absent field means "never recorded", never "recorded as
+    // nothing".
+    if (store.baseline !== undefined) {
+        const base = store.baseline;
+        const valid = base && typeof base === 'object' && !Array.isArray(base)
+            && (base.lock === null || typeof base.lock === 'string')
+            && typeof base.shown === 'string';
+        if (valid) {
+            store.baseline = { lock: base.lock ? base.lock.trim() : null, shown: base.shown.trim() };
+        } else {
+            delete store.baseline;
+        }
     }
 
     if (!store.keys || typeof store.keys !== 'object' || Array.isArray(store.keys)) {
@@ -251,6 +267,64 @@ export function recoverCurrentKey(store, customBgUrl) {
 
     ensured.currentKey = null;
     return null;
+}
+
+/**
+ * Whether a chat background value belongs to one of this chat's records -
+ * in other words, whether the chain (or the brush) is holding the chat's
+ * background right now. Tolerates the raw path and the wrapped CSS form.
+ *
+ * @param {object} store
+ * @param {string|null|undefined} customBgUrl
+ * @returns {boolean}
+ */
+export function isOurBackground(store, customBgUrl) {
+    if (!store?.records) return false;
+    return Object.values(store.records).some(record => matchesBgUrl(record, customBgUrl));
+}
+
+/**
+ * Records the takeover baseline once per chat: what SillyTavern had on screen
+ * before the chain first wrote a background - its lock (`custom_background`)
+ * and the shown image - so exiting can hand the chat back exactly as it was
+ * found. Recorded at the first write and never rewritten; a chat where the
+ * chain already held the background (drawn before this bookkeeping existed)
+ * records nothing, because the pre-chain state is unknowable.
+ *
+ * @param {object} store
+ * @param {{lock?:string|null, shown?:string}} found what the takeover found
+ * @returns {{lock:string|null, shown:string}|undefined} the stored baseline, or undefined when none can be recorded
+ */
+export function noteBaseline(store, { lock = null, shown = '' } = {}) {
+    const ensured = normalizeStore(store);
+    if (ensured.baseline !== undefined) return ensured.baseline;
+
+    const cleanLock = typeof lock === 'string' && lock.trim() ? lock.trim() : null;
+    if (cleanLock && isOurBackground(ensured, cleanLock)) return undefined;
+
+    ensured.baseline = {
+        lock: cleanLock,
+        shown: typeof shown === 'string' ? shown.trim() : '',
+    };
+    return ensured.baseline;
+}
+
+/**
+ * What exiting should do about the chat's background: hand back the recorded
+ * baseline, fall back to SillyTavern's own unlock for a chat drawn before the
+ * baseline existed, or stand down because the background on screen is not
+ * ours to hand back (the user unlocked it or locked their own while we ran).
+ *
+ * @param {object} store
+ * @param {string|null|undefined} currentLock what `custom_background` holds now
+ * @returns {{action:'none'}|{action:'restore', baseline:{lock:string|null, shown:string}}|{action:'unlock'}}
+ */
+export function restorePlan(store, currentLock) {
+    const ensured = normalizeStore(store);
+    const lock = typeof currentLock === 'string' && currentLock.trim() ? currentLock.trim() : null;
+    if (!lock || !isOurBackground(ensured, lock)) return { action: 'none' };
+    if (ensured.baseline !== undefined) return { action: 'restore', baseline: ensured.baseline };
+    return { action: 'unlock' };
 }
 
 /**

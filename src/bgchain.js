@@ -28,12 +28,14 @@ import {
     compileBgPrompt,
     decide,
     fallbackLocationPrompt,
+    noteBaseline,
     parseWatcherReply,
     planResolution,
     recoverCurrentKey,
     resolveRecordId,
     resolveStampId,
     resolveStampRecord,
+    restorePlan,
     stampOf,
     storeRecord,
     LANDSCAPE_SIZE,
@@ -50,13 +52,22 @@ import {
     imageGenerationStatus,
     on,
     personaName,
+    restoreBackground,
     saveChatMetadata,
+    shownBackground,
     stampMessageBg,
+    unlockBackground,
 } from './st.js';
 import { bgAutoOn, settings } from './settings.js';
 import { resolveScene } from './scene.js';
 
 const LOG = '[Meziverse] bg';
+
+// The master switch: the scene being open. Everything the chain does - every
+// watcher call, every draw, every metadata write - stays inside the extension
+// and only runs while the UI is on; closed or never opened, it sits idle. The
+// scene hands the gate in at init; the default is off.
+let uiIsOpen = () => false;
 
 let chainSeq = 0;
 let chainAbort = null;
@@ -126,10 +137,22 @@ export function resetBackgroundPacing() {
  * itself, swipes resolve variants this chat has not seen, edits re-resolve the
  * edited reply, and a chat change cancels whatever was in flight and
  * re-derives the current picture from the background SillyTavern itself
- * restored. The chain follows the chat whether the scene is open or not.
+ * restored. The master switch gates it all: the chain follows the chat only
+ * while the scene is open - closed or never opened, every handler here and
+ * `requestBackground` itself return without a single call, write or fetch.
+ *
+ * @param {{isOpen?:() => boolean}} [parts] the scene's open-state gate
  */
-export function initBackgrounds() {
+export function initBackgrounds({ isOpen } = {}) {
+    if (typeof isOpen === 'function') uiIsOpen = isOpen;
+
     on('CHAT_CHANGED', () => {
+        if (!uiIsOpen()) {
+            // Off means off in every chat: the chat being entered is handed
+            // back the same way exiting does.
+            standDown();
+            return;
+        }
         cancelBackgroundWork();
         resetBackgroundPacing();
         setShownTurn(null);
@@ -137,6 +160,7 @@ export function initBackgrounds() {
     });
 
     const refreshed = () => {
+        if (!uiIsOpen()) return;
         requestBackground({ index: lastMessageIndex(), refresh: true }).catch?.(error => {
             console.warn(`${LOG} chain failed`, error);
         });
@@ -147,12 +171,14 @@ export function initBackgrounds() {
     on('GROUP_WRAPPER_FINISHED', refreshed);
 
     on('MESSAGE_EDITED', mesId => {
+        if (!uiIsOpen()) return;
         requestBackground({ index: Number(mesId), refresh: true }).catch?.(error => {
             console.warn(`${LOG} chain failed`, error);
         });
     });
 
     on('MESSAGE_SWIPED', mesId => {
+        if (!uiIsOpen()) return;
         const index = Number(mesId);
         const message = chatMessages()[index];
         if (!message) return;
@@ -163,6 +189,53 @@ export function initBackgrounds() {
             console.warn(`${LOG} chain failed`, error);
         });
     });
+}
+
+/**
+ * The scene opened: the master switch turns on. Whatever happened while it was
+ * closed is caught up - the metadata re-derived from what SillyTavern shows,
+ * the shown turn's own picture re-asserted (swap-only, free), and the chat's
+ * end resolved once, exactly as if its reply had just arrived: a stamped end
+ * costs nothing, and at most one image is drawn per open.
+ */
+export async function uiOpened() {
+    cancelBackgroundWork();
+    resetBackgroundPacing();
+    recoverCurrentKey(bgStore(), customBackground());
+
+    try {
+        await syncShownBackground();
+        await requestBackground({ index: lastMessageIndex() });
+    } catch (error) {
+        console.warn(`${LOG} chain failed`, error);
+    }
+}
+
+/**
+ * The scene closed: the master switch turns off. Anything in flight dies, the
+ * pace clock resets, and the chat's background is handed back to what the
+ * chain found before it took over - the recorded baseline, or SillyTavern's
+ * own unlock for a chat drawn before the baseline existed. A background the
+ * user took back while we ran (unlocked, or locked their own) is theirs: it
+ * stays.
+ */
+export function uiClosed() {
+    cancelBackgroundWork();
+    resetBackgroundPacing();
+    standDown();
+}
+
+/**
+ * Hands the current chat's background back to its pre-chain state - what
+ * exiting runs, and what a chat change runs while the scene is closed, so no
+ * chat ever shows a Meziverse picture with the extension off.
+ */
+function standDown() {
+    const plan = restorePlan(bgStore(), customBackground());
+    if (plan.action === 'restore') restoreBackground(plan.baseline);
+    else if (plan.action === 'unlock') unlockBackground();
+
+    recoverCurrentKey(bgStore(), customBackground());
 }
 
 /** The last message's index, or -1 in an empty chat. */
@@ -209,12 +282,17 @@ function brushTargetIndex(messages) {
  * Queues one reply's resolution and returns how it ended. Work runs one job
  * at a time in order - an image in flight is never doubled - and a newer job
  * for the same reply replaces the older one, since its inputs are the fresh
- * ones. Without `force` nothing moves while the auto follow is off.
+ * ones. Without `force` nothing moves while the auto follow is off; nothing
+ * moves at all while the scene is closed.
  *
  * @param {{index:number, swipeId?:number, force?:boolean, refresh?:boolean}} job
  * @returns {Promise<{status:'off'|'unchanged'|'cached'|'generated'|'superseded'|'cancelled'|'unavailable'|'error', record?:object, error?:string}>}
  */
 function requestBackground({ index, swipeId, force = false, refresh = false }) {
+    // Belt on the suspenders: every caller checks the master switch, and so
+    // does the one door in - nothing queues while the scene is closed.
+    if (!uiIsOpen()) return Promise.resolve({ status: 'off' });
+
     const targetIndex = Number.isInteger(index) ? index : lastMessageIndex();
     const fromMessage = Number(chatMessages()[targetIndex]?.swipe_id ?? 0) || 0;
     const target = {
@@ -541,6 +619,10 @@ export async function syncShownBackground() {
  * retryable, because the stamp still holds the record.
  */
 async function showRecord(store, record) {
+    // The takeover moment - the last look at what was on screen before the
+    // chain's first write - so exiting can hand it back.
+    noteBaseline(store, { lock: customBackground(), shown: shownBackground() });
+
     await forceSetBackground(record.path);
 
     // currentKey follows the screen; normalizeStore prunes keys not in the
