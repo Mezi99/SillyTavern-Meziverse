@@ -207,9 +207,9 @@ export function toHtml(message, index, { compact = false, persona = '' } = {}) {
     for (const cue of cues) {
         if (cue.type === 'scene') {
             flushRun();
-            // The tag vanishes from the prose either way; the row is a
-            // Meziverse feature and only appears while mode is on.
-            const row = modeOn() ? sceneRow(cue.tag, { compact, persona }) : '';
+            // The tag vanishes from the prose either way; the row is scene
+            // info and follows the tag in both modes.
+            const row = sceneRow(cue.tag, { compact, persona });
             if (row) parts.push(row);
             continue;
         }

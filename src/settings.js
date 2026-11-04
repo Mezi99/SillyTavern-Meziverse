@@ -9,7 +9,7 @@ import { ctx } from './st.js';
 import { DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_OFF } from './backgrounds.js';
 
 const DEFAULTS = {
-    // Meziverse mode: the master switch every feature sits under. Phase 5
+    // Meziverse mode: the master switch for the extras (see modeOn). Phase 5
     // binds it to the owned preset; until then it is flipped by hand.
     mode: true,
     // Per-entry feature switches for the ledger panels (scene info is always
@@ -19,18 +19,23 @@ const DEFAULTS = {
     theme: 'ink-jade',
     background: 'none',
     // Location backgrounds: an image generated from the story's place by
-    // SillyTavern's Image Generation. Auto works in both modes - mode ON
-    // follows the scene tags, mode OFF is paced by bgEveryN - while the brush
-    // button always fires on demand. Names start with bg so they never
-    // collide with the scene's own `background` mirror above.
+    // SillyTavern's Image Generation. Auto works everywhere - a `<scene>` tag
+    // names the place outright (free outcomes run at any pace, new draws at
+    // the pace below), and stories without tags get the plain-prose watcher
+    // at the same pace - while the brush button always fires on demand. Names
+    // start with bg so they never collide with the scene's own `background`
+    // mirror above.
     bgAuto: false,
-    bgEveryN: 3,
-    bgContextReplies: 2,
+    // "Background generation pace": the watcher draws at most once every N AI
+    // replies (swipes and edits count, user turns never do). 1 - the default -
+    // renders every new place; higher values keep the last picture while new
+    // places wait their turn.
+    bgEveryN: 1,
     bgStyle: 'anime style, visual novel background art, detailed environment, cinematic lighting',
     bgNegative: 'people, characters, crowd, portrait, text, watermark, logo, signature, blurry, low quality',
     bgSize: 'landscape',
-    // The watcher prompts the user tunes: the scene-tagged hand (mode ON) and
-    // the plain-prose hand (mode OFF). The answer format is appended by code.
+    // The watcher prompts the user tunes: the scene-tagged hand and the
+    // plain-prose hand. The answer format is appended by code.
     bgPromptOn: DEFAULT_BG_PROMPT_ON,
     bgPromptOff: DEFAULT_BG_PROMPT_OFF,
     reducedMotion: false,
@@ -71,10 +76,13 @@ export function settings() {
 }
 
 /**
- * Whether Meziverse mode is on. Every feature — scene rows, the header scene
- * cluster, the cast strip — asks this before it draws anything. Off means a
- * non-Meziverse preset is in play: tags are still stripped from the prose, but
- * no decoration is drawn and no placeholders promise otherwise.
+ * Whether Meziverse mode is on - the master switch for the EXTRAS: the ledger
+ * rails, cue marks and popovers, mindscape, meanwhile boxes, thought bubbles,
+ * everything that reads a Meziverse.json preset's own tags. The scene-tag
+ * experience - backgrounds, the header cluster, scene rows, the cast strip -
+ * works in both modes and never asks this. Off means a non-Meziverse preset
+ * is in play: tags are still stripped from the prose, and whatever a
+ * `<scene>` tag carries still draws.
  */
 export function modeOn() {
     return settings().mode !== false;

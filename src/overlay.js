@@ -270,19 +270,11 @@ const FRAME_HTML = `
                 <button class="mz-switch" type="button" role="switch" aria-checked="false" aria-label="Automatic location backgrounds" data-mz-action="bg-auto"><i></i></button>
             </div>
             <div class="mz-set-row">
-                <span class="mz-set-label"><b>Mode OFF pace</b><small>Without scene tags, ask the watcher every N replies.</small></span>
+                <span class="mz-set-label"><b>Background generation pace</b><small>Draws at most once every N AI replies. New places between draws keep the last picture.</small></span>
                 <div class="mz-step">
-                    <button type="button" data-mz-step="bg-every" data-dir="-1" aria-label="Ask less often">\u2212</button>
-                    <span data-mz="bg-every-value">3</span>
-                    <button type="button" data-mz-step="bg-every" data-dir="1" aria-label="Ask more often">+</button>
-                </div>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Context replies</b><small>How many of the latest replies the watcher reads.</small></span>
-                <div class="mz-step">
-                    <button type="button" data-mz-step="bg-ctx" data-dir="-1" aria-label="Fewer replies">\u2212</button>
-                    <span data-mz="bg-ctx-value">2</span>
-                    <button type="button" data-mz-step="bg-ctx" data-dir="1" aria-label="More replies">+</button>
+                    <button type="button" data-mz-step="bg-every" data-dir="-1" aria-label="Draw less often">\u2212</button>
+                    <span data-mz="bg-every-value">1</span>
+                    <button type="button" data-mz-step="bg-every" data-dir="1" aria-label="Draw more often">+</button>
                 </div>
             </div>
             <div class="mz-set-row">
@@ -301,13 +293,13 @@ const FRAME_HTML = `
                 <input class="mz-select" data-mz="bg-negative" aria-label="Background negative prompt">
             </div>
             <div class="mz-set-row mz-set-row--prompt">
-                <span class="mz-set-label"><b>Watcher prompt \u00b7 ON</b><small>What the watcher is asked where scene tags mark the places. The answer format is appended for you.</small></span>
-                <textarea class="mz-textarea" rows="8" data-mz="bg-prompt-on" aria-label="Watcher prompt, mode ON"></textarea>
+                <span class="mz-set-label"><b>Watcher prompt \u00b7 Scene tags</b><small>What the watcher is asked where scene tags mark the places. The answer format is appended for you.</small></span>
+                <textarea class="mz-textarea" rows="8" data-mz="bg-prompt-on" aria-label="Watcher prompt, scene tags"></textarea>
                 <button class="mz-btn-ghost" type="button" data-mz-action="bg-prompt-on-reset">Restore default</button>
             </div>
             <div class="mz-set-row mz-set-row--prompt">
-                <span class="mz-set-label"><b>Watcher prompt \u00b7 OFF</b><small>The plain-prose hand, for presets without scene tags.</small></span>
-                <textarea class="mz-textarea" rows="8" data-mz="bg-prompt-off" aria-label="Watcher prompt, mode OFF"></textarea>
+                <span class="mz-set-label"><b>Watcher prompt \u00b7 Plain prose</b><small>The plain-prose hand, for presets without scene tags.</small></span>
+                <textarea class="mz-textarea" rows="8" data-mz="bg-prompt-off" aria-label="Watcher prompt, plain prose"></textarea>
                 <button class="mz-btn-ghost" type="button" data-mz-action="bg-prompt-off-reset">Restore default</button>
             </div>
             <div class="mz-set-row mz-set-row--prompt">
@@ -413,7 +405,6 @@ export function mount() {
         bgAutoLabel: root.querySelector('[data-mz="bg-auto-label"]'),
         bgBrushButton: root.querySelector('[data-mz-action="bg-generate"]'),
         bgEveryValue: root.querySelector('[data-mz="bg-every-value"]'),
-        bgCtxValue: root.querySelector('[data-mz="bg-ctx-value"]'),
         bgStyle: root.querySelector('[data-mz="bg-style"]'),
         bgNegative: root.querySelector('[data-mz="bg-negative"]'),
         bgPromptOn: root.querySelector('[data-mz="bg-prompt-on"]'),
@@ -664,8 +655,7 @@ function applyBgAuto() {
 
 /** Syncs the background settings rows with the settings they edit. */
 function applyBgControls() {
-    if (els.bgEveryValue) els.bgEveryValue.textContent = String(Math.max(1, Number(settings().bgEveryN) || 3));
-    if (els.bgCtxValue) els.bgCtxValue.textContent = String(Math.max(1, Number(settings().bgContextReplies) || 2));
+    if (els.bgEveryValue) els.bgEveryValue.textContent = String(Math.max(1, Number(settings().bgEveryN) || 1));
     if (els.bgStyle) els.bgStyle.value = settings().bgStyle ?? '';
     if (els.bgNegative) els.bgNegative.value = settings().bgNegative ?? '';
     if (els.bgPromptOn) els.bgPromptOn.value = settings().bgPromptOn ?? DEFAULT_BG_PROMPT_ON;
@@ -992,11 +982,11 @@ function measureChatbar() {
 function applyScene(record) {
     lastShown = record || null;
 
-    // With Meziverse mode off the whole cluster steps aside and stays empty:
-    // a non-Meziverse preset never emits tags, so placeholders would only
-    // promise scene info that can never arrive.
-    const scene = modeOn() ? lastShown?.scene || null : null;
-    if (els.sceneCluster) els.sceneCluster.hidden = !modeOn();
+    // The cluster is scene-tag UI: it shows the governing scene wherever a
+    // preset carries one, and steps aside when the story has none -
+    // placeholders would only promise scene info that can never arrive.
+    const scene = lastShown?.scene || null;
+    if (els.sceneCluster) els.sceneCluster.hidden = !scene;
 
     els.date.textContent = scene?.date || '\u2014';
     els.date.title = scene?.dateRaw || '';
@@ -1572,10 +1562,7 @@ function wireActions() {
                 settings().uiScale = stepValue(UI_STEPS, Number(settings().uiScale) || 1, dir);
                 applyScale();
             } else if (which === 'bg-every') {
-                settings().bgEveryN = stepNumber(Number(settings().bgEveryN) || 3, dir, 1, 60);
-                applyBgControls();
-            } else if (which === 'bg-ctx') {
-                settings().bgContextReplies = stepNumber(Number(settings().bgContextReplies) || 2, dir, 1, 5);
+                settings().bgEveryN = stepNumber(Number(settings().bgEveryN) || 1, dir, 1, 60);
                 applyBgControls();
             } else {
                 settings().narrSize = stepValue(NARR_STEPS, Number(settings().narrSize) || 18.5, dir);

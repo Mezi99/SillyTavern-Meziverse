@@ -3,12 +3,16 @@
  *
  * One entry - `requestBackground` - resolves ONE reply (a message and the
  * swipe variant of it): does the picture it carries still fit where its story
- * is? It pays for a new image only when the answer is no: the tags name a
- * different place (mode ON), the user's every-N-replies pace is due (mode
- * OFF), or the brush button demands a fresh picture outright. The result is
- * stamped on the reply itself (`extra.meziverse.bg`), so scrolling back
- * through the chat brings each reply's own picture back, and a run that lands
- * late still resolves - and stamps - its own reply, never the chat's end.
+ * is? A `<scene>` tag answers that outright - any preset can carry one - and
+ * the cheap paths act on the answer for free: the reply keeps the picture it
+ * carried, or swaps to the one its place already owns. Only a genuinely new
+ * place pays for the watcher and an image, and those run at the user's
+ * "Background generation pace"; a story without tags gets the plain-prose
+ * watcher at the same pace. The brush button draws fresh outright. The
+ * result is stamped on the reply itself (`extra.meziverse.bg`), so scrolling
+ * back through the chat brings each reply's own picture back, and a run that
+ * lands late still resolves - and stamps - its own reply, never the chat's
+ * end.
  *
  * The pure parts (stamps, deciding, asking, parsing) live in backgrounds.js
  * and the SillyTavern calls in st.js; this file is the choreography between
@@ -25,6 +29,7 @@ import {
     decide,
     fallbackLocationPrompt,
     parseWatcherReply,
+    planResolution,
     recoverCurrentKey,
     resolveRecordId,
     resolveStampId,
@@ -48,7 +53,7 @@ import {
     saveChatMetadata,
     stampMessageBg,
 } from './st.js';
-import { bgAutoOn, modeOn, settings } from './settings.js';
+import { bgAutoOn, settings } from './settings.js';
 import { resolveScene } from './scene.js';
 
 const LOG = '[Meziverse] bg';
@@ -111,7 +116,7 @@ export function cancelBackgroundWork() {
     }
 }
 
-/** Forgets the mode OFF pace, e.g. when a chat changes. */
+/** Forgets the generation pace, e.g. when a chat changes. */
 export function resetBackgroundPacing() {
     repliesSinceWatch = 0;
 }
@@ -281,7 +286,7 @@ async function pump() {
 /**
  * Resolves one reply: the cheap paths first (the reply already carries the
  * right picture, or its place is cached), the watcher and the image only for
- * places this chat has not drawn.
+ * places this chat has not drawn - and even those at the user's pace.
  */
 async function runTarget({ index, swipeId, force, refresh, my, signal }) {
     const messages = chatMessages();
@@ -294,7 +299,6 @@ async function runTarget({ index, swipeId, force, refresh, my, signal }) {
 
     const store = bgStore();
     const persona = personaName();
-    const mode = modeOn();
 
     // What the reply carried in: its own stamp when re-resolving (an edit or
     // the brush), else the picture the story brought to it - which is how a
@@ -305,39 +309,40 @@ async function runTarget({ index, swipeId, force, refresh, my, signal }) {
     }
 
     // Where this reply is: the scene governing ITS turn (the last usable one
-    // at or before it), never the chat's end.
+    // at or before it), never the chat's end. Any preset can carry the tag -
+    // without one the reply falls to the plain-prose watcher below.
     const scene = resolveScene(messages, index, { persona })?.scene || null;
-    const place = mode ? (scene?.placeFull || '') : '';
+    const place = scene?.placeFull || '';
 
     const carried = own ?? resolveStampId(messages, index)?.id ?? null;
     const baseline = (carried && store.records[carried]) || null;
 
-    if (!force) {
-        if (mode) {
-            const step = decide(store, place, { baseline });
-            if (step.action === 'none') {
-                stampLanded(index, swipeId, step.record?.id ?? baseline?.id);
-                return { status: 'unchanged', record: step.record || baseline || undefined };
-            }
-            if (step.action === 'apply') {
-                if (my !== chainSeq) return { status: 'superseded' };
-                stampLanded(index, swipeId, step.record.id);
-                return { status: 'cached', record: step.record };
-            }
-        } else {
-            // Mode OFF has no tags to compare: the watcher is asked at the
-            // user's pace, and every reply between keeps the last picture.
-            repliesSinceWatch += 1;
-            const every = Math.max(1, Number(settings().bgEveryN) || 1);
-            if (repliesSinceWatch < every) {
-                stampLanded(index, swipeId, baseline?.id);
-                return { status: 'unchanged', record: baseline || undefined };
-            }
-            repliesSinceWatch = 0;
-        }
+    // A tag names the place outright, so `decide` answers it for free; an
+    // untagged reply has no such answer and only the watcher can say.
+    const step = !force && scene ? decide(store, place, { baseline }) : null;
+
+    const plan = planResolution({ step, force, counter: repliesSinceWatch, every: settings().bgEveryN });
+    repliesSinceWatch = plan.counter;
+
+    if (plan.go === 'unchanged') {
+        stampLanded(index, swipeId, plan.record?.id ?? baseline?.id);
+        return { status: 'unchanged', record: plan.record || baseline || undefined };
     }
 
-    return runWatcherChain({ store, messages, index, swipeId, place, scene, baseline, mode, persona, force, my, signal });
+    if (plan.go === 'cached') {
+        if (my !== chainSeq) return { status: 'superseded' };
+        stampLanded(index, swipeId, plan.record.id);
+        return { status: 'cached', record: plan.record };
+    }
+
+    if (plan.go === 'keep') {
+        // The pace is not due yet: the reply keeps the picture it carried -
+        // what slowing the draws down gives up.
+        stampLanded(index, swipeId, baseline?.id);
+        return { status: 'unchanged', record: baseline || undefined };
+    }
+
+    return runWatcherChain({ store, messages, index, swipeId, place, scene, tagged: !!scene, baseline, persona, force, my, signal });
 }
 
 /**
@@ -345,16 +350,15 @@ async function runTarget({ index, swipeId, force, refresh, my, signal }) {
  * "same" folds the spelling onto the picture the reply carried, "known"
  * brings back a cached image, "new" draws one.
  */
-async function runWatcherChain({ store, messages, index, swipeId, place, scene, baseline, mode, persona, force, my, signal }) {
+async function runWatcherChain({ store, messages, index, swipeId, place, scene, tagged, baseline, persona, force, my, signal }) {
     const request = buildWatcherRequest({
         store,
         messages,
-        mode,
-        count: Math.max(1, Number(settings().bgContextReplies) || 2),
+        tagged,
         at: index,
         persona,
         force,
-        systemCore: mode ? settings().bgPromptOn : settings().bgPromptOff,
+        systemCore: tagged ? settings().bgPromptOn : settings().bgPromptOff,
         current: baseline,
     });
     lastRequest = { systemPrompt: request.systemPrompt, prompt: request.prompt, at: Date.now() };
@@ -377,8 +381,9 @@ async function runWatcherChain({ store, messages, index, swipeId, place, scene, 
 
         answer = reply.ok ? parseWatcherReply(reply.text) : null;
         if (!answer) {
-            // The watcher failed. Mode ON still knows the place from the tags
-            // and draws from the template; mode OFF has nothing to fall back on.
+            // The watcher failed. A tagged reply still knows its place from
+            // the tags and draws from the template; without tags there is
+            // nothing to fall back on.
             if (!place) {
                 failure = reply.error || 'The watcher call failed.';
             } else {
@@ -404,7 +409,7 @@ async function runWatcherChain({ store, messages, index, swipeId, place, scene, 
 
     console.debug(`${LOG} watcher answered`, answer);
 
-    // Mode ON knows the place from the tags; mode OFF leans on the watcher's
+    // The tag knows the place; the plain-prose hand leans on the watcher's
     // own naming, and only a nameless answer falls back to its first phrase.
     const target = place || answer.place || firstPhrase(answer.prompt) || 'the story';
 
@@ -520,8 +525,6 @@ export async function syncShownBackground() {
 
     // No history at or before here: the cached picture of the shown place is
     // the best guess - still never a generation.
-    if (!modeOn()) return { status: 'unchanged' };
-
     const place = resolveScene(messages, index, { persona: personaName() })?.scene?.placeFull || '';
     const step = decide(store, place, { baseline: null });
     if (step.action === 'apply' && step.record) {

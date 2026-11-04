@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
     BG_STORE_VERSION,
+    BG_STORY_REPLIES,
     WATCHER_SCHEMA,
     aliasLocation,
     buildWatcherRequest,
@@ -18,6 +19,7 @@ import {
     lookupRecord,
     normalizeStore,
     parseWatcherReply,
+    planResolution,
     recoverCurrentKey,
     resolveRecordId,
     resolveStampId,
@@ -203,19 +205,19 @@ test('extractRecentPlaces walks the latest replies backwards, oldest first', () 
     assert.deepEqual(extractRecentPlaces(messages, { limit: 6 }), ['The Docks', 'Pier 9']);
 });
 
-test('formatLatestStory groups by scene in mode ON and stays raw in mode OFF', () => {
+test('formatLatestStory groups by scene when tagged and stays raw when not', () => {
     const messages = [msg('Pre. <scene location="A" weather="Rain" /> Post.')];
 
-    assert.equal(formatLatestStory(messages, { mode: true, count: 2 }), 'Pre.\nSCENE: A (Rain)\nPost.');
-    assert.equal(formatLatestStory(messages, { mode: false, count: 2 }), 'Pre. <scene location="A" weather="Rain" /> Post.');
-    assert.equal(formatLatestStory([msg('one'), msg('two')], { mode: false, count: 1 }), 'two', 'the window is the last count replies');
+    assert.equal(formatLatestStory(messages, { tagged: true, count: 2 }), 'Pre.\nSCENE: A (Rain)\nPost.');
+    assert.equal(formatLatestStory(messages, { tagged: false, count: 2 }), 'Pre. <scene location="A" weather="Rain" /> Post.');
+    assert.equal(formatLatestStory([msg('one'), msg('two')], { tagged: false, count: 1 }), 'two', 'the window is the last count replies');
 });
 
 test('buildWatcherRequest serves the store and the story, and knows force', () => {
     const store = normalizeStore();
     const messages = [msg('<scene location="A" /> x')];
 
-    const empty = buildWatcherRequest({ store, messages, mode: true, count: 2 });
+    const empty = buildWatcherRequest({ store, messages, tagged: true, count: 2 });
     assert.ok(empty.prompt.includes('CURRENT BACKGROUND\nnone yet'));
     assert.ok(empty.prompt.includes('KNOWN BACKGROUNDS\nnone'));
     assert.ok(empty.prompt.includes('RECENT PLACES\nA'));
@@ -224,7 +226,7 @@ test('buildWatcherRequest serves the store and the story, and knows force', () =
     assert.equal(empty.systemPrompt, watcherSystemPrompt());
 
     storeRecord(store, { key: 'A', place: 'A', prompt: 'a pier at dusk', path: '/a.png' });
-    const full = buildWatcherRequest({ store, messages, mode: true, count: 2 });
+    const full = buildWatcherRequest({ store, messages, tagged: true, count: 2 });
     assert.ok(full.prompt.includes('CURRENT BACKGROUND\nA\na pier at dusk'));
     assert.ok(full.prompt.includes('KNOWN BACKGROUNDS\n- bg_1: A - a pier at dusk'));
 
@@ -232,8 +234,8 @@ test('buildWatcherRequest serves the store and the story, and knows force', () =
 });
 
 test('watcherSystemPrompt keeps the answer format while the core stays tunable', () => {
-    assert.ok(watcherSystemPrompt().includes('grouped by scene blocks'), 'mode ON leans on the scene structure');
-    assert.ok(watcherSystemPrompt({ mode: false }).includes('no scene markers'), 'mode OFF gets the plain-prose hand');
+    assert.ok(watcherSystemPrompt().includes('grouped by scene blocks'), 'the scene-tagged hand leans on the scene structure');
+    assert.ok(watcherSystemPrompt({ tagged: false }).includes('no scene markers'), 'the plain-prose hand gets the raw-prose core');
 
     const custom = watcherSystemPrompt({ core: 'Describe places like a haiku.' });
     assert.ok(custom.startsWith('Describe places like a haiku.'));
@@ -243,12 +245,47 @@ test('watcherSystemPrompt keeps the answer format while the core stays tunable',
     assert.ok(forced.includes('fresh image'), 'force switches matching off');
 });
 
-test('buildWatcherRequest uses the core and the mode it is given', () => {
+test('buildWatcherRequest uses the core and the hand it is given', () => {
     const store = normalizeStore();
     const request = buildWatcherRequest({ store, messages: [msg('<scene location="A" /> x')], systemCore: 'My own rules.' });
     assert.ok(request.systemPrompt.startsWith('My own rules.'));
     assert.ok(request.systemPrompt.includes('"state":"same|known|new"'));
     assert.equal(request.responseLength, 600);
+});
+
+test('buildWatcherRequest reads only the last reply by default', () => {
+    const store = normalizeStore();
+    const messages = [msg('the pier at dawn'), msg('the warehouse at midnight')];
+
+    const request = buildWatcherRequest({ store, messages, tagged: false });
+    assert.equal(BG_STORY_REPLIES, 1);
+    assert.ok(request.prompt.includes('LATEST STORY\nthe warehouse at midnight'));
+    assert.ok(!request.prompt.includes('the pier at dawn'), 'story context is hardcoded to the last reply');
+});
+
+test('planResolution runs the free outcomes at any pace and throttles the costly half', () => {
+    const record = { id: 'bg_1' };
+
+    // The default pace draws on every AI reply.
+    assert.deepEqual(planResolution({ step: null, counter: 0, every: 1 }), { go: 'watch', record: null, counter: 0 });
+
+    // A tagged reply's free outcomes run at once - no call, no image - and
+    // still count the reply on the clock.
+    assert.deepEqual(planResolution({ step: { action: 'none', record }, counter: 0, every: 5 }), { go: 'unchanged', record, counter: 1 });
+    assert.deepEqual(planResolution({ step: { action: 'apply', record }, counter: 2, every: 5 }), { go: 'cached', record, counter: 3 });
+
+    // The watcher and its image wait for the pace; replies between draws
+    // keep the picture they carried.
+    assert.deepEqual(planResolution({ step: null, counter: 0, every: 3 }), { go: 'keep', record: null, counter: 1 });
+    assert.deepEqual(planResolution({ step: null, counter: 1, every: 3 }), { go: 'keep', record: null, counter: 2 });
+    assert.deepEqual(planResolution({ step: null, counter: 2, every: 3 }), { go: 'watch', record: null, counter: 0 });
+    assert.deepEqual(planResolution({ step: { action: 'watch', record: null }, counter: 2, every: 3 }), { go: 'watch', record: null, counter: 0 });
+
+    // The brush never waits and never counts.
+    assert.deepEqual(planResolution({ step: { action: 'none', record }, force: true, counter: 2, every: 3 }), { go: 'watch', record: null, counter: 2 });
+
+    // A missing or broken setting clamps to 1.
+    assert.equal(planResolution({ step: null, counter: 4, every: 0 }).go, 'watch');
 });
 
 test('parseWatcherReply reads the JSON, the text protocol, or a bare description', () => {
