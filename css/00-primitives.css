@@ -91,6 +91,7 @@
 
     /* layers, inside the root only */
     --mz-z-bg: 0;
+    --mz-z-wx: 1;
     --mz-z-cast: 2;
     --mz-z-rail: 4;
     --mz-z-pane: 6;

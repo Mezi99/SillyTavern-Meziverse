@@ -1,0 +1,191 @@
+/* ---------- weather on the background stage ----------
+   One layer where the tint used to stand: over the background and its soft
+   twin, behind the cast, rails and narration pane. The scene tag's
+   weatherTag names the state, locationTag gates it (outdoors only), and the
+   free-text weather's tone words tune how hard it reads. The effects bring
+   their own light - a flash, a beam, a cloud's shadow - and never a constant
+   dim: the picture behind stays clean.
+
+   Everything here moves on transform and opacity alone, spawned once and
+   frozen (never torn down) between states: this is scenery, not a script. */
+
+.mz-weather {
+    position: absolute;
+    inset: 0;
+    z-index: var(--mz-z-wx, 1);
+    overflow: hidden;
+    pointer-events: none;
+    /* how hard the weather reads - the free-text tone words tune these */
+    --mz-wx-speed: 1;
+    --mz-wx-alpha: .85;
+}
+
+.mz-frame[data-mz-wx-int="light"] .mz-weather {
+    --mz-wx-speed: 1.45;
+    --mz-wx-alpha: .55;
+}
+
+.mz-frame[data-mz-wx-int="heavy"] .mz-weather {
+    --mz-wx-speed: .68;
+    --mz-wx-alpha: 1;
+}
+
+/* each effect sleeps at zero and wakes for its state - a cross-fade, no
+   rebuild. Storm rides the rain and its own flash; blizzard is snow on the
+   wind. */
+.mz-wx {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    transition: opacity 700ms var(--mz-ease);
+}
+
+.mz-frame[data-mz-wx="rain"] .mz-wx-rain,
+.mz-frame[data-mz-wx="storm"] .mz-wx-rain,
+.mz-frame[data-mz-wx="storm"] .mz-wx-storm,
+.mz-frame[data-mz-wx="snow"] .mz-wx-snow,
+.mz-frame[data-mz-wx="blizzard"] .mz-wx-snow,
+.mz-frame[data-mz-wx="blizzard"] .mz-wx-wind,
+.mz-frame[data-mz-wx="fog"] .mz-wx-fog {
+    opacity: var(--mz-wx-alpha);
+}
+
+/* a storm reads hard whatever the tone words say */
+.mz-frame[data-mz-wx="storm"] .mz-weather {
+    --mz-wx-speed: .72;
+    --mz-wx-alpha: 1;
+}
+
+/* light weather carries fewer particles */
+.mz-frame[data-mz-wx-int="light"] .mz-wx-rain i:nth-child(n+18),
+.mz-frame[data-mz-wx-int="light"] .mz-wx-snow i:nth-child(n+14) {
+    display: none;
+}
+
+/* ---------- rain ---------- */
+/* the whole curtain leans, so every streak falls along the slant */
+.mz-wx-rain {
+    transform: rotate(11deg) scale(1.3);
+}
+
+.mz-wx-rain i {
+    position: absolute;
+    top: -18%;
+    width: var(--w, 2px);
+    height: var(--len, 48px);
+    border-radius: 0 0 2px 2px;
+    background: linear-gradient(to bottom, rgba(174, 194, 224, 0), rgba(174, 194, 224, .75));
+    animation: mz-rain-fall calc(var(--dur, 1.4s) * var(--mz-wx-speed, 1)) linear infinite;
+    animation-delay: var(--delay, 0s);
+}
+
+@keyframes mz-rain-fall {
+    from { transform: translateY(0); }
+    to { transform: translateY(155vh); }
+}
+
+/* ---------- snow ---------- */
+/* flakes drift on sway waypoints and turn slowly as they come down */
+.mz-wx-snow i {
+    position: absolute;
+    top: -8%;
+    width: var(--size, 5px);
+    height: var(--size, 5px);
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, rgba(255, 255, 255, .95), rgba(235, 242, 255, .55) 62%, rgba(235, 242, 255, 0) 100%);
+    animation: mz-snow-fall calc(var(--dur, 9s) * var(--mz-wx-speed, 1)) linear infinite;
+    animation-delay: var(--delay, 0s);
+}
+
+@keyframes mz-snow-fall {
+    from { transform: translate(0, -4vh) rotate(0deg); opacity: 0; }
+    8% { opacity: 1; }
+    25% { transform: translate(16px, 24vh) rotate(45deg); }
+    50% { transform: translate(-10px, 52vh) rotate(90deg); }
+    75% { transform: translate(14px, 80vh) rotate(135deg); }
+    92% { opacity: 1; }
+    to { transform: translate(-4px, 112vh) rotate(180deg); opacity: 0; }
+}
+
+/* ---------- storm's lightning ---------- */
+/* two flashes on co-prime cycles, each a double strike with a faint echo -
+   the beat never repeats the same way twice. Cold light, not white. */
+.mz-wx-storm i {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    background: linear-gradient(180deg, rgba(214, 229, 255, .85), rgba(190, 212, 255, .45) 55%, rgba(190, 212, 255, 0) 100%);
+}
+
+.mz-wx-storm i:nth-child(1) { animation: mz-flash-a 13s linear infinite; }
+.mz-wx-storm i:nth-child(2) { animation: mz-flash-b 17s linear infinite; }
+
+@keyframes mz-flash-a {
+    0%, 2.4% { opacity: 0; }
+    2.6% { opacity: .32; }
+    2.8% { opacity: .04; }
+    3.1% { opacity: .5; }
+    3.4%, 78% { opacity: 0; }
+    79% { opacity: .1; }
+    80%, 100% { opacity: 0; }
+}
+
+@keyframes mz-flash-b {
+    0%, 51% { opacity: 0; }
+    52% { opacity: .42; }
+    52.3% { opacity: .05; }
+    52.8% { opacity: .28; }
+    53.3%, 100% { opacity: 0; }
+}
+
+/* ---------- fog ---------- */
+/* wide soft banks sliding past, breathing as they go */
+.mz-wx-fog i {
+    position: absolute;
+    inset: -25% -20%;
+    background:
+        radial-gradient(ellipse 62% 45% at 28% 58%, rgba(222, 230, 242, .5), transparent 70%),
+        radial-gradient(ellipse 52% 38% at 74% 40%, rgba(210, 220, 236, .42), transparent 72%);
+    animation: mz-fog-drift 40s ease-in-out infinite alternate;
+}
+
+.mz-wx-fog i:nth-child(2) {
+    top: 8%;
+    opacity: .8;
+    animation-duration: 55s;
+    animation-delay: -12s;
+}
+
+.mz-wx-fog i:nth-child(3) {
+    top: -12%;
+    opacity: .7;
+    animation-duration: 68s;
+    animation-delay: -30s;
+}
+
+@keyframes mz-fog-drift {
+    from { transform: translateX(-7%) scale(1); }
+    to { transform: translateX(7%) scale(1.12); }
+}
+
+/* ---------- still weather ----------
+   Reduced motion - the setting or the system - freezes every particle where
+   its desynced clock stands: a still photograph of the weather. Lightning
+   never fires. */
+@media (prefers-reduced-motion: reduce) {
+    .mz-weather i {
+        animation-play-state: paused !important;
+    }
+
+    .mz-wx-storm {
+        display: none;
+    }
+}
+
+#mz-root[data-mz-motion="reduced"] .mz-weather i {
+    animation-play-state: paused !important;
+}
+
+#mz-root[data-mz-motion="reduced"] .mz-wx-storm {
+    display: none;
+}

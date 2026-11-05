@@ -206,6 +206,7 @@
 
 .mz-frame.is-memory .mz-dlg,
 .mz-frame.is-memory .mz-bgsoft,
+.mz-frame.is-memory .mz-weather,
 .mz-frame.is-memory .mz-glance,
 .mz-frame.is-memory .mz-header,
 .mz-frame.is-memory .mz-chatbar { opacity: 0; pointer-events: none; transition: opacity 500ms var(--mz-ease); }
