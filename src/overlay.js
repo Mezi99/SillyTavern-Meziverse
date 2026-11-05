@@ -23,6 +23,7 @@ import { mountCast, refreshCastSizing, renderCast, renderThoughts, renderTells, 
 import { resolveLedger } from './ledger.js';
 import { parseMessage } from './tags.js';
 import { weatherPlan } from './scene.js';
+import { placeHtml } from './prose.js';
 import { mountCues, closeMemory } from './cues.js';
 import { closeFloats } from './floats.js';
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
@@ -1339,7 +1340,7 @@ function applyScene(record) {
     els.date.title = scene?.dateRaw || '';
     els.time.textContent = scene ? scene.time : '--:--';
     els.time.title = scene?.time || '';
-    els.place.textContent = scene?.placeFull || '\u2014';
+    els.place.innerHTML = scene?.placeFull ? placeHtml(scene.placeFull) : '\u2014';
     els.place.title = scene?.placeFull || '';
 
     if (scene?.weather) {

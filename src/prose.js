@@ -37,6 +37,22 @@ function tidy(html) {
         .trim();
 }
 
+/**
+ * A location chain as the UI reads it: its levels joined by a quiet chevron
+ * instead of the model's `|` - which stays the contract, and stays in the
+ * tooltip. Scene rows and the chat bar share this one read.
+ */
+export function placeHtml(placeFull) {
+    const raw = typeof placeFull === 'string' ? placeFull : '';
+    if (!raw) return '';
+
+    return raw.split('|')
+        .map(level => level.trim())
+        .filter(Boolean)
+        .map(escapeHtml)
+        .join('<span class="mz-scene-sep" aria-hidden="true">\u203a</span>');
+}
+
 /** One scene as a quiet band of its own, at the point it appeared. */
 function sceneRow(tag, { compact, persona }) {
     if (!isUsableScene(tag)) return '';
@@ -47,9 +63,7 @@ function sceneRow(tag, { compact, persona }) {
     if (scene.date) when.push(`<span class="mz-scene-date">${escapeHtml(scene.date)}</span>`);
     if (scene.time) when.push(`<b class="mz-scene-time">${escapeHtml(scene.time)}</b>`);
 
-    // The location is shown exactly as the scene wrote it: re-joining the
-    // levels with our own separator only hid the model's own `|` from view.
-    const place = scene.placeFull ? escapeHtml(scene.placeFull) : '';
+    const place = placeHtml(scene.placeFull);
     const present = scene.present.map(name => escapeHtml(name)).join(', ');
 
     return `<aside class="mz-scene${compact ? ' is-compact' : ''}" aria-label="Scene">`

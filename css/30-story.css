@@ -88,6 +88,13 @@
     overflow-wrap: anywhere;
 }
 
+/* the chain's levels read like a path: quiet chevrons between them */
+.mz-scene-sep {
+    margin: 0 .42em;
+    color: var(--mz-text-dim);
+    font-weight: 400;
+}
+
 .mz-scene-cast {
     min-width: 0;
     font-size: var(--mz-text-2xs);
