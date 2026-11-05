@@ -1,5 +1,22 @@
 # Meziverse â€” version log
 
+## 2.5.3 — 2026-11-05
+
+The scene stays lit, and the glass keeps its hands to itself.
+
+### The scene behind the glass
+- The background mirror speaks only in **authored urls**. It used to copy the browser's computed style — which Chrome hands back as `cross-fade(...)` machinery while a background transition runs — and one such value in the mirror's CSS variable blanked the whole scene to black. The probe now reads the inline value, every candidate is vetted, and a stranger is dropped: the last good picture stays.
+- The glass reads **our own scene**, never the page behind: one scene in two layers — the soft read under every pane of glass (the pane blur slider drives it), and the sharp read on the stage band where the cast stands. Not one `backdrop-filter` remains in the extension: Firefox's compositor sampled those wrong and washed the grey of SillyTavern's theme over the whole UI on screen (screenshots stayed correct — the tell). SillyTavern's own "no blur" toggle confirmed the cause.
+- Chrome and Firefox now show the same scene at the same time. The background ordering oddities — a picture lagging one turn behind, turns going black — were the same mirror, caught mid-fall.
+
+### When the watcher wakes
+- The watcher comes for **new turns only**. Opening a chat draws nothing — the recorded picture for the shown turn comes back at once, or SillyTavern's own background when nothing was recorded — and waiting for images to render before the first word is typed is over. An opening that wants a picture presses the brush.
+- Swiping draws nothing either: a resolved variant brings its own picture back, an unseen one keeps the picture it swiped from.
+
+### Notes
+- Exiting hands the chat's background back as a **picture, never a hole** — an empty baseline falls to SillyTavern's own unlock instead of painting nothing.
+- The synthetic suite stands at 147 tests.
+
 ## 2.5.2 â€” 2026-11-05
 
 The watcher speaks in names again, and the settings drawers got tidied.
