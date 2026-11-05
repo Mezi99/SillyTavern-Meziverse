@@ -328,6 +328,24 @@ export function restorePlan(store, currentLock) {
 }
 
 /**
+ * The one shape of background value the scene's mirror may hold: an authored
+ * CSS `url(...)` as it was written. `getComputedStyle` is no such thing - it
+ * reports a running transition as `cross-fade(...)` machine syntax and
+ * resolves urls to absolutes; that is valid to read and poison to put back
+ * into CSS, where one bad substitution kills the whole declaration. Anything
+ * the mirror cannot trust answers null: it keeps the last good picture
+ * rather than paint a stranger's.
+ *
+ * @param {*} value
+ * @returns {string|null} the authored value, or null when unusable
+ */
+export function sceneUrl(value) {
+    const clean = typeof value === 'string' ? value.trim() : '';
+    if (!clean || !/^url\(/i.test(clean) || /cross-fade/i.test(clean)) return null;
+    return clean;
+}
+
+/**
  * The CSS `url(...)` value SillyTavern's background module expects, wrapped
  * the same way its own force-set handler wraps image paths.
  *

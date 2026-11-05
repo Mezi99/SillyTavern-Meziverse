@@ -16,7 +16,7 @@ import {
     uiClosed,
     uiOpened,
 } from './bgchain.js';
-import { DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_OFF } from './backgrounds.js';
+import { DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_OFF, sceneUrl } from './backgrounds.js';
 import { injectSprite } from './icons.js';
 import { createTranscript } from './transcript.js';
 import { mountCast, refreshCastSizing, renderCast, renderThoughts, renderTells, clearCascade, redrawCast } from './cast.js';
@@ -652,7 +652,7 @@ export function open() {
     // The master switch turns on: the chain catches the chat up - the shown
     // turn's picture re-asserted, the chat's end resolved once as if its reply
     // had just arrived (a stamped end costs nothing; at most one image).
-    void uiOpened();
+    uiOpened().finally(() => applyBackground());
     transcript.refresh({ followLatest: true });
     desiredPane = Number(settings().paneHeight) || PANE_DEFAULT;
     applyPaneHeight(desiredPane);
@@ -841,7 +841,10 @@ let bgSwapTimer = null;
 function queueBackgroundSwap() {
     clearTimeout(bgSwapTimer);
     bgSwapTimer = setTimeout(() => {
-        syncShownBackground().catch?.(error => {
+        // The mirror re-reads the screen after the swap settles: the paint
+        // path may have skipped the event (the picture was already up), and
+        // the inline probe is safe at any moment.
+        syncShownBackground().then?.(() => applyBackground()).catch?.(error => {
             console.warn('[Meziverse] bg swap failed', error);
         });
     }, 200);
@@ -1017,8 +1020,11 @@ function applyCueMeanwhile() {
  * `forcedUrl` is the CSS url() from a FORCE_SET_BACKGROUND event, and taking
  * it from the payload matters: listeners run in registration order, and ours
  * may fire before SillyTavern's own handler has painted #bg1 - probing the
- * DOM at that moment would copy the previous background into the scene. On
- * the probe paths (opening the scene, chat changes) #bg1 is settled and safe.
+ * DOM at that moment would copy the previous background into the scene. The
+ * probes read the INLINE value only: `getComputedStyle` reports a running
+ * background-image transition as `cross-fade(...)` machine syntax - valid to
+ * read, poison to put back into CSS, where one bad substitution blanks the
+ * whole scene. `sceneUrl` vets every candidate.
  */
 function applyBackground(forcedUrl) {
     const useSt = settings().background === 'st';
@@ -1034,18 +1040,19 @@ function applyBackground(forcedUrl) {
         return;
     }
 
-    let image = typeof forcedUrl === 'string' && forcedUrl.includes('url(') ? forcedUrl : '';
-    if (!image) {
-        const source = document.getElementById('bg1');
-        image = source ? getComputedStyle(source).backgroundImage : '';
-        if (!image || image === 'none') image = getComputedStyle(document.body).backgroundImage;
+    const forced = typeof forcedUrl === 'string' ? forcedUrl.trim() : '';
+    const inline = document.getElementById('bg1')?.style.backgroundImage?.trim() || '';
+    const image = sceneUrl(forced) || sceneUrl(inline);
+
+    if (image) {
+        frame.style.setProperty('--mz-st-bg', image);
+        return;
     }
 
-    if (image && image !== 'none' && image.includes('url(')) {
-        frame.style.setProperty('--mz-st-bg', image);
-    } else {
-        frame.style.removeProperty('--mz-st-bg');
-    }
+    // No picture on screen - SillyTavern shows none - clears the mirror; an
+    // unusable stranger is dropped and the last good picture stays.
+    const raw = forced || inline;
+    if (!raw || /^none$/i.test(raw)) frame.style.removeProperty('--mz-st-bg');
 }
 
 /* ---------- full screen ---------- */

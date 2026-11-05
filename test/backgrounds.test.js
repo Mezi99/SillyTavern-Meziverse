@@ -28,6 +28,7 @@ import {
     resolveRecordId,
     resolveStampId,
     restorePlan,
+    sceneUrl,
     setStamp,
     stampOf,
     storeRecord,
@@ -212,6 +213,19 @@ test('toCssBgUrl wraps paths the way SillyTavern reads them', () => {
     assert.equal(toCssBgUrl('/images/docks.png'), 'url("/images/docks.png")');
     assert.equal(toCssBgUrl('/images/my pier.png'), 'url("/images/my%20pier.png")');
     assert.equal(toCssBgUrl(''), '');
+});
+
+test('sceneUrl trusts authored urls and nothing else', () => {
+    assert.equal(sceneUrl('url("/images/docks.png")'), 'url("/images/docks.png")');
+    assert.equal(sceneUrl("url('/images/docks.png')"), "url('/images/docks.png')");
+    assert.equal(sceneUrl('  url(/images/docks.png)  '), 'url(/images/docks.png)');
+
+    assert.equal(sceneUrl('cross-fade(url("/a.png") 98.4%, url("/b.png"))'), null,
+        'a computed transition is machine syntax: poison in a custom property');
+    assert.equal(sceneUrl('none'), null);
+    assert.equal(sceneUrl(''), null);
+    assert.equal(sceneUrl(null), null);
+    assert.equal(sceneUrl(42), null);
 });
 
 test('knownBackgroundsList serves the newest places first, capped', () => {

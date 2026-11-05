@@ -649,7 +649,14 @@ export async function forceSetBackground(imagePath) {
     if (!path || !context?.eventSource || !type) return false;
 
     const url = toCssBgUrl(path);
-    if (customBackground() === url) return true;
+    if (customBackground() === url) {
+        // The lock already holds this picture, so SillyTavern needs no event
+        // - but the screen must agree with the lock: a hand-back or a chat
+        // change may have repainted #bg1 since the lock was written.
+        const bg1 = document.getElementById('bg1');
+        if (bg1 && bg1.style.backgroundImage.trim() !== url) bg1.style.backgroundImage = url;
+        return true;
+    }
 
     try {
         await context.eventSource.emit(type, { url, path });
