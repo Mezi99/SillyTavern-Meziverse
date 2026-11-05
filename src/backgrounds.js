@@ -312,8 +312,10 @@ export function noteBaseline(store, { lock = null, shown = '' } = {}) {
 /**
  * What exiting should do about the chat's background: hand back the recorded
  * baseline, fall back to SillyTavern's own unlock for a chat drawn before the
- * baseline existed, or stand down because the background on screen is not
- * ours to hand back (the user unlocked it or locked their own while we ran).
+ * baseline existed - or where the baseline holds nothing to hand back, since
+ * painting an empty value would leave a hole where the picture was - or stand
+ * down because the background on screen is not ours to hand back (the user
+ * unlocked it or locked their own while we ran).
  *
  * @param {object} store
  * @param {string|null|undefined} currentLock what `custom_background` holds now
@@ -323,8 +325,30 @@ export function restorePlan(store, currentLock) {
     const ensured = normalizeStore(store);
     const lock = typeof currentLock === 'string' && currentLock.trim() ? currentLock.trim() : null;
     if (!lock || !isOurBackground(ensured, lock)) return { action: 'none' };
-    if (ensured.baseline !== undefined) return { action: 'restore', baseline: ensured.baseline };
+    if (ensured.baseline !== undefined) {
+        const baseline = ensured.baseline;
+        if (baseline && (baseline.lock || baseline.shown)) return { action: 'restore', baseline };
+        return { action: 'unlock' };
+    }
     return { action: 'unlock' };
+}
+
+/**
+ * The one shape of background value the scene's mirror may hold: an authored
+ * CSS `url(...)` as it was written. `getComputedStyle` is no such thing - it
+ * reports a running transition as `cross-fade(...)` machine syntax and
+ * resolves urls to absolutes; that is valid to read and poison to put back
+ * into CSS, where one bad substitution kills the whole declaration. Anything
+ * the mirror cannot trust answers null: it keeps the last good picture
+ * rather than paint a stranger's.
+ *
+ * @param {*} value
+ * @returns {string|null} the authored value, or null when unusable
+ */
+export function sceneUrl(value) {
+    const clean = typeof value === 'string' ? value.trim() : '';
+    if (!clean || !/^url\(/i.test(clean) || /cross-fade/i.test(clean)) return null;
+    return clean;
 }
 
 /**

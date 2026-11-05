@@ -28,6 +28,7 @@ import {
     resolveRecordId,
     resolveStampId,
     restorePlan,
+    sceneUrl,
     setStamp,
     stampOf,
     storeRecord,
@@ -124,6 +125,12 @@ test('restorePlan hands back the baseline, unlocks legacy, stands down for the u
     assert.deepEqual(restorePlan(legacy, ours), { action: 'unlock' }, 'drawn before baselines existed: SillyTavern unlocks');
     assert.deepEqual(restorePlan(legacy, 'url("/bg/user.png")'), { action: 'none' }, 'even legacy stands down for the user');
 
+    const empty = normalizeStore();
+    storeRecord(empty, { key: 'Pier 9', place: 'Pier 9', prompt: 'p', path: '/images/pier.png' });
+    noteBaseline(empty, { lock: null, shown: '' });
+    assert.deepEqual(restorePlan(empty, ours), { action: 'unlock' },
+        'a baseline of nothing to hand back unlocks - never paints a hole');
+
     assert.equal(isOurBackground(store, ours), true, 'the record path marks the background ours');
     assert.equal(isOurBackground(store, '/images/pier.png'), true, 'the raw path too');
     assert.equal(isOurBackground(store, 'url("/bg/user.png")'), false);
@@ -212,6 +219,19 @@ test('toCssBgUrl wraps paths the way SillyTavern reads them', () => {
     assert.equal(toCssBgUrl('/images/docks.png'), 'url("/images/docks.png")');
     assert.equal(toCssBgUrl('/images/my pier.png'), 'url("/images/my%20pier.png")');
     assert.equal(toCssBgUrl(''), '');
+});
+
+test('sceneUrl trusts authored urls and nothing else', () => {
+    assert.equal(sceneUrl('url("/images/docks.png")'), 'url("/images/docks.png")');
+    assert.equal(sceneUrl("url('/images/docks.png')"), "url('/images/docks.png')");
+    assert.equal(sceneUrl('  url(/images/docks.png)  '), 'url(/images/docks.png)');
+
+    assert.equal(sceneUrl('cross-fade(url("/a.png") 98.4%, url("/b.png"))'), null,
+        'a computed transition is machine syntax: poison in a custom property');
+    assert.equal(sceneUrl('none'), null);
+    assert.equal(sceneUrl(''), null);
+    assert.equal(sceneUrl(null), null);
+    assert.equal(sceneUrl(42), null);
 });
 
 test('knownBackgroundsList serves the newest places first, capped', () => {

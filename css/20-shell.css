@@ -102,8 +102,14 @@ body.mz-open .popup { z-index: 9500 !important; }
     isolation: isolate;
 }
 
-/* ---------- scene background ---------- */
-.mz-bg {
+/* ---------- scene background ----------
+   One scene in two layers: the base reads sharp across the frame (the
+   glass above it tints and needs no backdrop-filter - Firefox's
+   compositor samples those wrong and washes the page's grey over the
+   scene), and the soft twin lives in the narration pane's box alone -
+   the pane blur slider's whole domain. */
+.mz-bg,
+.mz-bgsoft {
     position: absolute;
     inset: 0;
     z-index: var(--mz-z-bg);
@@ -115,7 +121,8 @@ body.mz-open .popup { z-index: 9500 !important; }
     transition: background var(--mz-dur) var(--mz-ease);
 }
 
-.mz-bg::before {
+.mz-bg::before,
+.mz-bgsoft::before {
     content: "";
     position: absolute;
     inset: auto 0 0 0;
@@ -127,8 +134,27 @@ body.mz-open .popup { z-index: 9500 !important; }
     -webkit-mask-image: linear-gradient(180deg, transparent, #000 55%);
 }
 
+/* the soft read: the scene under the narration pane, and nowhere else.
+   The clip is the pane's own geometry - the blur edge IS the pane's
+   border line, corners included - so nothing bleeds beside the pane and
+   no overscan seam exists to drift. No scale: at slider zero the pane
+   reads the scene pixel for pixel. */
+.mz-bgsoft {
+    filter: saturate(140%) blur(var(--mz-pane-blur, 16px));
+    /* clip follows the pane's own height transition and grip drags */
+    transition: background var(--mz-dur) var(--mz-ease), clip-path var(--mz-dur) var(--mz-ease);
+    clip-path: inset(
+        calc(100% - var(--mz-pane-h, 300px) - var(--mz-gutter, 16px))
+        var(--mz-pane-right, var(--mz-gutter, 16px))
+        var(--mz-gutter, 16px)
+        var(--mz-pane-left, var(--mz-gutter, 16px))
+        round var(--mz-r-lg)
+    );
+}
+
 /* SillyTavern's current background, when the setting asks for it */
-.mz-frame.is-bg-st .mz-bg {
+.mz-frame.is-bg-st .mz-bg,
+.mz-frame.is-bg-st .mz-bgsoft {
     background-color: var(--mz-bg);
     background-image:
         linear-gradient(
@@ -142,7 +168,8 @@ body.mz-open .popup { z-index: 9500 !important; }
     background-repeat: no-repeat, no-repeat;
 }
 
-.mz-frame.is-bg-st .mz-bg::before { opacity: .5; }
+.mz-frame.is-bg-st .mz-bg::before,
+.mz-frame.is-bg-st .mz-bgsoft::before { opacity: .5; }
 
 .mz-scrim {
     position: absolute;
@@ -172,7 +199,6 @@ body.mz-open .popup { z-index: 9500 !important; }
         color-mix(in srgb, var(--mz-bg) 90%, transparent),
         color-mix(in srgb, var(--mz-bg) 55%, transparent)
     );
-    backdrop-filter: var(--mz-blur);
 }
 
 /* the chrome fades when the theme turns over */
@@ -398,7 +424,6 @@ body.mz-open .popup { z-index: 9500 !important; }
         color-mix(in srgb, var(--mz-bg-2) 58%, transparent),
         color-mix(in srgb, var(--mz-bg-2) 20%, transparent)
     );
-    backdrop-filter: var(--mz-blur);
 }
 
 .mz-chatbar-left {
@@ -531,8 +556,8 @@ body.mz-open .popup { z-index: 9500 !important; }
         color-mix(in srgb, var(--mz-bg) calc(var(--mz-pane-alpha, .9) * 100%), transparent),
         color-mix(in srgb, var(--mz-bg-2) calc(var(--mz-pane-alpha, .9) * 100%), transparent)
     );
-    /* the pane's own blur, tunable in settings; the chrome keeps --mz-blur */
-    backdrop-filter: saturate(140%) blur(var(--mz-pane-blur, 16px));
+    /* the pane's blur lives on the scene base behind it - the slider's
+       var drives that one soft read */
     box-shadow: var(--mz-shadow);
     transition: height var(--mz-dur) var(--mz-ease), background var(--mz-dur) var(--mz-ease);
 }
@@ -987,7 +1012,6 @@ body.mz-open .popup { z-index: 9500 !important; }
     z-index: var(--mz-z-scrim);
     display: none;
     background: color-mix(in srgb, var(--mz-bg) 52%, transparent);
-    backdrop-filter: blur(2px);
 }
 
 /* the veil only exists while a surface is up */
@@ -1370,7 +1394,6 @@ body.mz-open .popup { z-index: 9500 !important; }
     background:
         linear-gradient(180deg, rgba(255, 255, 255, .08), transparent 46%),
         color-mix(in srgb, var(--mz-bg) 70%, transparent);
-    backdrop-filter: var(--mz-blur);
     box-shadow: 0 14px 30px -16px rgba(0, 0, 0, .85), inset 0 1px 0 rgba(255, 255, 255, .1);
     transform-origin: 14% 100%;
     animation:
@@ -1478,7 +1501,6 @@ body.mz-open .popup { z-index: 9500 !important; }
     border: 1px solid var(--mz-line);
     border-radius: 50%;
     background: color-mix(in srgb, var(--mz-bg) 55%, transparent);
-    backdrop-filter: var(--mz-blur);
     transition: transform .3s var(--mz-ease);
 }
 

@@ -137,13 +137,14 @@ export function resetBackgroundPacing() {
 }
 
 /**
- * Wires the chain to the story: every finished reply re-resolves the reply
- * itself, swipes resolve variants this chat has not seen, edits re-resolve the
- * edited reply, and a chat change cancels whatever was in flight and
- * re-derives the current picture from the background SillyTavern itself
- * restored. The master switch gates it all: the chain follows the chat only
- * while the scene is open - closed or never opened, every handler here and
- * `requestBackground` itself return without a single call, write or fetch.
+ * Wires the chain to the story: every finished reply resolves the reply
+ * itself, edits re-resolve the edited reply, and a chat change cancels
+ * whatever was in flight and re-derives the current picture from the
+ * background SillyTavern itself restored. Swipes and openings draw nothing -
+ * the watcher is for new turns. The master switch gates it all: the chain
+ * follows the chat only while the scene is open - closed or never opened,
+ * every handler here and `requestBackground` itself return without a single
+ * call, write or fetch.
  *
  * @param {{isOpen?:() => boolean}} [parts] the scene's open-state gate
  */
@@ -184,24 +185,23 @@ export function initBackgrounds({ isOpen } = {}) {
 
     on('MESSAGE_SWIPED', mesId => {
         if (!uiIsOpen()) return;
+        // Swiping draws nothing: a variant this chat has already resolved
+        // brings its own picture back through the shown-turn swap, and an
+        // unseen one keeps the picture it swiped from. A genuinely new place
+        // on a swipe wants the brush - the watcher is for new turns.
         const index = Number(mesId);
         const message = chatMessages()[index];
         if (!message) return;
-        // A variant this chat has already resolved keeps its own picture: the
-        // shown-turn swap brings it back. Only an unseen variant is resolved.
-        if (stampOf(message, Number(message.swipe_id ?? 0))) return;
-        requestBackground({ index }).catch?.(error => {
-            console.warn(`${LOG} chain failed`, error);
-        });
+        void syncShownBackground();
     });
 }
 
 /**
  * The scene opened: the master switch turns on. Whatever happened while it was
  * closed is caught up - the metadata re-derived from what SillyTavern shows,
- * the shown turn's own picture re-asserted (swap-only, free), and the chat's
- * end resolved once, exactly as if its reply had just arrived: a stamped end
- * costs nothing, and at most one image is drawn per open.
+ * the shown turn's own picture re-asserted (swap-only, free). Nothing is
+ * asked or drawn: the watcher comes for new turns only, and a chat whose
+ * opening wants a picture presses the brush.
  */
 export async function uiOpened() {
     cancelBackgroundWork();
@@ -210,7 +210,6 @@ export async function uiOpened() {
 
     try {
         await syncShownBackground();
-        await requestBackground({ index: lastMessageIndex() });
     } catch (error) {
         console.warn(`${LOG} chain failed`, error);
     }

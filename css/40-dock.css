@@ -59,7 +59,6 @@
     border: 1px solid var(--mz-line);
     border-radius: var(--mz-r-lg);
     background: color-mix(in srgb, var(--mz-bg) 72%, transparent);
-    backdrop-filter: var(--mz-blur);
     text-align: left;
     transition: border-color var(--mz-dur-fast);
 }
@@ -78,7 +77,6 @@ button.mz-g:hover { border-color: var(--mz-line-strong); }
     padding: 5px 4px;
     border: 0;
     background: none;
-    backdrop-filter: none;
 }
 button.mz-g--quiet:hover { border-color: transparent; }
 button.mz-g--quiet:hover .mz-g-t { color: var(--mz-accent); }
@@ -107,7 +105,6 @@ button.mz-g--quiet:hover .mz-g-t { color: var(--mz-accent); }
     border: 1px solid var(--mz-line);
     border-radius: 26px;
     background: color-mix(in srgb, var(--mz-bg) 72%, transparent);
-    backdrop-filter: var(--mz-blur);
 }
 .mz-dock--h {
     align-self: flex-end;
@@ -154,7 +151,6 @@ button.mz-g--quiet:hover .mz-g-t { color: var(--mz-accent); }
     border: 1px solid var(--mz-line);
     border-radius: var(--mz-r-lg);
     background: color-mix(in srgb, var(--mz-bg) 86%, transparent);
-    backdrop-filter: var(--mz-blur);
     box-shadow: var(--mz-shadow);
 }
 .mz-fly--l {
