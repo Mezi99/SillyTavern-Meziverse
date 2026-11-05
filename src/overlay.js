@@ -60,6 +60,7 @@ const svg = name => `<svg class="ico" aria-hidden="true"><use href="#mz-i-${name
 const FRAME_HTML = `
 <div class="mz-frame" role="dialog" aria-modal="true" aria-label="Meziverse">
     <div class="mz-bg" aria-hidden="true"></div>
+    <div class="mz-bgsharp" aria-hidden="true"></div>
     <div class="mz-scrim" aria-hidden="true"></div>
 
     <header class="mz-header">
@@ -892,8 +893,9 @@ function applyPaneOpacity() {
     if (els.paneOpacityValue) els.paneOpacityValue.textContent = `${percent}%`;
 }
 
-/* The reading pane's blur, in pixels of backdrop blur under it. Only the
-   pane; the chrome keeps its own blur. None keeps the background sharp. */
+/* The scene's soft read, in pixels of blur on the base layer behind the
+   glass. Only that layer; the sharp stage band keeps its edge. None makes
+   the whole scene read sharp. */
 function applyPaneBlur() {
     const raw = Number(settings().paneBlur);
     const amount = Number.isFinite(raw) ? Math.min(24, Math.max(0, Math.round(raw / 2) * 2)) : 16;

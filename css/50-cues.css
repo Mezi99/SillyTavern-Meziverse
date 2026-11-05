@@ -73,7 +73,6 @@
     border: 1px solid color-mix(in srgb, var(--c) 38%, transparent);
     border-radius: var(--mz-r);
     background: color-mix(in srgb, var(--mz-bg) 92%, transparent);
-    backdrop-filter: var(--mz-blur);
     box-shadow: var(--mz-shadow);
     opacity: 0;
     visibility: hidden;
@@ -200,9 +199,11 @@
 
 /* the stage behind the memory: soft, warm, far away */
 .mz-frame .mz-bg,
+.mz-frame .mz-bgsharp,
 .mz-frame .mz-cast { transition: filter 700ms var(--mz-ease), opacity 700ms var(--mz-ease), transform 900ms var(--mz-ease); }
 
-.mz-frame.is-memory .mz-bg { filter: sepia(.7) saturate(.8) brightness(.55) blur(6px); transform: scale(1.04); }
+.mz-frame.is-memory .mz-bg,
+.mz-frame.is-memory .mz-bgsharp { filter: sepia(.7) saturate(.8) brightness(.55) blur(6px); transform: scale(1.08); }
 .mz-frame.is-memory .mz-cast { filter: sepia(.8) saturate(.6) brightness(.5) blur(4px); opacity: .4; }
 
 .mz-frame.is-memory .mz-dlg,
@@ -227,7 +228,6 @@
         radial-gradient(30% 34% at 18% 78%, color-mix(in srgb, var(--mz-cue-mem) 11%, transparent), transparent 70%),
         radial-gradient(34% 30% at 84% 22%, color-mix(in srgb, var(--mz-cue-mem) 9%, transparent), transparent 70%),
         color-mix(in srgb, var(--mz-bg) 58%, transparent);
-    backdrop-filter: blur(16px) sepia(.5);
     -webkit-mask-image: radial-gradient(ellipse 92% 88% at 50% 50%, #000 52%, transparent 100%);
     mask-image: radial-gradient(ellipse 92% 88% at 50% 50%, #000 52%, transparent 100%);
     animation: mz-haze-in 600ms var(--mz-ease) both;

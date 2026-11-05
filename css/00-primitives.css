@@ -82,7 +82,6 @@
     --mz-r-pill: 999px;
     --mz-shadow: 0 22px 60px -18px rgba(0, 0, 0, .85);
     --mz-shadow-sm: 0 8px 24px -12px rgba(0, 0, 0, .7);
-    --mz-blur: saturate(140%) blur(16px);
 
     /* motion */
     --mz-dur-fast: 120ms;
