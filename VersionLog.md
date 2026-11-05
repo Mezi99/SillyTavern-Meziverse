@@ -6,7 +6,7 @@ The scene stays lit, and the glass keeps its hands to itself.
 
 ### The scene behind the glass
 - The background mirror speaks only in **authored urls**. It used to copy the browser's computed style — which Chrome hands back as `cross-fade(...)` machinery while a background transition runs — and one such value in the mirror's CSS variable blanked the whole scene to black. The probe now reads the inline value, every candidate is vetted, and a stranger is dropped: the last good picture stays.
-- The glass reads **our own scene**, never the page behind: one scene in two layers — the soft read under every pane of glass (the pane blur slider drives it), and the sharp read on the stage band where the cast stands. Not one `backdrop-filter` remains in the extension: Firefox's compositor sampled those wrong and washed the grey of SillyTavern's theme over the whole UI on screen (screenshots stayed correct — the tell). SillyTavern's own "no blur" toggle confirmed the cause.
+- The glass reads **our own scene**, never the page behind: one scene in two layers — the sharp read across the frame, and the soft twin (the pane blur slider drives it) living in the narration pane's box alone — its blur edge IS the pane's border line, and nothing bleeds beside it. Not one `backdrop-filter` remains in the extension: Firefox's compositor sampled those wrong and washed the grey of SillyTavern's theme over the whole UI on screen (screenshots stayed correct — the tell). SillyTavern's own "no blur" toggle confirmed the cause.
 - Chrome and Firefox now show the same scene at the same time. The background ordering oddities — a picture lagging one turn behind, turns going black — were the same mirror, caught mid-fall.
 
 ### When the watcher wakes

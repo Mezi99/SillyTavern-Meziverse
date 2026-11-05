@@ -60,7 +60,7 @@ const svg = name => `<svg class="ico" aria-hidden="true"><use href="#mz-i-${name
 const FRAME_HTML = `
 <div class="mz-frame" role="dialog" aria-modal="true" aria-label="Meziverse">
     <div class="mz-bg" aria-hidden="true"></div>
-    <div class="mz-bgsharp" aria-hidden="true"></div>
+    <div class="mz-bgsoft" aria-hidden="true"></div>
     <div class="mz-scrim" aria-hidden="true"></div>
 
     <header class="mz-header">

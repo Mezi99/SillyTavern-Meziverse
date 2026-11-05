@@ -103,13 +103,13 @@ body.mz-open .popup { z-index: 9500 !important; }
 }
 
 /* ---------- scene background ----------
-   One scene in two layers: the base reads soft everywhere (the glass above
-   it tints and needs no backdrop-filter - Firefox's compositor samples
-   those wrong and washes the page's grey over the scene), and the sharp
-   twin stands on the stage band where the cast performs. The pane blur
-   slider softens and sharpens both reads at once. */
+   One scene in two layers: the base reads sharp across the frame (the
+   glass above it tints and needs no backdrop-filter - Firefox's
+   compositor samples those wrong and washes the page's grey over the
+   scene), and the soft twin lives in the narration pane's box alone -
+   the pane blur slider's whole domain. */
 .mz-bg,
-.mz-bgsharp {
+.mz-bgsoft {
     position: absolute;
     inset: 0;
     z-index: var(--mz-z-bg);
@@ -122,7 +122,7 @@ body.mz-open .popup { z-index: 9500 !important; }
 }
 
 .mz-bg::before,
-.mz-bgsharp::before {
+.mz-bgsoft::before {
     content: "";
     position: absolute;
     inset: auto 0 0 0;
@@ -134,26 +134,27 @@ body.mz-open .popup { z-index: 9500 !important; }
     -webkit-mask-image: linear-gradient(180deg, transparent, #000 55%);
 }
 
-/* the soft read: the scene under every pane of glass */
-.mz-bg {
+/* the soft read: the scene under the narration pane, and nowhere else.
+   The clip is the pane's own geometry - the blur edge IS the pane's
+   border line, corners included - so nothing bleeds beside the pane and
+   no overscan seam exists to drift. No scale: at slider zero the pane
+   reads the scene pixel for pixel. */
+.mz-bgsoft {
     filter: saturate(140%) blur(var(--mz-pane-blur, 16px));
-    transform: scale(1.08);
-}
-
-/* the sharp read: the stage band, under the header and scene bar and above
-   the pane - their tints cover its 6px overscan, so no seam shows */
-.mz-bgsharp {
+    /* clip follows the pane's own height transition and grip drags */
+    transition: background var(--mz-dur) var(--mz-ease), clip-path var(--mz-dur) var(--mz-ease);
     clip-path: inset(
-        calc(var(--mz-header-h, 34px) + var(--mz-chatbar-real, var(--mz-chatbar-h, 48px)) - 6px)
-        0
-        calc(var(--mz-gutter, 16px) + var(--mz-pane-h, 300px) - 6px)
-        0
+        calc(100% - var(--mz-pane-h, 300px) - var(--mz-gutter, 16px))
+        var(--mz-pane-right, var(--mz-gutter, 16px))
+        var(--mz-gutter, 16px)
+        var(--mz-pane-left, var(--mz-gutter, 16px))
+        round var(--mz-r-lg)
     );
 }
 
 /* SillyTavern's current background, when the setting asks for it */
 .mz-frame.is-bg-st .mz-bg,
-.mz-frame.is-bg-st .mz-bgsharp {
+.mz-frame.is-bg-st .mz-bgsoft {
     background-color: var(--mz-bg);
     background-image:
         linear-gradient(
@@ -168,7 +169,7 @@ body.mz-open .popup { z-index: 9500 !important; }
 }
 
 .mz-frame.is-bg-st .mz-bg::before,
-.mz-frame.is-bg-st .mz-bgsharp::before { opacity: .5; }
+.mz-frame.is-bg-st .mz-bgsoft::before { opacity: .5; }
 
 .mz-scrim {
     position: absolute;

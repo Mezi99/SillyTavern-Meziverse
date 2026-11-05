@@ -199,14 +199,13 @@
 
 /* the stage behind the memory: soft, warm, far away */
 .mz-frame .mz-bg,
-.mz-frame .mz-bgsharp,
 .mz-frame .mz-cast { transition: filter 700ms var(--mz-ease), opacity 700ms var(--mz-ease), transform 900ms var(--mz-ease); }
 
-.mz-frame.is-memory .mz-bg,
-.mz-frame.is-memory .mz-bgsharp { filter: sepia(.7) saturate(.8) brightness(.55) blur(6px); transform: scale(1.08); }
+.mz-frame.is-memory .mz-bg { filter: sepia(.7) saturate(.8) brightness(.55) blur(6px); transform: scale(1.08); }
 .mz-frame.is-memory .mz-cast { filter: sepia(.8) saturate(.6) brightness(.5) blur(4px); opacity: .4; }
 
 .mz-frame.is-memory .mz-dlg,
+.mz-frame.is-memory .mz-bgsoft,
 .mz-frame.is-memory .mz-glance,
 .mz-frame.is-memory .mz-header,
 .mz-frame.is-memory .mz-chatbar { opacity: 0; pointer-events: none; transition: opacity 500ms var(--mz-ease); }
