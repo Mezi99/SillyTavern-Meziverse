@@ -651,8 +651,9 @@ export function open() {
     if (stGenerating()) startWatch();
     enterFullscreen();
     // The master switch turns on: the chain catches the chat up - the shown
-    // turn's picture re-asserted, the chat's end resolved once as if its reply
-    // had just arrived (a stamped end costs nothing; at most one image).
+    // turn's recorded picture re-asserted (swap-only, free). Nothing is
+    // asked or drawn on opening: the watcher is for new turns, and an
+    // opening that wants a picture presses the brush.
     uiOpened().finally(() => applyBackground());
     transcript.refresh({ followLatest: true });
     desiredPane = Number(settings().paneHeight) || PANE_DEFAULT;
