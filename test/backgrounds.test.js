@@ -125,6 +125,12 @@ test('restorePlan hands back the baseline, unlocks legacy, stands down for the u
     assert.deepEqual(restorePlan(legacy, ours), { action: 'unlock' }, 'drawn before baselines existed: SillyTavern unlocks');
     assert.deepEqual(restorePlan(legacy, 'url("/bg/user.png")'), { action: 'none' }, 'even legacy stands down for the user');
 
+    const empty = normalizeStore();
+    storeRecord(empty, { key: 'Pier 9', place: 'Pier 9', prompt: 'p', path: '/images/pier.png' });
+    noteBaseline(empty, { lock: null, shown: '' });
+    assert.deepEqual(restorePlan(empty, ours), { action: 'unlock' },
+        'a baseline of nothing to hand back unlocks - never paints a hole');
+
     assert.equal(isOurBackground(store, ours), true, 'the record path marks the background ours');
     assert.equal(isOurBackground(store, '/images/pier.png'), true, 'the raw path too');
     assert.equal(isOurBackground(store, 'url("/bg/user.png")'), false);

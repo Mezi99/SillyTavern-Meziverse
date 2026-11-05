@@ -721,8 +721,11 @@ export function restoreBackground(baseline) {
     }
     saveChatMetadata();
 
+    // The screen gets a picture back, never a hole: an empty pair leaves
+    // whatever is showing (restorePlan routes it to SillyTavern's unlock).
+    const shown = lock || String(baseline.shown ?? '').trim();
     const bg1 = document.getElementById('bg1');
-    if (bg1) bg1.style.backgroundImage = lock || String(baseline.shown ?? '').trim();
+    if (bg1 && shown) bg1.style.backgroundImage = shown;
     return true;
 }
 

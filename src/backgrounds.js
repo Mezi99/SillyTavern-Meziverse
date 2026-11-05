@@ -312,8 +312,10 @@ export function noteBaseline(store, { lock = null, shown = '' } = {}) {
 /**
  * What exiting should do about the chat's background: hand back the recorded
  * baseline, fall back to SillyTavern's own unlock for a chat drawn before the
- * baseline existed, or stand down because the background on screen is not
- * ours to hand back (the user unlocked it or locked their own while we ran).
+ * baseline existed - or where the baseline holds nothing to hand back, since
+ * painting an empty value would leave a hole where the picture was - or stand
+ * down because the background on screen is not ours to hand back (the user
+ * unlocked it or locked their own while we ran).
  *
  * @param {object} store
  * @param {string|null|undefined} currentLock what `custom_background` holds now
@@ -323,7 +325,11 @@ export function restorePlan(store, currentLock) {
     const ensured = normalizeStore(store);
     const lock = typeof currentLock === 'string' && currentLock.trim() ? currentLock.trim() : null;
     if (!lock || !isOurBackground(ensured, lock)) return { action: 'none' };
-    if (ensured.baseline !== undefined) return { action: 'restore', baseline: ensured.baseline };
+    if (ensured.baseline !== undefined) {
+        const baseline = ensured.baseline;
+        if (baseline && (baseline.lock || baseline.shown)) return { action: 'restore', baseline };
+        return { action: 'unlock' };
+    }
     return { action: 'unlock' };
 }
 
