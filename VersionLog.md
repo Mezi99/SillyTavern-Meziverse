@@ -1,5 +1,31 @@
 # Meziverse — version log
 
+## 2.5.2 — 2026-11-05
+
+The watcher speaks in names again, and the settings drawers got tidied.
+
+### The watcher's question
+- Every place is labeled **`short name [Full/world/map location: ...]`** — the short name (the location chain's last segment, "Unit 4B - Bedroom") is the place to paint; the chain before it (city, district, street) is context for a better prompt, never its subject. The model no longer mistakes the chain for the place, and the prompt rules say outright: "prompt" is never a location, a place name or received text.
+- Descriptions arrive **whole** — the 200-character cut is gone — and the style suffix is appended once, never stacked on its own echo. The author's-note bracket echo (`[...]`) is stripped wherever it had leaked through.
+- A reply without a scene tag still runs the plain-prose fallback at the pace, and says so with one notice per chat.
+
+### Settings
+- **Images** (was "Image generation") with two foldable sections, both closed by default: **Avatars** and **Backgrounds**. "Avatars On/Off" steps the cast strip aside — the background alone on stage — while the narration pane's height stays its own.
+- **Pane blur**, under Pane transparency: 0 to 24 px, clean or cloudy as you like.
+- The mode switch moves into Settings > Meziverse mode as its header row — out of the main UI, where it is not meant to be flipped mid-chat. A `DEV_EXTRAS` release flag hides the whole tab and keeps the extras inert: a release ships the base extension alone.
+
+### Notes
+- The version rides beside the wordmark ("Meziverse v2.5.2"); `manifest.json` matches.
+- The windowed-mode stacking fix was deliberately deferred to v2.5.3 — with browser-vs-browser research, it needs its own room.
+- The synthetic suite stands at 146 tests.
+
+## 2.5.1 — 2026-11-04
+
+The master switch. Everything the extension does lives inside the extension, and nothing runs unless the Meziverse scene is open: closed or never opened, the chain sits idle — no watcher call, no image drawn, no metadata touched.
+
+- The scene's open state gates the whole background chain — every event handler, every run — and the prompt injection to come rides the same gate. Opening catches the chat up: the shown turn's picture re-asserted for free, the chat's end resolved once as if its reply had just arrived (a stamped end costs nothing; at most one image per open). Closing hands the chat's background back.
+- The **takeover baseline** remembers what SillyTavern had on screen before the chain's first write — its lock and its shown image — so exiting restores the pair exactly as found. A background the user took back (unlocked, or locked their own) is theirs: exiting stands down. A chat change while the scene is closed hands that chat back the same way — off means off in every chat.
+
 ## 2.5.0 — 2026-11-04
 
 One scene-tag contract. The base extension — backgrounds, avatars, the scene cluster and rows, the rails frame — now works with any preset in both modes; the mode toggle gates only the Meziverse.json extras (ledger, cues, mindscape, meanwhile, thought bubbles).

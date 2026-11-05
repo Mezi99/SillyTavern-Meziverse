@@ -11,7 +11,7 @@ import { castImages, castKey, currentChatId, removeCastImage, say, setCastImage,
 import { initials } from './scene.js';
 import { icon } from './icons.js';
 import { notify } from './notify.js';
-import { entryOn, modeOn } from './settings.js';
+import { avatarsOn, entryOn, modeOn } from './settings.js';
 import { closeFloats, placeFloat, registerFloat } from './floats.js';
 
 const MAX_EDGE = 1024;
@@ -104,6 +104,17 @@ export function renderCast(scene) {
     lastScene = scene && Array.isArray(scene.present) ? scene : null;
     names = lastScene ? lastScene.present.filter(Boolean) : [];
 
+    // Avatars off: the strip draws nothing at all - no posters, no initials,
+    // no thoughts or tells to hang on them - and the signature clears so
+    // switching back on redraws from scratch. The pane is untouched either
+    // way: the strip never owned its height.
+    if (!avatarsOn()) {
+        lastSignature = '';
+        host.hidden = true;
+        track.replaceChildren();
+        return;
+    }
+
     const signature = castSignature();
     if (signature === lastSignature) {
         refreshCastSizing();
@@ -137,6 +148,11 @@ export function renderCast(scene) {
     applyTells();
     refreshCastSizing();
     requestAnimationFrame(refreshCastSizing);
+}
+
+/** Re-lays the strip as the story last left it - what the avatars switch flips. */
+export function redrawCast() {
+    renderCast(lastScene);
 }
 
 /**
@@ -289,6 +305,7 @@ function applyThoughts() {
  *  fresh — "After the memory" — until the next turn. A character with
  *  no portrait keeps it in the mindscape alone. */
 export function showCascade(name, text) {
+    if (!avatarsOn()) return;
     const key = textOf(name).trim().toLowerCase();
     if (!key || !text) return;
 

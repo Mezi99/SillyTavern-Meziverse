@@ -7,7 +7,7 @@
  */
 
 import { chatMessages, currentChatId, errorText, imageGenerationStatus, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer } from './st.js';
-import { settings, saveSettings, entryOn, modeOn, bgAutoOn } from './settings.js';
+import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, DEV_EXTRAS } from './settings.js';
 import {
     forceBackground,
     getLastWatcherRequest,
@@ -19,7 +19,7 @@ import {
 import { DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_OFF } from './backgrounds.js';
 import { injectSprite } from './icons.js';
 import { createTranscript } from './transcript.js';
-import { mountCast, refreshCastSizing, renderCast, renderThoughts, renderTells, clearCascade } from './cast.js';
+import { mountCast, refreshCastSizing, renderCast, renderThoughts, renderTells, clearCascade, redrawCast } from './cast.js';
 import { resolveLedger } from './ledger.js';
 import { parseMessage } from './tags.js';
 import { mountCues, closeMemory } from './cues.js';
@@ -27,7 +27,7 @@ import { closeFloats } from './floats.js';
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr } from './notify.js';
 
-const VERSION = '2.5.0';
+const VERSION = '2.5.2';
 const PANE_DEFAULT = 300;
 const LOG_W_DEFAULT = 720;
 const LOG_H_SHARE = 0.7;
@@ -63,7 +63,7 @@ const FRAME_HTML = `
     <div class="mz-scrim" aria-hidden="true"></div>
 
     <header class="mz-header">
-        <div class="mz-brand"><b>Meziverse</b><small class="mz-version">v${VERSION}</small><button class="mz-mode" type="button" role="switch" aria-checked="true" title="Meziverse mode \u2014 scene info and features" aria-label="Meziverse mode" data-mz-action="mode"><i aria-hidden="true"></i><span data-mz="mode-label">mode \u00b7 on</span></button><button class="mz-mode mz-bgauto" type="button" role="switch" aria-checked="false" title="Backgrounds follow the story" aria-label="Automatic location backgrounds" data-mz-action="bg-auto"><i aria-hidden="true"></i><span data-mz="bg-auto-label">bg \u00b7 off</span></button><button class="mz-ibtn mz-brush" type="button" title="Draw a background for this place" aria-label="Draw a background for this place" data-mz-action="bg-generate">${svg('brush')}</button></div>
+        <div class="mz-brand"><b>Meziverse</b><small class="mz-version">v${VERSION}</small><button class="mz-mode mz-bgauto" type="button" role="switch" aria-checked="false" title="Backgrounds follow the story" aria-label="Automatic location backgrounds" data-mz-action="bg-auto"><i aria-hidden="true"></i><span data-mz="bg-auto-label">bg \u00b7 off</span></button><button class="mz-ibtn mz-brush" type="button" title="Draw a background for this place" aria-label="Draw a background for this place" data-mz-action="bg-generate">${svg('brush')}</button></div>
         <div class="mz-chatname" data-mz="chatname"><b class="is-empty">No chat open</b></div>
         <div class="mz-header-tools">
             <button class="mz-ibtn" type="button" title="Full screen" aria-label="Full screen" data-mz-action="fullscreen">${svg('expand')}</button>
@@ -186,7 +186,7 @@ const FRAME_HTML = `
 
         <div class="mz-seg mz-set-tabs" role="tablist" aria-label="Settings sections">
             <button class="is-on" type="button" role="tab" aria-selected="true" data-mz-tab="general">General</button>
-            <button type="button" role="tab" aria-selected="false" data-mz-tab="image">Image generation</button>
+            <button type="button" role="tab" aria-selected="false" data-mz-tab="image">Images</button>
             <button type="button" role="tab" aria-selected="false" data-mz-tab="mode">Meziverse mode</button>
         </div>
 
@@ -210,6 +210,13 @@ const FRAME_HTML = `
                 <div class="mz-range">
                     <input type="range" min="20" max="100" step="5" data-mz="pane-opacity" aria-label="Pane transparency">
                     <span data-mz="pane-opacity-value">90%</span>
+                </div>
+            </div>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Pane blur</b><small>How sharply the background reads through the reading pane. None keeps it clean.</small></span>
+                <div class="mz-range">
+                    <input type="range" min="0" max="24" step="2" data-mz="pane-blur" aria-label="Pane blur">
+                    <span data-mz="pane-blur-value">16 px</span>
                 </div>
             </div>
         </div>
@@ -271,8 +278,16 @@ const FRAME_HTML = `
             </div>
         </div>
 
-        <div class="mz-set-group" data-mz-pane="image">
-            <h3>Backgrounds</h3>
+        <div class="mz-set-group mz-set-group--fold" data-mz-pane="image">
+            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="avatars">Avatars ${svg('chevdown')}</button></h3>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Avatars On/Off</b><small>The cast posters above the reading pane. Off leaves the background alone on stage.</small></span>
+                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Avatars" data-mz-action="avatars"><i></i></button>
+            </div>
+        </div>
+
+        <div class="mz-set-group mz-set-group--fold" data-mz-pane="image">
+            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="backgrounds">Backgrounds ${svg('chevdown')}</button></h3>
             <div class="mz-set-row">
                 <span class="mz-set-label"><b>Follow the story</b><small>A new background when the place changes; the brush draws one on demand.</small></span>
                 <button class="mz-switch" type="button" role="switch" aria-checked="false" aria-label="Automatic location backgrounds" data-mz-action="bg-auto"><i></i></button>
@@ -306,7 +321,7 @@ const FRAME_HTML = `
                 <button class="mz-btn-ghost" type="button" data-mz-action="bg-prompt-on-reset">Restore default</button>
             </div>
             <div class="mz-set-row mz-set-row--prompt">
-                <span class="mz-set-label"><b>Watcher prompt \u00b7 Plain prose</b><small>The plain-prose hand, for presets without scene tags.</small></span>
+                <span class="mz-set-label"><b>Watcher prompt \u00b7 Plain prose</b><small>The fallback hand, for replies without scene tags. The answer format is appended for you.</small></span>
                 <textarea class="mz-textarea" rows="8" data-mz="bg-prompt-off" aria-label="Watcher prompt, plain prose"></textarea>
                 <button class="mz-btn-ghost" type="button" data-mz-action="bg-prompt-off-reset">Restore default</button>
             </div>
@@ -318,6 +333,14 @@ const FRAME_HTML = `
             <div class="mz-set-row">
                 <span class="mz-set-label"><b>Try it</b><small>Draws a fresh background for the place the story is at now.</small></span>
                 <button class="mz-btn-ghost" type="button" data-mz-action="bg-test">Draw one now</button>
+            </div>
+        </div>
+
+        <div class="mz-set-group" data-mz-pane="mode">
+            <h3>Meziverse mode</h3>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Mode on/off</b><small>The master switch for the extras - ledger, cues, mindscape, thought bubbles. Off leaves the base extension alone. Best set before the chat starts.</small></span>
+                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Meziverse mode" data-mz-action="mode"><i></i></button>
             </div>
         </div>
 
@@ -440,12 +463,17 @@ export function mount() {
     injectSprite(root);
     root.insertAdjacentHTML('beforeend', FRAME_HTML);
 
+    // A release build (DEV_EXTRAS off) has no Meziverse mode to configure:
+    // the tab and its panes come out whole - and modeOn() keeps the extras
+    // inert whatever the stored setting says.
+    if (!DEV_EXTRAS) {
+        root.querySelectorAll('[data-mz-tab="mode"], [data-mz-pane="mode"]').forEach(element => element.remove());
+    }
+
     frame = root.querySelector('.mz-frame');
     els = {
         chatName: root.querySelector('[data-mz="chatname"]'),
         chatNameText: root.querySelector('[data-mz="chatname"] b'),
-        modeButton: root.querySelector('[data-mz-action="mode"]'),
-        modeLabel: root.querySelector('[data-mz="mode-label"]'),
         bgAutoLabel: root.querySelector('[data-mz="bg-auto-label"]'),
         bgBrushButton: root.querySelector('[data-mz-action="bg-generate"]'),
         bgEveryValue: root.querySelector('[data-mz="bg-every-value"]'),
@@ -479,6 +507,8 @@ export function mount() {
         fontSelect: root.querySelector('[data-mz="font"]'),
         paneOpacity: root.querySelector('[data-mz="pane-opacity"]'),
         paneOpacityValue: root.querySelector('[data-mz="pane-opacity-value"]'),
+        paneBlur: root.querySelector('[data-mz="pane-blur"]'),
+        paneBlurValue: root.querySelector('[data-mz="pane-blur-value"]'),
         prosePickers: root.querySelector('[data-mz="prose-pickers"]'),
         colorInputs: [...root.querySelectorAll('[data-mz-color]')],
         fullscreenButton: root.querySelector('[data-mz-action="fullscreen"]'),
@@ -550,6 +580,7 @@ export function mount() {
     applyTheme();
     applyMotion();
     applyMode();
+    applyAvatars();
     applyBgAuto();
     applyBgControls();
     applyEntries();
@@ -563,6 +594,7 @@ export function mount() {
     applyCueMemories();
     applyCueMeanwhile();
     applyPaneOpacity();
+    applyPaneBlur();
     applyLogWidth(Number(settings().logWidth) || LOG_W_DEFAULT);
 
     wireActions();
@@ -611,6 +643,7 @@ export function open() {
     applyBackground();
     applyProseColors();
     applyPaneOpacity();
+    applyPaneBlur();
     applyLogWidth(Number(settings().logWidth) || LOG_W_DEFAULT);
     if (Number(settings().logHeight) > 0) applyLogHeight(settings().logHeight);
     setGenerating(stGenerating(), { force: true });
@@ -692,12 +725,22 @@ function applyMotion() {
     els.motion.setAttribute('aria-checked', String(reduced));
 }
 
-/** Syncs the header's mode switch with the setting. */
+/** Syncs the mode switch - the Meziverse mode tab's header row - with the setting. */
 function applyMode() {
     const on = modeOn();
-    els.modeButton?.classList.toggle('is-on', on);
-    els.modeButton?.setAttribute('aria-checked', String(on));
-    if (els.modeLabel) els.modeLabel.textContent = on ? 'mode \u00b7 on' : 'mode \u00b7 off';
+    for (const button of root.querySelectorAll('[data-mz-action="mode"]')) {
+        button.classList.toggle('is-on', on);
+        button.setAttribute('aria-checked', String(on));
+    }
+}
+
+/** Syncs the avatars switch with the setting. */
+function applyAvatars() {
+    const on = avatarsOn();
+    for (const button of root.querySelectorAll('[data-mz-action="avatars"]')) {
+        button.classList.toggle('is-on', on);
+        button.setAttribute('aria-checked', String(on));
+    }
 }
 
 /** Syncs the background switch - header pill and settings row - with the setting. */
@@ -844,6 +887,18 @@ function applyPaneOpacity() {
 
     if (els.paneOpacity) els.paneOpacity.value = String(percent);
     if (els.paneOpacityValue) els.paneOpacityValue.textContent = `${percent}%`;
+}
+
+/* The reading pane's blur, in pixels of backdrop blur under it. Only the
+   pane; the chrome keeps its own blur. None keeps the background sharp. */
+function applyPaneBlur() {
+    const raw = Number(settings().paneBlur);
+    const amount = Number.isFinite(raw) ? Math.min(24, Math.max(0, Math.round(raw / 2) * 2)) : 16;
+
+    root.style.setProperty('--mz-pane-blur', `${amount}px`);
+
+    if (els.paneBlur) els.paneBlur.value = String(amount);
+    if (els.paneBlurValue) els.paneBlurValue.textContent = `${amount} px`;
 }
 
 /* Reads the prose inks SillyTavern's chat has right now. A hidden probe
@@ -1643,6 +1698,17 @@ function wireActions() {
             return;
         }
 
+        const section = event.target.closest('[data-mz-section]');
+        if (section) {
+            // A foldable group's header opens and closes its rows. The sheet
+            // is built once, so the state sticks for the session.
+            const group = section.closest('.mz-set-group');
+            const open = group ? !group.classList.contains('is-open') : true;
+            group?.classList.toggle('is-open', open);
+            section.setAttribute('aria-expanded', String(open));
+            return;
+        }
+
         const entry = event.target.closest('[data-mz-entry]');
         if (entry) {
             const name = entry.dataset.mzEntry;
@@ -1740,6 +1806,12 @@ function wireActions() {
                 applyMotion();
                 saveSettings();
                 break;
+            case 'avatars':
+                settings().avatars = !settings().avatars;
+                applyAvatars();
+                redrawCast();
+                saveSettings();
+                break;
             case 'mode':
                 settings().mode = !settings().mode;
                 applyMode();
@@ -1810,6 +1882,12 @@ function wireActions() {
     els.paneOpacity?.addEventListener('input', () => {
         settings().paneOpacity = Number(els.paneOpacity.value);
         applyPaneOpacity();
+        saveSettings();
+    });
+
+    els.paneBlur?.addEventListener('input', () => {
+        settings().paneBlur = Number(els.paneBlur.value);
+        applyPaneBlur();
         saveSettings();
     });
 

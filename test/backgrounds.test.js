@@ -7,6 +7,7 @@ import {
     WATCHER_SCHEMA,
     aliasLocation,
     buildWatcherRequest,
+    cleanPlaceText,
     compileBgPrompt,
     currentRecord,
     decide,
@@ -21,6 +22,7 @@ import {
     normalizeStore,
     noteBaseline,
     parseWatcherReply,
+    placeShortName,
     planResolution,
     recoverCurrentKey,
     resolveRecordId,
@@ -274,6 +276,12 @@ test('formatLatestStory groups by scene when tagged and stays raw when not', () 
     assert.equal(formatLatestStory(messages, { tagged: true, count: 2 }), 'Pre.\nSCENE: A (Rain)\nPost.');
     assert.equal(formatLatestStory(messages, { tagged: false, count: 2 }), 'Pre. <scene location="A" weather="Rain" /> Post.');
     assert.equal(formatLatestStory([msg('one'), msg('two')], { tagged: false, count: 1 }), 'two', 'the window is the last count replies');
+
+    const polluted = [msg('<scene date="[Friday]" location="[Metro City | Pier 9]" weather="[Cool]" /> x')];
+    assert.equal(
+        formatLatestStory(polluted, { tagged: true, count: 1 }),
+        'SCENE: Metro City | Pier 9 (Friday, Cool)\nx',
+        'the note example\'s bracket echo never reaches the story blocks');
 });
 
 test('buildWatcherRequest serves the store and the story, and knows force', () => {
@@ -290,8 +298,8 @@ test('buildWatcherRequest serves the store and the story, and knows force', () =
 
     storeRecord(store, { key: 'A', place: 'A', prompt: 'a pier at dusk', path: '/a.png' });
     const full = buildWatcherRequest({ store, messages, tagged: true, count: 2 });
-    assert.ok(full.prompt.includes('CURRENT BACKGROUND\nA\na pier at dusk'));
-    assert.ok(full.prompt.includes('KNOWN BACKGROUNDS\n- bg_1: A - a pier at dusk'));
+    assert.ok(full.prompt.includes('CURRENT BACKGROUND\nA [Full/world/map location: A] - a pier at dusk'));
+    assert.ok(full.prompt.includes('KNOWN BACKGROUNDS\n- bg_1: A [Full/world/map location: A] - a pier at dusk'));
 
     assert.ok(watcherSystemPrompt({ force: true }).includes('fresh image'), 'force switches matching off');
 });
@@ -386,6 +394,30 @@ test('compileBgPrompt layers the style over the watcher description', () => {
     assert.equal(compileBgPrompt('a pier at dusk', 'anime style'), 'anime style, a pier at dusk');
     assert.equal(compileBgPrompt('a pier at dusk.', ''), 'a pier at dusk');
     assert.equal(compileBgPrompt('', 'anime style'), 'anime style');
+    assert.equal(compileBgPrompt('anime style, a pier at dusk', 'anime style'), 'anime style, a pier at dusk', 'the style is never stacked on its own echo');
+    assert.equal(compileBgPrompt('Anime Style, a pier', 'anime style'), 'Anime Style, a pier', 'echo matching is case-blind');
+});
+
+test('cleanPlaceText and placeShortName read the location chain', () => {
+    assert.equal(cleanPlaceText('[Metro City | Docks | Pier 9]'), 'Metro City | Docks | Pier 9');
+    assert.equal(cleanPlaceText('  [Unit 4B - Bedroom]  '), 'Unit 4B - Bedroom');
+
+    assert.equal(placeShortName('Metro City | Downtown District | Fifth Street Walk-Up | Unit 4B - Bedroom'), 'Unit 4B - Bedroom');
+    assert.equal(placeShortName('[Metro City | Docks | Pier 9]'), 'Pier 9', 'bracket pollution never rides the short name');
+    assert.equal(placeShortName('The docks'), 'The docks', 'a place with no chain is its own short name');
+    assert.equal(placeShortName(''), '');
+});
+
+test('buildWatcherRequest labels the place and never truncates the description', () => {
+    const store = normalizeStore();
+    const long = 'dim gritty bedroom at night, ' + 'word '.repeat(60) + 'the end of the description';
+    storeRecord(store, { key: 'Metro City | Unit 4B - Bedroom', place: '[Metro City | Unit 4B - Bedroom]', prompt: long, path: '/bed.png' });
+
+    const request = buildWatcherRequest({ store, messages: [msg('<scene location="Metro City | Unit 4B - Bedroom" /> x')], tagged: true });
+    const line = `- bg_1: Unit 4B - Bedroom [Full/world/map location: Metro City | Unit 4B - Bedroom] - ${long}`;
+    assert.ok(request.prompt.includes(line), 'the short name names the picture, the chain is context, the description arrives whole');
+    assert.ok(request.prompt.includes(`CURRENT BACKGROUND\nUnit 4B - Bedroom [Full/world/map location: Metro City | Unit 4B - Bedroom] - ${long}`));
+    assert.ok(!request.prompt.includes('...'), 'nothing is cut');
 });
 
 test('fallbackLocationPrompt describes the place plainly when the watcher fails', () => {
@@ -483,10 +515,10 @@ test("buildWatcherRequest asks about its own reply, not the chat's end", () => {
     ];
 
     const request = buildWatcherRequest({ store, messages, at: 1, current: prior });
-    assert.ok(request.prompt.includes('CURRENT BACKGROUND\nPier 9\na pier at dusk'), 'the reply carried its own baseline in');
+    assert.ok(request.prompt.includes('CURRENT BACKGROUND\nPier 9 [Full/world/map location: Pier 9] - a pier at dusk'), 'the reply carried its own baseline in');
     assert.ok(request.prompt.includes('SCENE: Rooftop'), 'the story ends at the target reply');
     assert.ok(!request.prompt.includes('still on the roof'), 'later replies are not part of its story');
 
     const plain = buildWatcherRequest({ store, messages });
-    assert.ok(plain.prompt.includes('CURRENT BACKGROUND\nPier 9\na pier at dusk'), 'with no baseline given, the on-screen record stands in');
+    assert.ok(plain.prompt.includes('CURRENT BACKGROUND\nPier 9 [Full/world/map location: Pier 9] - a pier at dusk'), 'with no baseline given, the on-screen record stands in');
 });

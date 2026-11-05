@@ -340,6 +340,33 @@ export function toCssBgUrl(imagePath) {
 }
 
 /**
+ * A place string as the watcher should see it. The bracket characters a
+ * model's echo of the note's example leaves behind are stripped: they read as
+ * placeholders and confuse more than they clarify.
+ *
+ * @param {*} value
+ * @returns {string}
+ */
+export function cleanPlaceText(value) {
+    return String(value ?? '').replace(/[[\]]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * The name to paint by: the most specific segment of a location chain - what
+ * follows the last "|" ("Unit 4B - Bedroom" out of "Metro City | Downtown
+ * District | Fifth Street Walk-Up | Unit 4B - Bedroom"). The chain before it
+ * is wider context only, and a place with no chain is its own short name.
+ *
+ * @param {*} value
+ * @returns {string}
+ */
+export function placeShortName(value) {
+    const clean = cleanPlaceText(value);
+    const at = clean.lastIndexOf('|');
+    return (at >= 0 ? clean.slice(at + 1) : clean).trim();
+}
+
+/**
  * The watcher's menu of images this chat already has: newest first, so it can
  * answer "known" instead of inventing a near-duplicate place.
  *
@@ -591,19 +618,23 @@ export const WATCHER_SCHEMA = Object.freeze({
  */
 export const DEFAULT_BG_PROMPT_ON = `You are a background-art assistant for a visual-novel style roleplay. You receive the CURRENT BACKGROUND (the place name and image description shown now), a list of KNOWN BACKGROUNDS, a RECENT PLACES timeline, and the LATEST STORY grouped by scene blocks - each block's header names the place, time and weather its narration happens in. The LAST block is where the story is now.
 
+Every place arrives as "short name [Full/world/map location: ...]": a location chain like Metro City | Downtown District | Fifth Street Walk-Up | Unit 4B - Bedroom. The short name - the part after the last "|" - is the specific place to paint; the chain before it (region, city, district, street) is wider context that informs the prompt, never its subject.
+
 VERIFY first: is the place at the end of the LATEST STORY the same place as the CURRENT BACKGROUND? Place names are free text written by another model: "Pier No9", "Pier 9" and "the ninth pier" may all be the same place. Judge by meaning, not by spelling. If it is the same place, answer state "same".
 
 If the place is genuinely different but clearly equals one of the KNOWN BACKGROUNDS, answer state "known" with that background's id.
 
-Otherwise answer state "new" and write an image prompt that describes ONLY the current place as an establishing shot for a visual-novel background. You write prompts for a text-to-image model: describe what a camera would see at that place - the space, architecture, objects, materials, weather, time of day, lighting, mood, and a clear vantage point. Rules: 40 to 90 words of comma-separated visual phrases; the place is the subject - no characters, no people, no silhouettes, no names, no actions, no emotions, no sounds; anchor lighting and sky on the block's time of day and weather when stated; never mention "background", styles, quality tags or anything about prompts. Output only the description in "prompt".`;
+Otherwise answer state "new" and write an image prompt that describes ONLY the current place as an establishing shot for a visual-novel background. You write prompts for a text-to-image model: describe what a camera would see at that place - the space, architecture, objects, materials, weather, time of day, lighting, mood, and a clear vantage point. Rules: 40 to 90 words of comma-separated visual phrases; the place is the subject - no characters, no people, no silhouettes, no names, no actions, no emotions, no sounds; anchor lighting and sky on the block's time of day and weather when stated; the prompt is always a visual description - never a location chain, a place name, or any text you received verbatim; style and quality words are appended for you - never include them; never mention "background" or anything about prompts. Output only the description in "prompt".`;
 
 export const DEFAULT_BG_PROMPT_OFF = `You are a background-art assistant for a visual-novel style roleplay. You receive the CURRENT BACKGROUND (the place name and image description shown now), a list of KNOWN BACKGROUNDS, a RECENT PLACES timeline, and the LATEST STORY as plain story text. There are no scene markers here: the location may change abruptly inside a paragraph or stay put for many messages. Read the whole excerpt for where the characters are at its END.
 
+Every place arrives as "short name [Full/world/map location: ...]": a location chain like Metro City | Downtown District | Fifth Street Walk-Up | Unit 4B - Bedroom. The short name - the part after the last "|" - is the specific place to paint; the chain before it (region, city, district, street) is wider context that informs the prompt, never its subject.
+
 VERIFY first: is the place at the end of the LATEST STORY the same place as the CURRENT BACKGROUND? Place names are free text written by another model: "Pier No9", "Pier 9" and "the ninth pier" may all be the same place. Judge by meaning, not by spelling. If it is the same place, answer state "same".
 
 If the place is genuinely different but clearly equals one of the KNOWN BACKGROUNDS, answer state "known" with that background's id.
 
-Otherwise answer state "new" and write an image prompt that describes ONLY the current place as an establishing shot for a visual-novel background. You write prompts for a text-to-image model: describe what a camera would see at that place - the space, architecture, objects, materials, weather, time of day, lighting, mood, and a clear vantage point. Rules: 40 to 90 words of comma-separated visual phrases; the place is the subject - no characters, no people, no silhouettes, no names, no actions, no emotions, no sounds; anchor lighting and sky on the story's time of day and weather when stated; never mention "background", styles, quality tags or anything about prompts. Output only the description in "prompt".`;
+Otherwise answer state "new" and write an image prompt that describes ONLY the current place as an establishing shot for a visual-novel background. You write prompts for a text-to-image model: describe what a camera would see at that place - the space, architecture, objects, materials, weather, time of day, lighting, mood, and a clear vantage point. Rules: 40 to 90 words of comma-separated visual phrases; the place is the subject - no characters, no people, no silhouettes, no names, no actions, no emotions, no sounds; anchor lighting and sky on the story's time of day and weather when stated; the prompt is always a visual description - never a location chain, a place name, or any text you received verbatim; style and quality words are appended for you - never include them; never mention "background" or anything about prompts. Output only the description in "prompt".`;
 
 const WATCHER_FORMAT = `Answer with one JSON object and nothing else:
 {"state":"same|known|new","knownId":null,"place":"short name of the current place","prompt":"image prompt or empty"}`;
@@ -729,10 +760,13 @@ export function formatLatestStory(messages, { tagged = true, count = BG_STORY_RE
 
         const blocks = [];
         for (const group of groupMessageByScene(mes)) {
+            // Clean of the note example's bracket echo: raw "[...]" reads as a
+            // placeholder and invites the model to answer with it verbatim.
             const when = [group.date && group.time ? `${group.date}, ${group.time}` : (group.date || group.time), group.weather]
+                .map(cleanPlaceText)
                 .filter(Boolean)
                 .join(', ');
-            const header = group.place ? `SCENE: ${group.place}${when ? ` (${when})` : ''}` : '';
+            const header = group.place ? `SCENE: ${cleanPlaceText(group.place)}${when ? ` (${when})` : ''}` : '';
             blocks.push([header, group.text].filter(Boolean).join('\n'));
         }
         if (blocks.length) turns.push(blocks.join('\n'));
@@ -760,18 +794,24 @@ export const BG_STORY_REPLIES = 1;
 export function buildWatcherRequest({ store, messages, tagged = true, count = BG_STORY_REPLIES, at, persona = '', force = false, systemCore = '', current } = {}) {
     const blocks = [];
 
+    // A place reads "short name [Full/world/map location: ...]" everywhere it
+    // names an image: the short name is what the picture is of, the chain is
+    // context for a better prompt - so the watcher never mistakes one for the
+    // other or answers with a location string.
+    const label = place => `${placeShortName(place)} [Full/world/map location: ${cleanPlaceText(place)}]`;
+
     const shown = current !== undefined ? current : currentRecord(store);
-    blocks.push(`CURRENT BACKGROUND\n${shown ? `${shown.place}\n${shown.prompt}` : 'none yet'}`);
+    blocks.push(`CURRENT BACKGROUND\n${shown ? `${label(shown.place)} - ${shown.prompt}` : 'none yet'}`);
 
     const known = knownBackgroundsList(store, { limit: 12 });
     blocks.push(`KNOWN BACKGROUNDS\n${known.length
-        ? known.map(entry => `- ${entry.id}: ${entry.place} - ${excerpt(entry.prompt, 200)}`).join('\n')
+        ? known.map(entry => `- ${entry.id}: ${label(entry.place)} - ${entry.prompt}`).join('\n')
         : 'none'}`);
 
     const places = tagged
         ? extractRecentPlaces(messages, { limit: 6, at, persona })
         : knownBackgroundsList(store, { limit: 6 }).map(entry => entry.place).reverse();
-    blocks.push(`RECENT PLACES\n${places.length ? places.join(' -> ') : 'unknown'}`);
+    blocks.push(`RECENT PLACES\n${places.length ? places.map(cleanPlaceText).join(' -> ') : 'unknown'}`);
 
     blocks.push(`LATEST STORY\n${formatLatestStory(messages, { tagged, count, at, persona }) || 'empty'}`);
 
@@ -794,6 +834,9 @@ export function buildWatcherRequest({ store, messages, tagged = true, count = BG
 export function compileBgPrompt(description, style = '') {
     const desc = String(description ?? '').trim().replace(/[.,;]+$/, '');
     const prefix = String(style ?? '').trim().replace(/^[,;\s]+|[,;\s]+$/g, '');
+    // The style rides in on the description already when the watcher echoes
+    // what the known-backgrounds menu showed it: never stack it twice.
+    if (prefix && desc.toLowerCase().startsWith(prefix.toLowerCase())) return desc;
     return [prefix, desc].filter(Boolean).join(', ');
 }
 
@@ -903,13 +946,4 @@ function extractJsonObject(text) {
     }
 
     return null;
-}
-
-/** A prompt shortened at a word boundary, for the known-backgrounds menu. */
-function excerpt(value, max) {
-    const text = String(value ?? '').trim();
-    if (text.length <= max) return text;
-    const cut = text.slice(0, max);
-    const boundary = cut.lastIndexOf(' ');
-    return `${(boundary > max / 2 ? cut.slice(0, boundary) : cut).trim()}...`;
 }

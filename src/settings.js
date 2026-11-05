@@ -18,6 +18,9 @@ const DEFAULTS = {
     entries: {},
     theme: 'ink-jade',
     background: 'none',
+    // The cast strip above the reading pane. Off draws no avatars at all -
+    // no posters, no initials - and the background stays alone on stage.
+    avatars: true,
     // Location backgrounds: an image generated from the story's place by
     // SillyTavern's Image Generation. Auto works everywhere - a `<scene>` tag
     // names the place outright (free outcomes run at any pace, new draws at
@@ -55,6 +58,7 @@ const DEFAULTS = {
     proseStrong: '#e9e7e2',
     paneHeight: 300,
     paneOpacity: 90,
+    paneBlur: 16,
     logWidth: 720,
     logHeight: null,
 };
@@ -84,8 +88,22 @@ export function settings() {
  * is in play: tags are still stripped from the prose, and whatever a
  * `<scene>` tag carries still draws.
  */
+/**
+ * The Meziverse mode is still under development, and this flag is the release
+ * switch. True - the dev builds - keeps its settings tab and the extras in
+ * play. False - a release - hides the tab whole and `modeOn()` answers false
+ * whatever the setting says: the extras stay inert and the release ships the
+ * base extension alone.
+ */
+export const DEV_EXTRAS = true;
+
 export function modeOn() {
-    return settings().mode !== false;
+    return DEV_EXTRAS && settings().mode !== false;
+}
+
+/** Whether the cast strip draws avatars. Off: no posters, no initials. */
+export function avatarsOn() {
+    return settings().avatars !== false;
 }
 
 /** Whether automatic background generation is on. The brush needs no gate. */
