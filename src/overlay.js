@@ -831,6 +831,88 @@ function buildWeather() {
 
     // fog: three soft banks
     effect('mz-wx-fog', 3, () => {});
+
+    // sunny: beams out of the sun's place, a warm wash, dust and soft orbs
+    const sun = document.createElement('div');
+    sun.className = 'mz-wx mz-wx-sun';
+    for (const name of ['wash', 'glow']) {
+        const part = document.createElement('div');
+        part.className = `mz-wx-sun-${name}`;
+        sun.appendChild(part);
+    }
+
+    const beams = document.createElement('div');
+    beams.className = 'mz-wx-sun-beams';
+    for (const [tilt, width, dur, delay] of [[7, 15, 9, 0], [18, 22, 13, -4], [29, 13, 11, -7]]) {
+        const beam = document.createElement('i');
+        beam.style.setProperty('--tilt', `${tilt}deg`);
+        beam.style.setProperty('--w', `${width}vw`);
+        beam.style.setProperty('--dur', `${dur}s`);
+        beam.style.setProperty('--delay', `${delay}s`);
+        beams.appendChild(beam);
+    }
+    sun.appendChild(beams);
+
+    const motes = document.createElement('div');
+    motes.className = 'mz-wx-sun-motes';
+    for (let i = 0; i < 10; i += 1) {
+        const mote = document.createElement('i');
+        mote.style.setProperty('--x', `${wxRand(8, 92).toFixed(1)}%`);
+        mote.style.setProperty('--y', `${wxRand(25, 85).toFixed(1)}%`);
+        mote.style.setProperty('--size', `${wxRand(2, 4.5).toFixed(1)}px`);
+        mote.style.setProperty('--dur', `${wxRand(9, 17).toFixed(1)}s`);
+        mote.style.setProperty('--delay', `-${wxRand(0, 12).toFixed(1)}s`);
+        motes.appendChild(mote);
+    }
+    sun.appendChild(motes);
+
+    const orbs = document.createElement('div');
+    orbs.className = 'mz-wx-sun-orbs';
+    for (const [x, y, size, dur, delay] of [[26, 38, 150, 24, -6], [68, 62, 110, 30, -17]]) {
+        const orb = document.createElement('i');
+        orb.style.setProperty('--x', `${x}%`);
+        orb.style.setProperty('--y', `${y}%`);
+        orb.style.setProperty('--size', `${size}px`);
+        orb.style.setProperty('--dur', `${dur}s`);
+        orb.style.setProperty('--delay', `${delay}s`);
+        orbs.appendChild(orb);
+    }
+    sun.appendChild(orbs);
+    layer.appendChild(sun);
+
+    // overcast: three cloud banks, their drift shaped in css
+    effect('mz-wx-overcast', 3, () => {});
+
+    // wind: streaks, leaves tumbling, dust carried along
+    const wind = document.createElement('div');
+    wind.className = 'mz-wx mz-wx-wind';
+    const drift = (className, count, dress) => {
+        for (let i = 0; i < count; i += 1) {
+            const particle = document.createElement('i');
+            particle.className = className;
+            dress(particle);
+            wind.appendChild(particle);
+        }
+    };
+    drift('mz-wx-streak', 8, particle => {
+        particle.style.setProperty('--y', `${wxRand(6, 94).toFixed(1)}%`);
+        particle.style.setProperty('--len', `${wxRand(60, 130).toFixed(0)}px`);
+        particle.style.setProperty('--dur', `${wxRand(2, 3.6).toFixed(2)}s`);
+        particle.style.setProperty('--delay', `-${wxRand(0, 3.6).toFixed(2)}s`);
+    });
+    drift('mz-wx-leaf', 4, particle => {
+        particle.style.setProperty('--y', `${wxRand(15, 85).toFixed(1)}%`);
+        particle.style.setProperty('--size', `${wxRand(8, 13).toFixed(1)}px`);
+        particle.style.setProperty('--dur', `${wxRand(5, 9).toFixed(1)}s`);
+        particle.style.setProperty('--delay', `-${wxRand(0, 9).toFixed(1)}s`);
+    });
+    drift('mz-wx-mote', 6, particle => {
+        particle.style.setProperty('--y', `${wxRand(10, 90).toFixed(1)}%`);
+        particle.style.setProperty('--size', `${wxRand(2, 4).toFixed(1)}px`);
+        particle.style.setProperty('--dur', `${wxRand(4, 7).toFixed(1)}s`);
+        particle.style.setProperty('--delay', `-${wxRand(0, 7).toFixed(1)}s`);
+    });
+    layer.appendChild(wind);
 }
 
 /** Syncs the weather switch with the setting. */
@@ -858,6 +940,33 @@ function applyWeather(record) {
         delete frame.dataset.mzWx;
         delete frame.dataset.mzWxInt;
     }
+
+    applySun(plan);
+}
+
+/**
+ * The sun's place in the sky, from the scene's clock - the same clock that
+ * lit the painted backdrop, so the light and the picture agree. No clock, no
+ * claim: the light stays where it is. Night hours keep the set, dimmed to a
+ * faint cool whisper.
+ */
+function applySun(plan) {
+    const night = !!plan && plan.state === 'sunny'
+        && Number.isFinite(plan.hour) && (plan.hour >= 20 || plan.hour < 6);
+
+    if (night) frame.dataset.mzWxNight = '1';
+    else delete frame.dataset.mzWxNight;
+
+    const sun = els.weatherLayer?.querySelector('.mz-wx-sun');
+    if (!sun || plan?.state !== 'sunny' || !Number.isFinite(plan.hour)) return;
+
+    const progress = Math.min(1, Math.max(0, (plan.hour - 6) / 14));
+    const x = 8 + progress * 84;
+    const arc = (progress - 0.5) * 2;
+
+    sun.style.setProperty('--mz-sun-x', `${x.toFixed(1)}%`);
+    sun.style.setProperty('--mz-sun-y', `${(10 + 26 * arc * arc).toFixed(1)}%`);
+    sun.style.setProperty('--mz-sun-dir', String(x > 50 ? -1 : 1));
 }
 
 /**
