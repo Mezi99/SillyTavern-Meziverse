@@ -7,7 +7,7 @@
  */
 
 import { chatMessages, currentChatId, errorText, imageGenerationStatus, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer, stDefaultBackground } from './st.js';
-import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, bgImagesOn, weatherFxOn, indoorFxOn, speechFxOn, DEV_EXTRAS } from './settings.js';
+import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, bgImagesOn, weatherFxOn, indoorFxOn, speechFxOn, musicOn, musicAutoOn, DEV_EXTRAS } from './settings.js';
 import {
     forceBackground,
     getLastWatcherRequest,
@@ -26,10 +26,11 @@ import { weatherPlan, indoorPlan } from './scene.js';
 import { placeHtml } from './prose.js';
 import { mountCues, closeMemory } from './cues.js';
 import { closeFloats } from './floats.js';
+import { mountMusic, musicUiClosed, musicUiOpened, refreshMusic } from './music.js';
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr } from './notify.js';
 
-const VERSION = '2.7.0';
+const VERSION = '2.8.0';
 const PANE_DEFAULT = 300;
 const LOG_W_DEFAULT = 720;
 const LOG_H_SHARE = 0.7;
@@ -70,6 +71,7 @@ const FRAME_HTML = `
         <div class="mz-brand"><b>Meziverse</b><small class="mz-version">v${VERSION}</small><button class="mz-mode mz-bgauto" type="button" role="switch" aria-checked="false" title="Backgrounds follow the story" aria-label="Automatic location backgrounds" data-mz-action="bg-auto"><i aria-hidden="true"></i><span data-mz="bg-auto-label">Auto BG: Off</span></button><button class="mz-ibtn mz-brush" type="button" title="Draw a background for this place" aria-label="Draw a background for this place" data-mz-action="bg-generate">${svg('brush')}</button></div>
         <div class="mz-chatname" data-mz="chatname"><b class="is-empty">No chat open</b></div>
         <div class="mz-header-tools">
+            <div class="mz-music-slot" data-mz="music-slot"></div>
             <button class="mz-ibtn" type="button" title="Full screen" aria-label="Full screen" data-mz-action="fullscreen">${svg('expand')}</button>
             <button class="mz-ibtn" type="button" title="Settings" aria-label="Settings" data-mz-action="settings">${svg('gear')}</button>
             <button class="mz-ibtn mz-ibtn--exit" type="button" title="Back to SillyTavern" aria-label="Back to SillyTavern" data-mz-action="exit">${svg('door')}</button>
@@ -364,6 +366,18 @@ const FRAME_HTML = `
             </div>
         </div>
 
+        <div class="mz-set-group mz-set-group--fold" data-mz-pane="image">
+            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="music">Music ${svg('chevdown')}</button></h3>
+            <div class="mz-set-row" data-mz-music-master>
+                <span class="mz-set-label"><b>Music player</b><small>The scene's soundtrack player - a compact YouTube player in the header, which undocks into a draggable card on wide screens. Off hides it whole and nothing plays.</small></span>
+                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Music player" data-mz-action="music"><i></i></button>
+            </div>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Story requests</b><small>A &lt;music&gt; tag in a reply starts playback when the reply lands. A link plays at once; a named song waits for the Music DJ's search.</small></span>
+                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Story requests" data-mz-action="music-auto"><i></i></button>
+            </div>
+        </div>
+
         <div class="mz-set-group mz-set-group--fold" data-mz-pane="mode">
             <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="mode-main">Meziverse mode ${svg('chevdown')}</button></h3>
             <div class="mz-set-row">
@@ -568,6 +582,7 @@ export function mount() {
 
     mountCast(els.cast);
     mountDock(root);
+    mountMusic({ slot: root.querySelector('[data-mz="music-slot"]'), frame });
 
     transcript = createTranscript({
         frame,
@@ -617,6 +632,7 @@ export function mount() {
     applyWeatherFx();
     applyIndoorFx();
     applySpeechFx();
+    applyMusic();
     applyEntries();
     setSettingsTab('general');
     applyBrush();
@@ -688,6 +704,7 @@ export function open() {
     // asked or drawn on opening: the watcher is for new turns, and an
     // opening that wants a picture presses the brush.
     uiOpened().finally(() => applyBackground());
+    musicUiOpened();
     transcript.refresh({ followLatest: true });
     desiredPane = Number(settings().paneHeight) || PANE_DEFAULT;
     applyPaneHeight(desiredPane);
@@ -710,6 +727,8 @@ export function close() {
     // to what the chain found before it took over.
     setShownTurn(null);
     uiClosed();
+    // The music stops with the scene: the master switch governs sound too.
+    musicUiClosed();
 
     if (frame.contains(document.activeElement)) document.activeElement.blur();
 
@@ -1038,6 +1057,23 @@ function applySpeechFx() {
         button.classList.toggle('is-on', on);
         button.setAttribute('aria-checked', String(on));
     }
+}
+
+/**
+ * Syncs the music switches - the player master and story requests - with the
+ * settings, and hands the player its own re-read. Off: the widget hides and
+ * whatever was playing stops.
+ */
+function applyMusic() {
+    for (const button of root.querySelectorAll('[data-mz-action="music"]')) {
+        button.classList.toggle('is-on', musicOn());
+        button.setAttribute('aria-checked', String(musicOn()));
+    }
+    for (const button of root.querySelectorAll('[data-mz-action="music-auto"]')) {
+        button.classList.toggle('is-on', musicAutoOn());
+        button.setAttribute('aria-checked', String(musicAutoOn()));
+    }
+    refreshMusic();
 }
 
 /**
@@ -2193,6 +2229,16 @@ function wireActions() {
                 settings().speechFx = !settings().speechFx;
                 applySpeechFx();
                 transcript?.refresh();
+                saveSettings();
+                break;
+            case 'music':
+                settings().music = !settings().music;
+                applyMusic();
+                saveSettings();
+                break;
+            case 'music-auto':
+                settings().musicAuto = !settings().musicAuto;
+                applyMusic();
                 saveSettings();
                 break;
             case 'bg-images':

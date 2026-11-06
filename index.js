@@ -9,6 +9,7 @@
 import { whenReady } from './src/st.js';
 import { mount, open, isOpen } from './src/overlay.js';
 import { initBackgrounds } from './src/bgchain.js';
+import { initMusic } from './src/music.js';
 import { addLauncher, addDrawerBlock } from './src/launcher.js';
 
 async function boot() {
@@ -18,6 +19,7 @@ async function boot() {
     // The chain rides the master switch: the scene's open state decides, and
     // until it is opened nothing runs.
     initBackgrounds({ isOpen });
+    initMusic({ isOpen });
     addLauncher(open);
     addDrawerBlock(open);
 

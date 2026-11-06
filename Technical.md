@@ -34,6 +34,7 @@ src/
   memory.js         the flashback row splitter: sentences at their own ends (pure)
   cues.js           the inline cues: marks + popover, the mindscape, meanwhile boxes
   floats.js         one floating thing at a time: the registry behind the Esc chain
+  music.js          the music player: the YouTube embed, the pill/card widget, the `<music>` read (pure reads + runtime)
   backgrounds.js    the background store, per-response stamps, the watcher's question and answer (pure)
   bgchain.js        the background chain: targets, queue, decide, ask, draw, stamp; stage notices, triggers
   icons.js          inline SVG sprite (mz-i-* symbols)
@@ -43,6 +44,7 @@ test/
   ledger.test.js    synthetic ledger tests
   memory.test.js    synthetic splitter tests
   backgrounds.test.js  synthetic store/watcher tests
+  music.test.js     synthetic request-read tests
   st.test.js        synthetic error-text tests
 css/
   00-primitives.css  colours, fonts, sizes, timings, motion — raw variables
@@ -51,7 +53,7 @@ css/
   30-story.css       scene features: scene rows, cast strip, portrait plates, thought bubbles
   40-dock.css        the ledger rails: menus, glance columns, popups, cards, meters
   50-cues.css        the inline cues: marks, popovers, mindscape, meanwhile boxes
-style.css            @imports the six sheets (manifest points here)
+style.css            @imports the sheets (manifest points here)
 ```
 
 `st.js` is the seam: every touch of ST internals is supposed to live there (`ctx()`, `whenReady()`, event wiring, and wrappers like `clickComposerControl`, `clickOptionsMenu`, `stComposer`, the edit/swipe/branch/copy/hide wrappers). When ST changes an internal, there is one place to fix.
@@ -130,6 +132,16 @@ Known limits, by design for now: the tagged skip-gate never consults the watcher
 
 Spoken lines wear a bubble in the reading pane. One complete `<speech character tone>` tag becomes one inline cue (`splitCues`), its slot riding through SillyTavern's formatter exactly like a mark's - so the narration runs around it and paragraphs never break. The pure read lives in `scene.js` (`describeSpeech`: character, tone with `mood` accepted beside it, `body` as authored, `words` with one matched outer quote pair lifted - the bubble is the quoting). The label carries the cast's thumbnail when avatars hold a picture for the `castKey` of the name - the one-word-name contract shared with `present` is what maps speakers to portraits - and falls back to the name alone; the tone is a tiny italic after the bubble. Bubbles are the pane's own (`compact` is the log) and ride their own `speechFx` switch; wherever they do not render, the words fall to plain prose with their quote marks, exactly as the format writes them. The display form is deliberately the quick placeholder - the presentation modes (avatar-forward forms) are designed later.
 
+## The music player (the sixth feature family)
+
+The scene's soundtrack, played from YouTube: a compact player in the header that undocks into a draggable card on wide screens. `music.js` owns the widget, the embed and the request read; the pure half (`parseVideoRef`, `readMusicTag`, `thumbnailUrl`, `clampVolume`) is tested.
+
+- **Two ways to start it, both by hand in this phase.** Paste a YouTube link or video ID into the player's own input, or let the story ask: a reply may carry one `<music>` tag (body or `query` attribute, optional `mood` for display) and the reply landing plays it. A request that is a **link or id plays at once**; a free-text request (a named song) is remembered and shown - "search lands with the Music DJ" - never played blind. The tag is a hidden tag in the catalogue: the request is metadata, never prose. One reply cues once - a re-run of the same turn never restarts the track.
+- **No key, no login, no fetch.** Playback is the official YouTube IFrame embed (loaded once, `autoplay`/`playsinline`/`modestbranding`), and the thumbnail is YouTube's own stable art URL. Song **search** - the story naming a song to find - is the Music DJ's phase and needs a YouTube Data API key; until it lands, named-song requests only display.
+- **The widget** is one root that docks in the header as a pill and moves itself into a fixed card when undocked (wide screens only - a narrow one re-docks it at once rather than let the card cover the story). The card drags by its head, never by its buttons, and remembers its spot in settings. The panel under the pill (or the card's body) carries the paste row, the volume slider and mute, and the video toggle.
+- **The stage is never `display:none` while audio plays.** The embed lives in one fixed frame-level stage (the cue-popover idiom); with the video panel closed it is clipped to nothing (`clip-path: inset(50%)`, opacity 0) instead of hidden - an embed that goes display:none takes its sound with it in some browsers. The stage sits under the widget, clamped, flipping above at the bottom edge.
+- **The master switch governs sound too.** With the scene closed, requests are ignored and whatever is playing pauses; the widget rides `musicOn()` (Settings > Features > Music), and **Story requests** gates the `<music>` tag separately so hand-played music can live without story cues. Volume, mute, dock state and the card's spot live in `extensionSettings`; the track itself is session state - per-chat history is the Music DJ's phase.
+
 ## The composer
 
 Our textarea and ST's `#send_textarea` stay **mirrored both ways** while the scene is open:
@@ -158,7 +170,7 @@ While the scene is open, ST's `toastr` is intercepted — but its contract survi
 
 ## Events we listen to
 
-`CHAT_CHANGED/LOADED/CREATED/DELETED/RENAMED`, `MESSAGE_SENT/RECEIVED/SWIPED/SWIPE_DELETED/EDITED/DELETED/UPDATED`, `MORE_MESSAGES_LOADED`, `GENERATION_ENDED/STOPPED` → full refresh; `STREAM_TOKEN_RECEIVED` → queued refresh. `GENERATION_STARTED/ENDED/STOPPED` and `GROUP_WRAPPER_FINISHED` → `is-generating` on the frame (send → stop, inputs readonly). `FORCE_SET_BACKGROUND` → the scene's background mirror. The background chain listens to `CHAT_CHANGED` (cancel + re-derive) and `GENERATION_ENDED/STOPPED`, `GROUP_WRAPPER_FINISHED`, `MESSAGE_EDITED` (run once); `MESSAGE_SWIPED` only re-asserts the shown picture. Every listener is master-switch gated: with the scene closed, the extension sits idle — nothing runs, nothing is fetched, nothing is written.
+`CHAT_CHANGED/LOADED/CREATED/DELETED/RENAMED`, `MESSAGE_SENT/RECEIVED/SWIPED/SWIPE_DELETED/EDITED/DELETED/UPDATED`, `MORE_MESSAGES_LOADED`, `GENERATION_ENDED/STOPPED` → full refresh; `STREAM_TOKEN_RECEIVED` → queued refresh. `GENERATION_STARTED/ENDED/STOPPED` and `GROUP_WRAPPER_FINISHED` → `is-generating` on the frame (send → stop, inputs readonly). `FORCE_SET_BACKGROUND` → the scene's background mirror. The background chain listens to `CHAT_CHANGED` (cancel + re-derive) and `GENERATION_ENDED/STOPPED`, `GROUP_WRAPPER_FINISHED`, `MESSAGE_EDITED` (run once); `MESSAGE_SWIPED` only re-asserts the shown picture. The music player listens to `GENERATION_ENDED/STOPPED` and `GROUP_WRAPPER_FINISHED` (the new reply is scanned for a `<music>` request) and `CHAT_CHANGED` (forget what was handled). Every listener is master-switch gated: with the scene closed, the extension sits idle — nothing runs, nothing is fetched, nothing is written.
 
 ## Conventions worth keeping
 

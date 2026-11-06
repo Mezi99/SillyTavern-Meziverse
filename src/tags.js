@@ -21,8 +21,9 @@ const SELF = new Set([
 /* Body tags whose words are prose, so only the wrapper goes. */
 const KEEP = new Set(['speech']);
 
-/* Body tags whose words are private: strip wrapper and body together. */
-const HIDDEN = new Set(['think', 'ledger', 'playerguide', 'directorguide', 'vkit']);
+/* Body tags whose words are private: strip wrapper and body together. A
+   `music` body is a playback request, not prose - the player reads it. */
+const HIDDEN = new Set(['think', 'ledger', 'playerguide', 'directorguide', 'vkit', 'music']);
 
 /* Inline cues that leave a mark in the prose where the tag stood. A
    flashback's body is not prose either: it waits behind its pill, whole,

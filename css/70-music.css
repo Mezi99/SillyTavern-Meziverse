@@ -1,0 +1,214 @@
+/* ==========================================================================
+   Meziverse — the music player
+   The pill in the header (or the undocked card) and its video stage.
+   ========================================================================== */
+
+.mz-music-slot {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    margin-right: 8px;
+}
+
+/* ---------- the widget: a pill docked, a card undocked ---------- */
+
+.mz-music {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    max-width: 280px;
+    border: 1px solid var(--mz-line);
+    border-radius: var(--mz-r-pill);
+    background: var(--mz-surface);
+    color: var(--mz-text);
+    font-family: var(--mz-font-ui);
+}
+
+.mz-music.is-undocked {
+    position: fixed;
+    z-index: calc(var(--mz-z-sheet) - 3);
+    width: 320px;
+    max-width: calc(100vw - 16px);
+    border-radius: var(--mz-r-lg);
+    border-color: var(--mz-line-strong);
+    background: var(--mz-surface-solid);
+}
+
+.mz-music.is-dragging {
+    cursor: grabbing;
+    user-select: none;
+}
+
+.mz-music-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 5px 2px 2px;
+    min-width: 0;
+}
+
+.mz-music.is-undocked .mz-music-head {
+    cursor: grab;
+    padding: 4px 6px 4px 4px;
+}
+
+.mz-music-art {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border: 1px solid var(--mz-line);
+    border-radius: 50%;
+    overflow: hidden;
+    background: var(--mz-surface-2);
+    color: var(--mz-text-dim);
+    cursor: pointer;
+}
+
+.mz-music-art .ico { width: 13px; height: 13px; }
+
+.mz-music-thumb {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.mz-music.is-live .mz-music-art {
+    border-color: color-mix(in srgb, var(--mz-accent) 35%, var(--mz-line));
+}
+
+.mz-music-title {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    min-width: 0;
+    max-width: 150px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.mz-music-title b {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    font-size: var(--mz-text-xs);
+    font-weight: 500;
+    color: var(--mz-text);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mz-music-title small {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    font-size: var(--mz-text-2xs);
+    color: var(--mz-text-dim);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mz-music.is-playing .mz-music-art {
+    border-color: var(--mz-accent-line);
+    box-shadow: 0 0 6px color-mix(in srgb, var(--mz-accent) 30%, transparent);
+}
+
+.mz-music-more .ico {
+    transition: transform var(--mz-dur) var(--mz-ease);
+}
+
+.mz-music.is-open .mz-music-more .ico { transform: rotate(180deg); }
+
+.mz-music.is-undocked .mz-music-more { display: none; }
+
+/* ---------- the panel: the paste row, the volume, the video toggle ---------- */
+
+.mz-music-body {
+    display: grid;
+    gap: 8px;
+    padding: 4px 10px 10px;
+}
+
+.mz-music:not(.is-undocked) .mz-music-body {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    width: 300px;
+    padding: 10px;
+    border: 1px solid var(--mz-line-strong);
+    border-radius: var(--mz-r-lg);
+    background: var(--mz-surface-solid);
+    z-index: calc(var(--mz-z-sheet) - 4);
+}
+
+.mz-music-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.mz-music-input {
+    flex: 1;
+    min-width: 0;
+    max-width: none !important;
+}
+
+.mz-music-vol {
+    flex: 1;
+    min-width: 0;
+    accent-color: var(--mz-accent);
+}
+
+/* ---------- the video stage ---------- */
+
+/* Fixed and frame-level, like the cue popover. While audio plays without
+   the panel open the stage is clipped, never hidden: an embed that goes
+   `display:none` takes its sound with it in some browsers. */
+.mz-music-stage {
+    position: fixed;
+    z-index: calc(var(--mz-z-sheet) - 2);
+    width: 320px;
+    aspect-ratio: 16 / 9;
+    border: 1px solid var(--mz-line-strong);
+    border-radius: var(--mz-r-sm);
+    overflow: hidden;
+    background: #000;
+    transition:
+        opacity var(--mz-dur) var(--mz-ease),
+        clip-path var(--mz-dur) var(--mz-ease);
+}
+
+.mz-music-stage.is-audio {
+    opacity: 0;
+    pointer-events: none;
+    clip-path: inset(50%);
+}
+
+.mz-music-embed,
+.mz-music-embed iframe {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    display: block;
+}
+
+/* ---------- narrow screens: the pill keeps only what matters ---------- */
+
+@media (max-width: 760px) {
+    .mz-music { max-width: 168px; }
+    .mz-music-title { max-width: 64px; }
+    .mz-music-title small { display: none; }
+    .mz-music-more { display: none; }
+    .mz-music:not(.is-undocked) .mz-music-body {
+        width: min(300px, calc(100vw - 24px));
+    }
+}

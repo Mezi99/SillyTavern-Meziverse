@@ -48,6 +48,14 @@ const SPRITE = `<svg class="mz-sprite" aria-hidden="true" focusable="false">
 <symbol id="mz-i-cut" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 20L14 4M14 20l6-16"/></symbol>
 <symbol id="mz-i-dream" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19.5 14.2A8 8 0 1 1 9.8 4.5a6.4 6.4 0 0 0 9.7 9.7z"/><path d="M17 3.5v4M15 5.5h4"/></symbol>
 <symbol id="mz-i-return" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h9a6 6 0 0 1 0 12h-3"/></symbol>
+<symbol id="mz-i-music" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5.5l10-2V16"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></symbol>
+<symbol id="mz-i-play" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M8 5.5v13l11-6.5z"/></symbol>
+<symbol id="mz-i-pause" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="7.5" y="5" width="3.5" height="14" rx="1.2"/><rect x="13" y="5" width="3.5" height="14" rx="1.2"/></symbol>
+<symbol id="mz-i-vol" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5v5h3.2L12 19V5L7.2 9.5z"/><path d="M15.5 9.2a4 4 0 0 1 0 5.6"/><path d="M18 6.8a7.5 7.5 0 0 1 0 10.4"/></symbol>
+<symbol id="mz-i-mute" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5v5h3.2L12 19V5L7.2 9.5z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/></symbol>
+<symbol id="mz-i-undock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 13.5V19a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 19V7.5A1.5 1.5 0 0 1 5 6h5.5"/><path d="M13.5 3.5H20V10"/><path d="M20 3.5l-8 8"/></symbol>
+<symbol id="mz-i-dock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3.5h4.5A1.5 1.5 0 0 1 20 5v4.5"/><path d="M20 14v4.5a1.5 1.5 0 0 1-1.5 1.5H14"/><path d="M3.5 12H15"/><path d="M11 8l4 4-4 4"/></symbol>
+<symbol id="mz-i-video" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5.5" width="17" height="13" rx="2"/><path d="M10 9.5l5 2.5-5 2.5z"/></symbol>
 </svg>`;
 
 /** Builds one icon node pointing at the sprite. */

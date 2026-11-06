@@ -52,6 +52,18 @@ const DEFAULTS = {
     // Speech bubbles in the reading pane: the speaker's label, the words in
     // a quiet bubble, the tone said in after. Off leaves the prose plain.
     speechFx: true,
+    // The music player: the scene's soundtrack, a compact YouTube player in
+    // the header. Off hides it whole and nothing plays.
+    music: true,
+    // Story requests: a `<music>` tag in a reply starts playback when the
+    // reply lands. Off leaves playback to the player's own input.
+    musicAuto: true,
+    musicVolume: 60,
+    musicMuted: false,
+    // The pill docks in the header; undocked, it is a draggable card on
+    // wide screens and re-docks itself on narrow ones. Its remembered spot.
+    musicDocked: true,
+    musicPos: null,
     // The watcher prompts the user tunes: the scene-tagged hand and the
     // plain-prose hand. The answer format is appended by code.
     bgPromptOn: DEFAULT_BG_PROMPT_ON,
@@ -144,6 +156,16 @@ export function indoorFxOn() {
 /** Whether the speech bubbles play in the reading pane. */
 export function speechFxOn() {
     return settings().speechFx !== false;
+}
+
+/** Whether the music player exists at all - the master switch. */
+export function musicOn() {
+    return settings().music !== false;
+}
+
+/** Whether a `<music>` tag in a reply may start playback on arrival. */
+export function musicAutoOn() {
+    return settings().musicAuto !== false;
 }
 
 /**
