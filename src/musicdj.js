@@ -207,7 +207,10 @@ async function askDj({ forceFreshPick = false } = {}) {
             playing: controller?.current?.() ?? null,
             forceFreshPick,
         }),
-        responseLength: 300,
+        // The house value the background watcher has always used: on some
+        // providers this budget counts the prompt too, and a smaller one
+        // leaves the answer no room at all.
+        responseLength: 600,
     };
     lastDjRequest = request;
 
