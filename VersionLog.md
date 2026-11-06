@@ -1,5 +1,30 @@
 # Meziverse — version log
 
+## 2.6.1 — 2026-11-06
+
+The stage is never black, the pictures have a master switch, and the room turns out to be alive.
+
+### The stage is never black
+- A chat with no picture of its own opens on **SillyTavern's own background**, and the fall-through is total: the chat's picture, else SillyTavern's default, else the procedural scene. Black is no longer possible.
+- The root cause was one worth keeping: the mirror's values land in our own stylesheet, where a **relative** url resolves against the extension's folder and quietly 404s — SillyTavern's default background always ships as one. The mirror now speaks absolute urls.
+
+### The background master switch
+- **Background images** in Image Settings: off means the watcher never runs — the brush and the auto pill included — and the generation rows step aside. The stage keeps whatever it shows; weather and indoor effects play on regardless.
+- The pill speaks plainly now: **Auto BG: On / Off** — it is about automation, not about backgrounds.
+
+### Weather, polished
+- The **storm rains hard**: the downpour reserves wake (twice the drops, longer streaks) and nothing slows them. A blizzard wakes its own reserves of snow.
+- The **sun sweeps the sky**: five brighter beams crossing the whole frame on a slow, visible sweep — the light passes across the scene instead of standing still. Night hours keep the rays, dimmed to a faint cool whisper.
+- **Overcast is built as cloud shadows** now: dark masses crossing, a whisper of lit fringe. A bright day goes visibly grey; a night stays night.
+
+### The room is alive
+- Indoor scenes carry their own quiet mood — **candlelight**, **a hearth** with embers rising, **window light** with dust turning inside it, **still dust**, **a lamp pool**. No tag names it: the place itself is born with its mood (seeded — the same room always shows the same one), and the window's light follows the scene's clock.
+- Its own switch in Image Settings, independent of the weather switch and of image generation.
+
+### Notes
+- The watcher prompts now ask for the world: architecture, materials, vegetation, culture and era follow the region the location chain names — a suburb of Las Vegas is never a suburb of Pyongyang. Press "Restore default" on the prompt rows to pick the new text up.
+- The synthetic suite stands at 162 tests.
+
 ## 2.6.0 — 2026-11-06
 
 The weather arrives: rain on the glass, sun across the floor, and the scene tag learns the clock.
