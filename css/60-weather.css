@@ -304,18 +304,27 @@
 }
 
 /* ---------- overcast ---------- */
-/* cloud you notice: dark masses with lit fringes, crossing slowly */
+/* cloud you notice, built as SHADOWS: dark masses crossing the scene with
+   only a whisper of lit fringe. A bright day gets visibly grey; a night
+   stays night - the night hours cool the shadows and kill the fringe. */
 .mz-wx-overcast {
-    background: linear-gradient(180deg, rgba(148, 160, 178, .16), rgba(142, 155, 175, .1) 55%, rgba(150, 160, 178, .14));
+    --mz-wx-cloud: 26, 32, 46;
+    --mz-wx-fringe: 196, 208, 226;
+    background: linear-gradient(180deg, rgba(var(--mz-wx-cloud), .18), rgba(var(--mz-wx-cloud), .1) 55%, rgba(var(--mz-wx-cloud), .16));
+}
+
+.mz-frame[data-mz-wx-night="1"] .mz-wx-overcast {
+    --mz-wx-cloud: 8, 12, 22;
+    --mz-wx-fringe: 60, 72, 96;
 }
 
 .mz-wx-overcast i {
     position: absolute;
     inset: -30% -40%;
     background:
-        radial-gradient(ellipse 42% 26% at 22% 34%, rgba(88, 100, 120, .32), transparent 70%),
-        radial-gradient(ellipse 36% 22% at 62% 26%, rgba(226, 232, 240, .3), transparent 72%),
-        radial-gradient(ellipse 46% 26% at 84% 48%, rgba(96, 108, 128, .28), transparent 70%);
+        radial-gradient(ellipse 42% 26% at 22% 34%, rgba(var(--mz-wx-cloud), .38), transparent 70%),
+        radial-gradient(ellipse 36% 22% at 62% 26%, rgba(var(--mz-wx-fringe), .1), transparent 72%),
+        radial-gradient(ellipse 46% 26% at 84% 48%, rgba(var(--mz-wx-cloud), .34), transparent 70%);
     animation: mz-cloud-drift 48s ease-in-out infinite alternate;
 }
 

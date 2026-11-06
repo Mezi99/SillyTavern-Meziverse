@@ -982,8 +982,7 @@ function applyWeather(record) {
  * faint cool whisper.
  */
 function applySun(plan) {
-    const night = !!plan && plan.state === 'sunny'
-        && Number.isFinite(plan.hour) && (plan.hour >= 20 || plan.hour < 6);
+    const night = !!plan && Number.isFinite(plan.hour) && (plan.hour >= 20 || plan.hour < 6);
 
     if (night) frame.dataset.mzWxNight = '1';
     else delete frame.dataset.mzWxNight;
