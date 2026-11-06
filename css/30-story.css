@@ -121,17 +121,17 @@
 .mz-scene.is-compact .mz-scene-time { font-size: var(--mz-text-2xs); }
 
 /* ---------- speech bubbles ---------- */
-/* One spoken line in the pane: the speaker's label above a quiet bubble -
-   the name, and the cast's thumbnail when the cast holds one - and the tone
-   said in, as a tiny italic after it, like a dialogue tag the model never
-   had to write. Inline-block: narration runs around it. The quote marks the
-   format asks the model to write are dropped here - the bubble is the
-   quoting - and come back whenever the words fall to plain prose. */
+/* One spoken line in the pane: the speaker's label - name and tone on one
+   line, the cast's thumbnail when the cast holds one - above the words in a
+   quiet bubble. The card owns its line: narration ends at it and resumes
+   after it, so a tag mid-sentence reads as a dialogue interlude and never as
+   a scramble beside the text. The words speak in the theme's speech ink, the
+   color untagged quotes wear. The quote marks the format asks the model to
+   write are dropped here - the bubble is the quoting - and come back
+   whenever the words fall to plain prose. */
 .mz-speech {
-    display: inline-block;
-    max-width: min(560px, 100%);
-    margin: 3px 0;
-    vertical-align: top;
+    display: block;
+    margin: 6px 0;
 }
 
 .mz-speech-who {
@@ -159,22 +159,29 @@
     color: var(--mz-prose-q, var(--mz-accent));
 }
 
+.mz-speech-tone {
+    margin-left: 4px;
+    font-family: var(--mz-font-ui);
+    font-size: var(--mz-text-2xs);
+    font-style: italic;
+    color: var(--mz-text-dim);
+}
+
+.mz-speech-tone::before {
+    content: '·';
+    margin-right: 5px;
+    font-style: normal;
+}
+
 .mz-speech-bub {
     display: inline-block;
+    max-width: min(560px, 100%);
     padding: 3px 11px;
     border: 1px solid var(--mz-accent-soft);
     border-radius: var(--mz-r-sm);
     background: var(--mz-accent-wash);
     font-family: var(--mz-font-prose);
-    color: var(--mz-text);
-}
-
-.mz-speech-tone {
-    margin-left: 6px;
-    font-family: var(--mz-font-ui);
-    font-size: var(--mz-text-2xs);
-    font-style: italic;
-    color: var(--mz-text-dim);
+    color: var(--mz-prose-q, var(--mz-accent));
 }
 
 /* ---------- cast stage ---------- */

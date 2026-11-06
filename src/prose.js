@@ -162,11 +162,11 @@ function inlineFormat(message, index, source) {
 }
 
 /**
- * One spoken line as the pane draws it: the speaker's label, the words in a
- * quiet bubble, and the tone said in, as a tiny italic after it. When the
- * cast holds a picture for the name and avatars are on, the label carries its
- * thumbnail - the interlace proof; the real display modes are designed later.
- * A name with no picture falls back to the label alone.
+ * One spoken line as the pane draws it: the speaker's label - the name, the
+ * tone said in as a tiny italic beside it, and the cast's thumbnail when
+ * avatars hold a picture for the name (the interlace proof; the real display
+ * modes are designed later) - above the words in a quiet bubble. A name with
+ * no picture falls back to the label alone.
  */
 function bubbleHtml(tag, { message, index }) {
     const speech = describeSpeech(tag);
@@ -180,9 +180,9 @@ function bubbleHtml(tag, { message, index }) {
         + '<span class="mz-speech-who">'
         + (face ? `<img class="mz-speech-face" src="${escapeHtml(face)}" alt="">` : '')
         + `<b class="mz-speech-name">${escapeHtml(who || 'Someone')}</b>`
+        + (tone ? `<em class="mz-speech-tone">${escapeHtml(tone)}</em>` : '')
         + '</span>'
         + `<span class="mz-speech-bub">${inlineFormat(message, index, speech.words)}</span>`
-        + (tone ? `<em class="mz-speech-tone">${escapeHtml(tone)}</em>` : '')
         + '</span>';
 }
 
