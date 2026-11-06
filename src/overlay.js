@@ -7,7 +7,7 @@
  */
 
 import { chatMessages, currentChatId, errorText, imageGenerationStatus, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer, stDefaultBackground } from './st.js';
-import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, weatherFxOn, DEV_EXTRAS } from './settings.js';
+import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, bgImagesOn, weatherFxOn, DEV_EXTRAS } from './settings.js';
 import {
     forceBackground,
     getLastWatcherRequest,
@@ -67,7 +67,7 @@ const FRAME_HTML = `
     <div class="mz-scrim" aria-hidden="true"></div>
 
     <header class="mz-header">
-        <div class="mz-brand"><b>Meziverse</b><small class="mz-version">v${VERSION}</small><button class="mz-mode mz-bgauto" type="button" role="switch" aria-checked="false" title="Backgrounds follow the story" aria-label="Automatic location backgrounds" data-mz-action="bg-auto"><i aria-hidden="true"></i><span data-mz="bg-auto-label">bg \u00b7 off</span></button><button class="mz-ibtn mz-brush" type="button" title="Draw a background for this place" aria-label="Draw a background for this place" data-mz-action="bg-generate">${svg('brush')}</button></div>
+        <div class="mz-brand"><b>Meziverse</b><small class="mz-version">v${VERSION}</small><button class="mz-mode mz-bgauto" type="button" role="switch" aria-checked="false" title="Backgrounds follow the story" aria-label="Automatic location backgrounds" data-mz-action="bg-auto"><i aria-hidden="true"></i><span data-mz="bg-auto-label">Auto BG: Off</span></button><button class="mz-ibtn mz-brush" type="button" title="Draw a background for this place" aria-label="Draw a background for this place" data-mz-action="bg-generate">${svg('brush')}</button></div>
         <div class="mz-chatname" data-mz="chatname"><b class="is-empty">No chat open</b></div>
         <div class="mz-header-tools">
             <button class="mz-ibtn" type="button" title="Full screen" aria-label="Full screen" data-mz-action="fullscreen">${svg('expand')}</button>
@@ -292,6 +292,10 @@ const FRAME_HTML = `
 
         <div class="mz-set-group mz-set-group--fold" data-mz-pane="image">
             <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="backgrounds">Backgrounds ${svg('chevdown')}</button></h3>
+            <div class="mz-set-row" data-mz-bg-master>
+                <span class="mz-set-label"><b>Background images</b><small>The watcher draws scene pictures. Off: the stage shows your own SillyTavern background, and no watcher ever runs. Weather and indoor effects still play.</small></span>
+                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Background images" data-mz-action="bg-images"><i></i></button>
+            </div>
             <div class="mz-set-row">
                 <span class="mz-set-label"><b>Follow the story</b><small>A new background when the place changes; the brush draws one on demand.</small></span>
                 <button class="mz-switch" type="button" role="switch" aria-checked="false" aria-label="Automatic location backgrounds" data-mz-action="bg-auto"><i></i></button>
@@ -595,6 +599,7 @@ export function mount() {
     applyMode();
     applyAvatars();
     applyBgAuto();
+    applyBgImages();
     applyBgControls();
     buildWeather();
     applyWeatherFx();
@@ -766,7 +771,30 @@ function applyBgAuto() {
         button.classList.toggle('is-on', on);
         button.setAttribute('aria-checked', String(on));
     }
-    if (els.bgAutoLabel) els.bgAutoLabel.textContent = on ? 'bg \u00b7 auto' : 'bg \u00b7 off';
+    if (els.bgAutoLabel) els.bgAutoLabel.textContent = on ? 'Auto BG: On' : 'Auto BG: Off';
+}
+
+/**
+ * Syncs the background master switch. Off: the whole generation side steps
+ * aside - the pill, the brush and every generation row - and the stage keeps
+ * showing what it shows. The weather plays on regardless.
+ */
+function applyBgImages() {
+    const on = bgImagesOn();
+    for (const button of root.querySelectorAll('[data-mz-action="bg-images"]')) {
+        button.classList.toggle('is-on', on);
+        button.setAttribute('aria-checked', String(on));
+    }
+
+    const group = root.querySelector('[data-mz-section="backgrounds"]')?.closest('.mz-set-group');
+    group?.querySelectorAll('.mz-set-row').forEach(row => {
+        if (row.hasAttribute('data-mz-bg-master')) return;
+        row.hidden = !on;
+    });
+
+    root.querySelectorAll('[data-mz-action="bg-generate"], .mz-bgauto').forEach(element => {
+        element.hidden = !on;
+    });
 }
 
 /** Syncs the background settings rows with the settings they edit. */
@@ -2043,6 +2071,11 @@ function wireActions() {
                 settings().weatherFx = !settings().weatherFx;
                 applyWeatherFx();
                 applyWeather(lastShown);
+                saveSettings();
+                break;
+            case 'bg-images':
+                settings().bgImages = !settings().bgImages;
+                applyBgImages();
                 saveSettings();
                 break;
             case 'bg-auto':

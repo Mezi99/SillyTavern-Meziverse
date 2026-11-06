@@ -21,6 +21,11 @@ const DEFAULTS = {
     // The cast strip above the reading pane. Off draws no avatars at all -
     // no posters, no initials - and the background stays alone on stage.
     avatars: true,
+    // The background master switch: the whole image-generation side. Off
+    // means the watcher never runs - the brush included - and the stage
+    // shows the chat's own pictures or SillyTavern's background. Weather
+    // and indoor effects ride the scene tags and play regardless.
+    bgImages: true,
     // Location backgrounds: an image generated from the story's place by
     // SillyTavern's Image Generation. Auto works everywhere - a `<scene>` tag
     // names the place outright (free outcomes run at any pace, new draws at
@@ -113,6 +118,11 @@ export function avatarsOn() {
 /** Whether automatic background generation is on. The brush needs no gate. */
 export function bgAutoOn() {
     return settings().bgAuto === true;
+}
+
+/** Whether background image generation exists at all - the master switch. */
+export function bgImagesOn() {
+    return settings().bgImages !== false;
 }
 
 /** Whether the weather effects play on the background stage. */
