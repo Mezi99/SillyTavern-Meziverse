@@ -7,7 +7,8 @@
  */
 
 import { chatMessages, currentChatId, errorText, imageGenerationStatus, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer, stDefaultBackground } from './st.js';
-import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, bgImagesOn, weatherFxOn, indoorFxOn, speechFxOn, musicOn, musicAutoOn, musicKey, DEV_EXTRAS } from './settings.js';
+import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, bgImagesOn, weatherFxOn, indoorFxOn, speechFxOn, musicOn, musicAutoOn, musicDjOn, musicKey, DEV_EXTRAS } from './settings.js';
+import { DEFAULT_DJ_PROMPT, getLastDjRequest } from './musicdj.js';
 import {
     forceBackground,
     getLastWatcherRequest,
@@ -385,6 +386,28 @@ const FRAME_HTML = `
                     <span class="mz-music-keystate" data-mz="music-key-state"></span>
                 </div>
             </div>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Music DJ</b><small>After each new reply a quiet watcher call reads the scene and picks music to match its mood - its own call, pace and prompt, independent of the background watcher. Needs the API key above.</small></span>
+                <button class="mz-switch" type="button" role="switch" aria-checked="false" aria-label="Music DJ" data-mz-action="music-dj"><i></i></button>
+            </div>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>DJ pace</b><small>At most one DJ call every N AI replies. User turns never count.</small></span>
+                <div class="mz-step">
+                    <button type="button" data-mz-step="music-dj-every" data-dir="-1" aria-label="Ask less often">\u2212</button>
+                    <span data-mz="music-dj-every-value">1</span>
+                    <button type="button" data-mz-step="music-dj-every" data-dir="1" aria-label="Ask more often">+</button>
+                </div>
+            </div>
+            <div class="mz-set-row mz-set-row--prompt">
+                <span class="mz-set-label"><b>DJ prompt</b><small>What the DJ is asked about each reply. The answer format is appended for you.</small></span>
+                <textarea class="mz-textarea" rows="8" data-mz="music-dj-prompt" aria-label="Music DJ prompt"></textarea>
+                <button class="mz-btn-ghost" type="button" data-mz-action="music-dj-prompt-reset">Restore default</button>
+            </div>
+            <div class="mz-set-row mz-set-row--prompt">
+                <span class="mz-set-label"><b>Last request</b><small>Exactly what the DJ was last asked, footers included.</small></span>
+                <button class="mz-btn-ghost" type="button" data-mz-action="music-dj-show-request">Show last request</button>
+                <pre class="mz-bg-request" data-mz="music-dj-request" hidden></pre>
+            </div>
         </div>
 
         <div class="mz-set-group mz-set-group--fold" data-mz-pane="mode">
@@ -535,6 +558,9 @@ export function mount() {
         bgRequest: root.querySelector('[data-mz="bg-request"]'),
         musicKey: root.querySelector('[data-mz="music-key"]'),
         musicKeyState: root.querySelector('[data-mz="music-key-state"]'),
+        musicDjValue: root.querySelector('[data-mz="music-dj-every-value"]'),
+        musicDjPrompt: root.querySelector('[data-mz="music-dj-prompt"]'),
+        musicDjRequest: root.querySelector('[data-mz="music-dj-request"]'),
         sceneCluster: root.querySelector('.mz-chatbar-left'),
         date: root.querySelector('[data-mz="date"]'),
         time: root.querySelector('[data-mz="time"]'),
@@ -1083,6 +1109,16 @@ function applyMusic() {
     for (const button of root.querySelectorAll('[data-mz-action="music-auto"]')) {
         button.classList.toggle('is-on', musicAutoOn());
         button.setAttribute('aria-checked', String(musicAutoOn()));
+    }
+    for (const button of root.querySelectorAll('[data-mz-action="music-dj"]')) {
+        button.classList.toggle('is-on', musicDjOn());
+        button.setAttribute('aria-checked', String(musicDjOn()));
+    }
+    if (els.musicDjValue) {
+        els.musicDjValue.textContent = String(Math.max(1, Number(settings().musicDjEveryN) || 1));
+    }
+    if (els.musicDjPrompt && document.activeElement !== els.musicDjPrompt) {
+        els.musicDjPrompt.value = settings().musicDjPrompt ?? DEFAULT_DJ_PROMPT;
     }
 
     // The player's own rows step aside with the master switch.
@@ -2149,6 +2185,9 @@ function wireActions() {
             } else if (which === 'bg-every') {
                 settings().bgEveryN = stepNumber(Number(settings().bgEveryN) || 1, dir, 1, 60);
                 applyBgControls();
+            } else if (which === 'music-dj-every') {
+                settings().musicDjEveryN = stepNumber(Number(settings().musicDjEveryN) || 1, dir, 1, 60);
+                applyMusic();
             } else {
                 settings().narrSize = stepValue(NARR_STEPS, Number(settings().narrSize) || 18.5, dir);
                 applyNarration();
@@ -2281,6 +2320,25 @@ function wireActions() {
                 applyMusic();
                 saveSettings();
                 notify('YouTube search key removed.', 'info');
+                break;
+            case 'music-dj':
+                settings().musicDj = !settings().musicDj;
+                applyMusic();
+                saveSettings();
+                break;
+            case 'music-dj-prompt-reset':
+                settings().musicDjPrompt = DEFAULT_DJ_PROMPT;
+                applyMusic();
+                saveSettings();
+                break;
+            case 'music-dj-show-request':
+                if (els.musicDjRequest) {
+                    const request = getLastDjRequest();
+                    els.musicDjRequest.textContent = request
+                        ? `${request.systemPrompt}\n\n\u2014\u2014 sent as \u2014\u2014\n\n${request.prompt}`
+                        : 'Nothing has been asked yet in this session.';
+                    els.musicDjRequest.hidden = !els.musicDjRequest.hidden;
+                }
                 break;
             case 'bg-images':
                 settings().bgImages = !settings().bgImages;

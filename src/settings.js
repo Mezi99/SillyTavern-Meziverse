@@ -7,6 +7,7 @@
 
 import { ctx } from './st.js';
 import { DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_OFF } from './backgrounds.js';
+import { DEFAULT_DJ_PROMPT } from './musicdj.js';
 
 const DEFAULTS = {
     // Meziverse mode: the master switch for the extras (see modeOn). Phase 5
@@ -68,6 +69,15 @@ const DEFAULTS = {
     // Google key, used from the browser. Restrict it by HTTP referrer (the
     // search fetch pins one) or by IP; never leave it unrestricted.
     musicApiKey: '',
+    // The Music DJ: an independent watcher that reads each new reply and
+    // picks music to match its mood - its own LLM call, pace and prompt.
+    // Opt-in, like automatic backgrounds: off leaves picks to the player.
+    musicDj: false,
+    // The DJ asks at most once every N AI replies (user turns never count).
+    musicDjEveryN: 1,
+    // The DJ prompt the user tunes: the rules. The answer format is
+    // appended by code.
+    musicDjPrompt: DEFAULT_DJ_PROMPT,
     // The watcher prompts the user tunes: the scene-tagged hand and the
     // plain-prose hand. The answer format is appended by code.
     bgPromptOn: DEFAULT_BG_PROMPT_ON,
@@ -176,6 +186,11 @@ export function musicAutoOn() {
 export function musicKey() {
     const value = settings().musicApiKey;
     return typeof value === 'string' ? value.trim() : '';
+}
+
+/** Whether the Music DJ picks for new replies. Opt-in. */
+export function musicDjOn() {
+    return settings().musicDj === true;
 }
 
 /**

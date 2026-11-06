@@ -18,10 +18,11 @@
  */
 
 import { chatMessages, on } from './st.js';
-import { musicAutoOn, musicKey, musicOn, saveSettings, settings } from './settings.js';
+import { musicAutoOn, musicDjOn, musicKey, musicOn, saveSettings, settings } from './settings.js';
 import { notify } from './notify.js';
 import { parseTags } from './tags.js';
 import { buildSearchUrl, friendlySearchError, preferredDuration, toResults } from './musicsearch.js';
+import { initMusicDj, musicDjArrived, musicDjFreshPick, resetMusicDjPacing } from './musicdj.js';
 
 const LOG = '[Meziverse music]';
 
@@ -301,10 +302,11 @@ function applyVolume() {
 
 /**
  * Plays a request - a link or id at once, a named song through search. This
- * is where every way in meets: the story's `<music>` tag and the player's
- * own input.
+ * is where every way in meets: the story's `<music>` tag, the player's own
+ * input, and the Music DJ. `rotate` is the DJ's: a repeated pick is never
+ * the track already playing.
  */
-function playRequest(text, { mood = null } = {}) {
+function playRequest(text, { mood = null, rotate = false } = {}) {
     if (!musicOn()) return;
 
     const ref = parseVideoRef(text);
@@ -318,7 +320,7 @@ function playRequest(text, { mood = null } = {}) {
             notify(`\u201c${ref.query}\u201d \u2014 song search needs a YouTube Data API key (Settings \u25b8 Features \u25b8 Music).`, 'info');
             return;
         }
-        searchAndPlay(ref.query, { mood });
+        searchAndPlay(ref.query, { mood, rotate });
         return;
     }
 
@@ -386,7 +388,7 @@ async function searchVideos(query) {
 }
 
 /** Searches a named song and plays the best candidate. */
-async function searchAndPlay(query, { mood = null } = {}) {
+async function searchAndPlay(query, { mood = null, rotate = false } = {}) {
     state.searching = true;
     state.pending = query;
     state.mood = mood;
@@ -404,14 +406,18 @@ async function searchAndPlay(query, { mood = null } = {}) {
 
         state.pending = null;
         state.candidates = results.map(result => result.videoId);
-        state.candidateAt = 0;
-        state.videoId = results[0].videoId;
-        state.title = results[0].title;
-        state.channel = results[0].channel;
+        // A rotating pick skips the track already playing - the next
+        // candidate carries the same mood instead of repeating it.
+        const skip = rotate ? results.findIndex(result => result.videoId !== state.videoId) : -1;
+        state.candidateAt = skip >= 0 ? skip : 0;
+        const pick = results[state.candidateAt];
+        state.videoId = pick.videoId;
+        state.title = pick.title;
+        state.channel = pick.channel;
         retryArmed = true;
         render();
 
-        await playById(results[0].videoId);
+        await playById(pick.videoId);
     } catch (error) {
         state.error = error instanceof Error ? error.message : 'YouTube search failed.';
         state.panelOpen = true;
@@ -423,23 +429,36 @@ async function searchAndPlay(query, { mood = null } = {}) {
     }
 }
 
+/** Turns the volume and remembers it - the DJ's volume intents land here. */
+function setVolume(value) {
+    settings().musicVolume = clampVolume(value);
+    applyVolume();
+    saveSettings();
+    render();
+}
+
 /* ---------- the read of new turns ---------- */
 
+/**
+ * Scans the reply that just landed for a `<music>` request. True when one
+ * was found - played or held - so the DJ leaves the reply alone.
+ */
 function scanNewTurn() {
     const messages = chatMessages();
     const message = messages[messages.length - 1];
-    if (!message || message.is_user) return;
+    if (!message || message.is_user) return false;
 
     const request = readMusicTag(message.mes);
-    if (!request) return;
+    if (!request) return false;
 
     // One reply cues once: a re-run of the same turn never restarts the
     // track, but the same song in a new reply is a new cue.
     const key = `${message.send_date ?? messages.length - 1}::${request.query}`;
-    if (key === lastHandled) return;
+    if (key === lastHandled) return true;
     lastHandled = key;
 
     playRequest(request.query, { mood: request.mood });
+    return true;
 }
 
 /**
@@ -453,15 +472,36 @@ function scanNewTurn() {
 export function initMusic({ isOpen } = {}) {
     if (typeof isOpen === 'function') uiIsOpen = isOpen;
 
+    // The DJ is its own watcher - switch, pace, prompt and call - reaching
+    // the player only through this controller. The gate demands the key:
+    // a pick the app cannot search cannot play.
+    initMusicDj({
+        isOpen,
+        controller: {
+            enabled: () => musicOn() && musicDjOn() && !!musicKey(),
+            everyN: () => Number(settings().musicDjEveryN) || 1,
+            promptCore: () => settings().musicDjPrompt,
+            current: () => ({ title: state.title, channel: state.channel }),
+            play: (query, options) => playRequest(query, { ...options, rotate: true }),
+            setVolume,
+        },
+    });
+
     const arrived = () => {
-        if (!uiIsOpen() || !musicOn() || !musicAutoOn()) return;
-        scanNewTurn();
+        if (!uiIsOpen() || !musicOn()) return;
+        // An explicit `<music>` request owns its reply - the DJ never
+        // overrules the story's own cue.
+        const cued = musicAutoOn() && scanNewTurn();
+        if (!cued) musicDjArrived();
     };
 
     on('GENERATION_ENDED', arrived);
     on('GENERATION_STOPPED', arrived);
     on('GROUP_WRAPPER_FINISHED', arrived);
-    on('CHAT_CHANGED', () => { lastHandled = null; });
+    on('CHAT_CHANGED', () => {
+        lastHandled = null;
+        resetMusicDjPacing();
+    });
 
     window.addEventListener('resize', () => {
         if (widget && !widget.hidden) render();
@@ -518,6 +558,7 @@ const WIDGET_HTML = `
         <button class="mz-ibtn" type="button" title="Mute" aria-label="Mute" data-mz-music="mute">${svg('vol')}</button>
         <input class="mz-music-vol" type="range" min="0" max="100" step="1" data-mz-music="volume" aria-label="Volume">
         <button class="mz-btn-ghost" type="button" data-mz-music="video">Video</button>
+        <button class="mz-btn-ghost" type="button" title="Ask the Music DJ for a different pick" data-mz-music="dj" hidden>Fresh pick</button>
     </div>
 </div>`;
 
@@ -558,6 +599,7 @@ export function mountMusic({ slot, frame }) {
         dock: widget.querySelector('[data-mz-music="dock"]'),
         volume: widget.querySelector('[data-mz-music="volume"]'),
         input: widget.querySelector('[data-mz-music="input"]'),
+        dj: widget.querySelector('[data-mz-music="dj"]'),
         watch: widget.querySelector('[data-mz-music-watch]'),
         embed: stage.querySelector('.mz-music-embed'),
     };
@@ -617,6 +659,11 @@ function wireWidget() {
                 state.videoOpen = !state.videoOpen;
                 render();
                 break;
+            case 'dj':
+                musicDjFreshPick().catch(error => {
+                    console.warn(`${LOG} the pick failed`, error);
+                });
+                break;
             case 'load': {
                 const text = els.input?.value ?? '';
                 if (text.trim()) playRequest(text);
@@ -628,9 +675,7 @@ function wireWidget() {
     });
 
     els.volume.addEventListener('input', () => {
-        settings().musicVolume = clampVolume(els.volume.value);
-        applyVolume();
-        saveSettings();
+        setVolume(els.volume.value);
     });
 
     els.input.addEventListener('keydown', event => {
@@ -775,6 +820,7 @@ function render() {
     els.dock.setAttribute('aria-label', undocked ? 'Dock the player' : 'Undock the player');
 
     els.volume.value = String(clampVolume(settings().musicVolume));
+    els.dj.hidden = !musicDjOn();
 
     // The escape hatch: a blocked or gone video is still one click away.
     if (live) {
