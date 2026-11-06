@@ -50,16 +50,30 @@
     opacity: var(--mz-wx-alpha);
 }
 
-/* a storm reads hard whatever the tone words say */
+/* a storm reads hard whatever the tone words say: the downpour reserves wake,
+   the streaks run longer, and nothing slows them */
 .mz-frame[data-mz-wx="storm"] .mz-weather {
     --mz-wx-speed: .72;
     --mz-wx-alpha: 1;
+    --mz-wx-len: 1.35;
+}
+
+/* the downpour reserves: the second batch of drops and flakes sleeps until a
+   storm or a blizzard wakes it */
+.mz-wx-rain i:nth-child(n+35),
+.mz-wx-snow i:nth-child(n+37) {
+    display: none;
 }
 
 /* light weather carries fewer particles */
 .mz-frame[data-mz-wx-int="light"] .mz-wx-rain i:nth-child(n+18),
 .mz-frame[data-mz-wx-int="light"] .mz-wx-snow i:nth-child(n+14) {
     display: none;
+}
+
+.mz-frame[data-mz-wx="storm"] .mz-wx-rain i:nth-child(n+35),
+.mz-frame[data-mz-wx="blizzard"] .mz-wx-snow i:nth-child(n+37) {
+    display: block;
 }
 
 /* ---------- rain ---------- */
@@ -72,7 +86,7 @@
     position: absolute;
     top: -18%;
     width: var(--w, 2px);
-    height: var(--len, 48px);
+    height: calc(var(--len, 48px) * var(--mz-wx-len, 1));
     border-radius: 0 0 2px 2px;
     background: linear-gradient(to bottom, rgba(174, 194, 224, 0), rgba(174, 194, 224, .75));
     animation: mz-rain-fall calc(var(--dur, 1.4s) * var(--mz-wx-speed, 1)) linear infinite;

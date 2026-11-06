@@ -836,8 +836,9 @@ function buildWeather() {
         layer.appendChild(wrap);
     };
 
-    // rain: a leaning curtain of streaks at mixed depths
-    effect('mz-wx-rain', 34, particle => {
+    // rain: a leaning curtain of streaks at mixed depths - the second half
+    // sleeps until a storm wakes it
+    effect('mz-wx-rain', 60, particle => {
         particle.style.left = `${wxRand(-4, 104).toFixed(1)}%`;
         particle.style.setProperty('--w', `${wxRand(1.2, 2.6).toFixed(1)}px`);
         particle.style.setProperty('--len', `${wxRand(34, 72).toFixed(0)}px`);
@@ -846,8 +847,9 @@ function buildWeather() {
         particle.style.opacity = wxRand(0.3, 0.7).toFixed(2);
     });
 
-    // snow: flakes in three sizes, each on its own sway
-    effect('mz-wx-snow', 24, particle => {
+    // snow: flakes in three sizes, each on its own sway - the second batch
+    // sleeps until a blizzard wakes it
+    effect('mz-wx-snow', 36, particle => {
         particle.style.left = `${wxRand(-2, 102).toFixed(1)}%`;
         particle.style.setProperty('--size', `${wxRand(3, 7).toFixed(1)}px`);
         particle.style.setProperty('--dur', `${wxRand(7, 15).toFixed(1)}s`);
