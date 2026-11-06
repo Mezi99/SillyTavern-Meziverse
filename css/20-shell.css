@@ -1729,7 +1729,7 @@ body.mz-open .popup { z-index: 9500 !important; }
     color: var(--mz-text-muted);
 }
 
-/* Foldable sections (the Images tab): the header opens and closes its rows.
+/* Foldable sections (the Features tab): the header opens and closes its rows.
    Closed by default; the sheet is built once and never rebuilt, so the state
    sticks for the session on its own. */
 .mz-set-head {

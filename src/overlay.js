@@ -190,7 +190,7 @@ const FRAME_HTML = `
 
         <div class="mz-seg mz-set-tabs" role="tablist" aria-label="Settings sections">
             <button class="is-on" type="button" role="tab" aria-selected="true" data-mz-tab="general">General</button>
-            <button type="button" role="tab" aria-selected="false" data-mz-tab="image">Images</button>
+            <button type="button" role="tab" aria-selected="false" data-mz-tab="image">Features</button>
             <button type="button" role="tab" aria-selected="false" data-mz-tab="mode">Meziverse mode</button>
         </div>
 
