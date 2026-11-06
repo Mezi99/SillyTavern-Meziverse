@@ -6,8 +6,8 @@
  * only owns the chrome around it.
  */
 
-import { chatMessages, currentChatId, errorText, imageGenerationStatus, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer } from './st.js';
-import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, weatherFxOn, DEV_EXTRAS } from './settings.js';
+import { chatMessages, currentChatId, errorText, imageGenerationStatus, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer, stDefaultBackground } from './st.js';
+import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, bgImagesOn, weatherFxOn, indoorFxOn, DEV_EXTRAS } from './settings.js';
 import {
     forceBackground,
     getLastWatcherRequest,
@@ -16,20 +16,20 @@ import {
     uiClosed,
     uiOpened,
 } from './bgchain.js';
-import { DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_OFF, sceneUrl } from './backgrounds.js';
+import { DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_OFF, sceneUrl, isNoPicture } from './backgrounds.js';
 import { injectSprite } from './icons.js';
 import { createTranscript } from './transcript.js';
 import { mountCast, refreshCastSizing, renderCast, renderThoughts, renderTells, clearCascade, redrawCast } from './cast.js';
 import { resolveLedger } from './ledger.js';
 import { parseMessage } from './tags.js';
-import { weatherPlan } from './scene.js';
+import { weatherPlan, indoorPlan } from './scene.js';
 import { placeHtml } from './prose.js';
 import { mountCues, closeMemory } from './cues.js';
 import { closeFloats } from './floats.js';
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr } from './notify.js';
 
-const VERSION = '2.6.0';
+const VERSION = '2.6.1';
 const PANE_DEFAULT = 300;
 const LOG_W_DEFAULT = 720;
 const LOG_H_SHARE = 0.7;
@@ -67,7 +67,7 @@ const FRAME_HTML = `
     <div class="mz-scrim" aria-hidden="true"></div>
 
     <header class="mz-header">
-        <div class="mz-brand"><b>Meziverse</b><small class="mz-version">v${VERSION}</small><button class="mz-mode mz-bgauto" type="button" role="switch" aria-checked="false" title="Backgrounds follow the story" aria-label="Automatic location backgrounds" data-mz-action="bg-auto"><i aria-hidden="true"></i><span data-mz="bg-auto-label">bg \u00b7 off</span></button><button class="mz-ibtn mz-brush" type="button" title="Draw a background for this place" aria-label="Draw a background for this place" data-mz-action="bg-generate">${svg('brush')}</button></div>
+        <div class="mz-brand"><b>Meziverse</b><small class="mz-version">v${VERSION}</small><button class="mz-mode mz-bgauto" type="button" role="switch" aria-checked="false" title="Backgrounds follow the story" aria-label="Automatic location backgrounds" data-mz-action="bg-auto"><i aria-hidden="true"></i><span data-mz="bg-auto-label">Auto BG: Off</span></button><button class="mz-ibtn mz-brush" type="button" title="Draw a background for this place" aria-label="Draw a background for this place" data-mz-action="bg-generate">${svg('brush')}</button></div>
         <div class="mz-chatname" data-mz="chatname"><b class="is-empty">No chat open</b></div>
         <div class="mz-header-tools">
             <button class="mz-ibtn" type="button" title="Full screen" aria-label="Full screen" data-mz-action="fullscreen">${svg('expand')}</button>
@@ -292,6 +292,10 @@ const FRAME_HTML = `
 
         <div class="mz-set-group mz-set-group--fold" data-mz-pane="image">
             <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="backgrounds">Backgrounds ${svg('chevdown')}</button></h3>
+            <div class="mz-set-row" data-mz-bg-master>
+                <span class="mz-set-label"><b>Background images</b><small>The watcher draws scene pictures. Off: the stage shows your own SillyTavern background, and no watcher ever runs. Weather and indoor effects still play.</small></span>
+                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Background images" data-mz-action="bg-images"><i></i></button>
+            </div>
             <div class="mz-set-row">
                 <span class="mz-set-label"><b>Follow the story</b><small>A new background when the place changes; the brush draws one on demand.</small></span>
                 <button class="mz-switch" type="button" role="switch" aria-checked="false" aria-label="Automatic location backgrounds" data-mz-action="bg-auto"><i></i></button>
@@ -345,6 +349,10 @@ const FRAME_HTML = `
             <div class="mz-set-row">
                 <span class="mz-set-label"><b>Weather effects</b><small>Rain, snow, lightning and light on the background stage. Outdoors scenes only - the scene tag's weatherTag and locationTag decide.</small></span>
                 <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Weather effects" data-mz-action="weather-fx"><i></i></button>
+            </div>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Indoor effects</b><small>The room's quiet mood - candlelight, hearth, window light, dust, lamp. Indoors scenes only; the place itself picks the mood.</small></span>
+                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Indoor effects" data-mz-action="indoor-fx"><i></i></button>
             </div>
         </div>
 
@@ -595,9 +603,11 @@ export function mount() {
     applyMode();
     applyAvatars();
     applyBgAuto();
+    applyBgImages();
     applyBgControls();
     buildWeather();
     applyWeatherFx();
+    applyIndoorFx();
     applyEntries();
     setSettingsTab('general');
     applyBrush();
@@ -766,7 +776,30 @@ function applyBgAuto() {
         button.classList.toggle('is-on', on);
         button.setAttribute('aria-checked', String(on));
     }
-    if (els.bgAutoLabel) els.bgAutoLabel.textContent = on ? 'bg \u00b7 auto' : 'bg \u00b7 off';
+    if (els.bgAutoLabel) els.bgAutoLabel.textContent = on ? 'Auto BG: On' : 'Auto BG: Off';
+}
+
+/**
+ * Syncs the background master switch. Off: the whole generation side steps
+ * aside - the pill, the brush and every generation row - and the stage keeps
+ * showing what it shows. The weather plays on regardless.
+ */
+function applyBgImages() {
+    const on = bgImagesOn();
+    for (const button of root.querySelectorAll('[data-mz-action="bg-images"]')) {
+        button.classList.toggle('is-on', on);
+        button.setAttribute('aria-checked', String(on));
+    }
+
+    const group = root.querySelector('[data-mz-section="backgrounds"]')?.closest('.mz-set-group');
+    group?.querySelectorAll('.mz-set-row').forEach(row => {
+        if (row.hasAttribute('data-mz-bg-master')) return;
+        row.hidden = !on;
+    });
+
+    root.querySelectorAll('[data-mz-action="bg-generate"], .mz-bgauto').forEach(element => {
+        element.hidden = !on;
+    });
 }
 
 /** Syncs the background settings rows with the settings they edit. */
@@ -808,8 +841,9 @@ function buildWeather() {
         layer.appendChild(wrap);
     };
 
-    // rain: a leaning curtain of streaks at mixed depths
-    effect('mz-wx-rain', 34, particle => {
+    // rain: a leaning curtain of streaks at mixed depths - the second half
+    // sleeps until a storm wakes it
+    effect('mz-wx-rain', 60, particle => {
         particle.style.left = `${wxRand(-4, 104).toFixed(1)}%`;
         particle.style.setProperty('--w', `${wxRand(1.2, 2.6).toFixed(1)}px`);
         particle.style.setProperty('--len', `${wxRand(34, 72).toFixed(0)}px`);
@@ -818,8 +852,9 @@ function buildWeather() {
         particle.style.opacity = wxRand(0.3, 0.7).toFixed(2);
     });
 
-    // snow: flakes in three sizes, each on its own sway
-    effect('mz-wx-snow', 24, particle => {
+    // snow: flakes in three sizes, each on its own sway - the second batch
+    // sleeps until a blizzard wakes it
+    effect('mz-wx-snow', 36, particle => {
         particle.style.left = `${wxRand(-2, 102).toFixed(1)}%`;
         particle.style.setProperty('--size', `${wxRand(3, 7).toFixed(1)}px`);
         particle.style.setProperty('--dur', `${wxRand(7, 15).toFixed(1)}s`);
@@ -844,7 +879,7 @@ function buildWeather() {
 
     const beams = document.createElement('div');
     beams.className = 'mz-wx-sun-beams';
-    for (const [tilt, width, dur, delay] of [[7, 15, 9, 0], [18, 22, 13, -4], [29, 13, 11, -7]]) {
+    for (const [tilt, width, dur, delay] of [[4, 13, 9, 0], [11, 21, 12, -3], [19, 27, 10, -6], [27, 19, 13, -9], [35, 12, 11, -12]]) {
         const beam = document.createElement('i');
         beam.style.setProperty('--tilt', `${tilt}deg`);
         beam.style.setProperty('--w', `${width}vw`);
@@ -914,6 +949,59 @@ function buildWeather() {
         particle.style.setProperty('--delay', `-${wxRand(0, 7).toFixed(1)}s`);
     });
     layer.appendChild(wind);
+
+    // candlelight: two warm glows breathing on their own beats
+    effect('mz-wx-candle', 2, () => {});
+
+    // fireplace: the hearth's pulse and a handful of embers rising
+    const hearth = document.createElement('div');
+    hearth.className = 'mz-wx mz-wx-fireplace';
+    for (let i = 0; i < 2; i += 1) {
+        const glow = document.createElement('i');
+        glow.className = 'mz-wx-fglow';
+        hearth.appendChild(glow);
+    }
+    for (let i = 0; i < 6; i += 1) {
+        const ember = document.createElement('i');
+        ember.className = 'mz-wx-ember';
+        ember.style.setProperty('--x', `${wxRand(-30, 30).toFixed(0)}px`);
+        ember.style.setProperty('--y', `${wxRand(52, 78).toFixed(1)}%`);
+        ember.style.setProperty('--size', `${wxRand(2, 4).toFixed(1)}px`);
+        ember.style.setProperty('--dur', `${wxRand(5, 9).toFixed(1)}s`);
+        ember.style.setProperty('--delay', `-${wxRand(0, 9).toFixed(1)}s`);
+        hearth.appendChild(ember);
+    }
+    layer.appendChild(hearth);
+
+    // window light: one shaft and the dust turning slowly inside it
+    const windowLight = document.createElement('div');
+    windowLight.className = 'mz-wx mz-wx-window';
+    const shaft = document.createElement('i');
+    shaft.className = 'mz-wx-shaft';
+    windowLight.appendChild(shaft);
+    for (let i = 0; i < 10; i += 1) {
+        const mote = document.createElement('i');
+        mote.className = 'mz-wx-mote';
+        mote.style.setProperty('--x', `${wxRand(30, 75).toFixed(1)}%`);
+        mote.style.setProperty('--y', `${wxRand(25, 85).toFixed(1)}%`);
+        mote.style.setProperty('--size', `${wxRand(2, 4.5).toFixed(1)}px`);
+        mote.style.setProperty('--dur', `${wxRand(11, 19).toFixed(1)}s`);
+        mote.style.setProperty('--delay', `-${wxRand(0, 14).toFixed(1)}s`);
+        windowLight.appendChild(mote);
+    }
+    layer.appendChild(windowLight);
+
+    // still dust: plain motes in the air
+    effect('mz-wx-dust', 14, particle => {
+        particle.style.setProperty('--x', `${wxRand(6, 94).toFixed(1)}%`);
+        particle.style.setProperty('--y', `${wxRand(15, 90).toFixed(1)}%`);
+        particle.style.setProperty('--size', `${wxRand(2, 4).toFixed(1)}px`);
+        particle.style.setProperty('--dur', `${wxRand(12, 22).toFixed(1)}s`);
+        particle.style.setProperty('--delay', `-${wxRand(0, 18).toFixed(1)}s`);
+    });
+
+    // lamp glow: a steady pool of warm light
+    effect('mz-wx-lamp', 2, () => {});
 }
 
 /** Syncs the weather switch with the setting. */
@@ -925,21 +1013,44 @@ function applyWeatherFx() {
     }
 }
 
+/** Syncs the indoor effects switch with the setting. */
+function applyIndoorFx() {
+    const on = indoorFxOn();
+    for (const button of root.querySelectorAll('[data-mz-action="indoor-fx"]')) {
+        button.classList.toggle('is-on', on);
+        button.setAttribute('aria-checked', String(on));
+    }
+}
+
 /**
- * Puts the governing scene's weather on the background stage - or takes it
- * off. The plan decides the state and its strength; the layer only fades
- * between what is already built.
+ * Puts the governing scene's weather - or the room's quiet mood - on the
+ * background stage, or takes it off. Outdoors the weatherTag decides;
+ * indoors the place itself is born with its effect. The plan decides the
+ * state and its strength; the layer only fades between what is already built.
  */
 function applyWeather(record) {
-    const plan = weatherFxOn() ? weatherPlan(record?.scene || null) : null;
+    const scene = record?.scene || null;
+    const plan = weatherFxOn() ? weatherPlan(scene) : null;
+    const room = !plan && indoorFxOn() ? indoorPlan(scene) : null;
     if (!frame) return;
 
     if (plan) {
         frame.dataset.mzWx = plan.state;
         frame.dataset.mzWxInt = plan.intensity;
+    } else if (room) {
+        frame.dataset.mzWx = room.state;
+        frame.dataset.mzWxInt = 'med';
     } else {
         delete frame.dataset.mzWx;
         delete frame.dataset.mzWxInt;
+    }
+
+    if (room) {
+        frame.dataset.mzWxSide = room.side;
+        frame.dataset.mzWxLight = room.light;
+    } else {
+        delete frame.dataset.mzWxSide;
+        delete frame.dataset.mzWxLight;
     }
 
     applySun(plan);
@@ -952,8 +1063,7 @@ function applyWeather(record) {
  * faint cool whisper.
  */
 function applySun(plan) {
-    const night = !!plan && plan.state === 'sunny'
-        && Number.isFinite(plan.hour) && (plan.hour >= 20 || plan.hour < 6);
+    const night = !!plan && Number.isFinite(plan.hour) && (plan.hour >= 20 || plan.hour < 6);
 
     if (night) frame.dataset.mzWxNight = '1';
     else delete frame.dataset.mzWxNight;
@@ -1231,7 +1341,6 @@ function applyCueMeanwhile() {
  */
 function applyBackground(forcedUrl) {
     const useSt = settings().background === 'st';
-    frame.classList.toggle('is-bg-st', useSt);
     root.querySelectorAll('[data-mz-pick-bg]').forEach(button => {
         const isOn = button.dataset.mzPickBg === (useSt ? 'st' : 'none');
         button.classList.toggle('is-on', isOn);
@@ -1240,22 +1349,29 @@ function applyBackground(forcedUrl) {
 
     if (!useSt) {
         frame.style.removeProperty('--mz-st-bg');
+        frame.classList.remove('is-bg-st');
         return;
     }
 
     const forced = typeof forcedUrl === 'string' ? forcedUrl.trim() : '';
     const inline = document.getElementById('bg1')?.style.backgroundImage?.trim() || '';
-    const image = sceneUrl(forced) || sceneUrl(inline);
+    const image = sceneUrl(forced, document.baseURI) || sceneUrl(inline, document.baseURI);
 
-    if (image) {
-        frame.style.setProperty('--mz-st-bg', image);
+    // An unusable stranger is dropped and the last good picture stays.
+    if (!image && !isNoPicture(forced) && !isNoPicture(inline)) return;
+
+    // Nothing showing - empty, none, or SillyTavern's transparent placeholder -
+    // falls through: SillyTavern's own default first, then the procedural
+    // scene. The stage is never a black hole.
+    const shown = image || sceneUrl(stDefaultBackground(), document.baseURI);
+    if (shown) {
+        frame.style.setProperty('--mz-st-bg', shown);
+        frame.classList.add('is-bg-st');
         return;
     }
 
-    // No picture on screen - SillyTavern shows none - clears the mirror; an
-    // unusable stranger is dropped and the last good picture stays.
-    const raw = forced || inline;
-    if (!raw || /^none$/i.test(raw)) frame.style.removeProperty('--mz-st-bg');
+    frame.style.removeProperty('--mz-st-bg');
+    frame.classList.remove('is-bg-st');
 }
 
 /* ---------- full screen ---------- */
@@ -2037,6 +2153,17 @@ function wireActions() {
                 settings().weatherFx = !settings().weatherFx;
                 applyWeatherFx();
                 applyWeather(lastShown);
+                saveSettings();
+                break;
+            case 'indoor-fx':
+                settings().indoorFx = !settings().indoorFx;
+                applyIndoorFx();
+                applyWeather(lastShown);
+                saveSettings();
+                break;
+            case 'bg-images':
+                settings().bgImages = !settings().bgImages;
+                applyBgImages();
                 saveSettings();
                 break;
             case 'bg-auto':

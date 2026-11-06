@@ -28,6 +28,7 @@ import {
     resolveRecordId,
     resolveStampId,
     restorePlan,
+    isNoPicture,
     sceneUrl,
     setStamp,
     stampOf,
@@ -231,6 +232,30 @@ test('sceneUrl trusts authored urls and nothing else', () => {
     assert.equal(sceneUrl('none'), null);
     assert.equal(sceneUrl(''), null);
     assert.equal(sceneUrl(null), null);
+});
+
+test('isNoPicture knows the shapes of nothing showing', () => {
+    assert.equal(isNoPicture(''), true);
+    assert.equal(isNoPicture(null), true);
+    assert.equal(isNoPicture('none'), true);
+    assert.equal(isNoPicture('NONE'), true);
+    assert.equal(isNoPicture('url("backgrounds/__transparent.png")'), true);
+    assert.equal(isNoPicture("url('backgrounds/__transparent.png')"), true);
+    assert.equal(isNoPicture('url(backgrounds/__transparent.png)'), true);
+    assert.equal(isNoPicture('url("/user/images/docks.png")'), false);
+    assert.equal(isNoPicture('url("backgrounds/city rain.png")'), false);
+    assert.equal(isNoPicture('cross-fade(url("/a.png") 50%, none)'), false);
+});
+
+test('sceneUrl with a base speaks absolute urls only', () => {
+    const base = 'https://st.test/app/page';
+    assert.equal(sceneUrl('url("backgrounds/a.png")', base), 'url("https://st.test/app/backgrounds/a.png")');
+    assert.equal(sceneUrl('url(/bg/a.png)', base), 'url("https://st.test/bg/a.png")');
+    assert.equal(sceneUrl('url("bg/a b.png")', base), 'url("https://st.test/app/bg/a%20b.png")');
+    assert.equal(sceneUrl("url('https://cdn.test/a.png')", base), 'url("https://cdn.test/a.png")');
+    assert.equal(sceneUrl('url(data:image/png;base64,xx)', base), 'url(data:image/png;base64,xx)');
+    assert.equal(sceneUrl('url("a.png")'), 'url("a.png")');
+    assert.equal(sceneUrl('cross-fade(url("/a.png"))', base), null);
     assert.equal(sceneUrl(42), null);
 });
 

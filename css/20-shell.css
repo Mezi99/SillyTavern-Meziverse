@@ -468,7 +468,7 @@ body.mz-open .popup { z-index: 9500 !important; }
     max-width: clamp(180px, 46vw, 620px);
     overflow: hidden;
     font-family: var(--mz-font-prose);
-    font-size: var(--mz-text-md);
+    font-size: var(--mz-text-sm);
     font-weight: 400;
     letter-spacing: .01em;
     line-height: 1.25;
@@ -1997,7 +1997,7 @@ body.mz-open .popup { z-index: 9500 !important; }
     .mz-chatbar { gap: 2px; padding: 4px 6px 4px 10px; }
     .mz-chatbar-left { gap: 8px; }
     .mz-clock-time { font-size: var(--mz-text-lg); }
-    .mz-place b { max-width: 52vw; font-size: var(--mz-text-sm); }
+    .mz-place b { max-width: 52vw; font-size: var(--mz-text-xs); }
     .mz-chip { display: none; }
 
     .mz-cast { gap: 14px; padding: 0 16px calc(var(--mz-pane-h) + 22px); }

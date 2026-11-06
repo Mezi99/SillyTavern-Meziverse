@@ -21,6 +21,11 @@ const DEFAULTS = {
     // The cast strip above the reading pane. Off draws no avatars at all -
     // no posters, no initials - and the background stays alone on stage.
     avatars: true,
+    // The background master switch: the whole image-generation side. Off
+    // means the watcher never runs - the brush included - and the stage
+    // shows the chat's own pictures or SillyTavern's background. Weather
+    // and indoor effects ride the scene tags and play regardless.
+    bgImages: true,
     // Location backgrounds: an image generated from the story's place by
     // SillyTavern's Image Generation. Auto works everywhere - a `<scene>` tag
     // names the place outright (free outcomes run at any pace, new draws at
@@ -41,6 +46,9 @@ const DEFAULTS = {
     // names the state, locationTag gates it to outdoors, and the free-text
     // weather's tone words tune its strength. Off leaves the scene still.
     weatherFx: true,
+    // Indoor effects: the room's quiet mood, seeded per place. Independent
+    // of the weather switch and of image generation.
+    indoorFx: true,
     // The watcher prompts the user tunes: the scene-tagged hand and the
     // plain-prose hand. The answer format is appended by code.
     bgPromptOn: DEFAULT_BG_PROMPT_ON,
@@ -115,9 +123,19 @@ export function bgAutoOn() {
     return settings().bgAuto === true;
 }
 
+/** Whether background image generation exists at all - the master switch. */
+export function bgImagesOn() {
+    return settings().bgImages !== false;
+}
+
 /** Whether the weather effects play on the background stage. */
 export function weatherFxOn() {
     return settings().weatherFx !== false;
+}
+
+/** Whether the indoor effects play - the room's quiet mood. */
+export function indoorFxOn() {
+    return settings().indoorFx !== false;
 }
 
 /**

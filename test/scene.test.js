@@ -3,10 +3,15 @@ import assert from 'node:assert/strict';
 
 import { parseTags } from '../src/tags.js';
 import {
+    INDOOR_EFFECTS,
     clockHour,
     describeScene,
     describeScenes,
     hourFromWords,
+    indoorEffect,
+    indoorLight,
+    indoorPlan,
+    indoorSide,
     initials,
     isUsableScene,
     locationTagValue,
@@ -265,4 +270,48 @@ test('weatherPlan gathers state, intensity and the hour of the light', () => {
 
     const indoors = describeScene(tag('<scene date="Friday" time="19:12" weather="heavy rain" weatherTag="Storm" locationTag="Indoor" />'));
     assert.equal(weatherPlan(indoors), null);
+});
+
+test('indoorEffect is seeded by the place and plays only indoors', () => {
+    const scene = mes => describeScene(tag(mes));
+    const kitchen = scene('<scene date="Day 1" location="Japan | Kyoto | House | Kitchen" locationTag="Indoor" />');
+    assert.ok(INDOOR_EFFECTS.includes(indoorEffect(kitchen)));
+
+    const sameRoom = scene('<scene date="Day 2" location="Japan | Kyoto | House | Kitchen" locationTag="Indoor" />');
+    assert.equal(indoorEffect(sameRoom), indoorEffect(kitchen));
+
+    assert.equal(indoorEffect(scene('<scene date="Day 1" location="Kitchen" locationTag="Outdoor" />')), '');
+    assert.equal(indoorEffect(null), '');
+
+    // every room in a small town eventually wears every mood
+    const seen = new Set();
+    for (let i = 0; i < 200; i += 1) {
+        seen.add(indoorEffect(scene(`<scene date="Day 1" location="Town | Street ${i} | House ${i} | Room" locationTag="Indoor" />`)));
+    }
+    assert.deepEqual([...seen].sort(), [...INDOOR_EFFECTS].sort());
+});
+
+test('indoorSide stays with the room, indoorLight follows the clock', () => {
+    const scene = mes => describeScene(tag(mes));
+    const room = scene('<scene date="Day 1" time="13:00" location="Town | House | Kitchen" locationTag="Indoor" />');
+    assert.ok(['left', 'right'].includes(indoorSide(room)));
+    assert.equal(indoorSide(scene('<scene date="Day 9" location="Town | House | Kitchen" locationTag="Indoor" />')), indoorSide(room));
+
+    assert.equal(indoorLight(7), 'morning');
+    assert.equal(indoorLight(13), 'day');
+    assert.equal(indoorLight(18), 'evening');
+    assert.equal(indoorLight(22), 'night');
+    assert.equal(indoorLight(3), 'night');
+    assert.equal(indoorLight(null), 'day');
+});
+
+test('indoorPlan gathers the room, its side and its light', () => {
+    const scene = describeScene(tag('<scene date="Day 1" time="18:30" location="Town | House | Kitchen" locationTag="Indoor" />'));
+    const plan = indoorPlan(scene);
+    assert.ok(INDOOR_EFFECTS.includes(plan.state));
+    assert.ok(['left', 'right'].includes(plan.side));
+    assert.equal(plan.light, 'evening');
+
+    assert.equal(indoorPlan(describeScene(tag('<scene date="Day 1" location="Kitchen" locationTag="Outdoor" />'))), null);
+    assert.equal(indoorPlan(null), null);
 });

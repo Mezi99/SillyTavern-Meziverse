@@ -58,7 +58,7 @@ import {
     stampMessageBg,
     unlockBackground,
 } from './st.js';
-import { bgAutoOn, settings } from './settings.js';
+import { bgAutoOn, bgImagesOn, settings } from './settings.js';
 import { resolveScene } from './scene.js';
 
 const LOG = '[Meziverse] bg';
@@ -296,6 +296,11 @@ function requestBackground({ index, swipeId, force = false, refresh = false }) {
     // Belt on the suspenders: every caller checks the master switch, and so
     // does the one door in - nothing queues while the scene is closed.
     if (!uiIsOpen()) return Promise.resolve({ status: 'off' });
+
+    // The background master switch: generation off means no watcher ever -
+    // the brush included. The stage shows whatever the chat holds or
+    // SillyTavern's own background, and the weather plays on.
+    if (!bgImagesOn()) return Promise.resolve({ status: 'off' });
 
     const targetIndex = Number.isInteger(index) ? index : lastMessageIndex();
     const fromMessage = Number(chatMessages()[targetIndex]?.swipe_id ?? 0) || 0;

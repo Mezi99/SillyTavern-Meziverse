@@ -251,6 +251,84 @@ export function weatherPlan(scene) {
     };
 }
 
+/* ---------- indoor effects ----------
+   The tag carries no indoor field: the place itself decides the room's mood,
+   seeded so the same room always shows the same one and different rooms
+   differ. All five are calm by design - this is weather's quiet twin. */
+
+export const INDOOR_EFFECTS = ['candle', 'fireplace', 'window', 'dust', 'lamp'];
+
+/* A stable seed from a place name - FNV-1a over a folded key. Kept local on
+   purpose: backgrounds.js already leans on this file. */
+function seedOf(value) {
+    const raw = text(value).trim().toLowerCase().replace(/\s+/g, ' ');
+    let hash = 2166136261;
+
+    for (let i = 0; i < raw.length; i += 1) {
+        hash ^= raw.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+    }
+
+    return hash >>> 0;
+}
+
+/**
+ * The indoor effect a scene's place is born with, or '' when not indoors.
+ *
+ * @param {object|null} scene
+ * @returns {string} one of INDOOR_EFFECTS, or ''
+ */
+export function indoorEffect(scene) {
+    if (locationTagValue(scene?.locationTag) !== 'indoor') return '';
+
+    const place = text(scene?.placeFull) || text(scene?.place);
+    return INDOOR_EFFECTS[seedOf(place) % INDOOR_EFFECTS.length];
+}
+
+/**
+ * Which side of the frame the room's light lives on - seeded beside the
+ * effect, so the room's whole mood stays its own.
+ *
+ * @param {object|null} scene
+ * @returns {'left'|'right'}
+ */
+export function indoorSide(scene) {
+    const place = text(scene?.placeFull) || text(scene?.place);
+    return seedOf(`${place}\u0000side`) % 2 ? 'right' : 'left';
+}
+
+/**
+ * The light a window lets in at an hour - the daycycle's one indoor echo.
+ *
+ * @param {number|null} hour
+ * @returns {'morning'|'day'|'evening'|'night'}
+ */
+export function indoorLight(hour) {
+    if (!Number.isFinite(hour)) return 'day';
+    if (hour >= 6 && hour < 11) return 'morning';
+    if (hour >= 11 && hour < 17) return 'day';
+    if (hour >= 17 && hour < 20) return 'evening';
+    return 'night';
+}
+
+/**
+ * The whole indoor plan for a scene - what plays, on which side, under which
+ * light - or null when the scene is not indoors.
+ *
+ * @param {object|null} scene
+ * @returns {{state:string, side:'left'|'right', light:'morning'|'day'|'evening'|'night'}|null}
+ */
+export function indoorPlan(scene) {
+    const state = indoorEffect(scene);
+    if (!state) return null;
+
+    return {
+        state,
+        side: indoorSide(scene),
+        light: indoorLight(scene?.hour),
+    };
+}
+
 /**
  * Splits a location path on `|` and keeps the deepest level for the header.
  *
