@@ -135,6 +135,7 @@ let player = null;
 let ytApiPromise = null;
 let lastHandled = null;
 let drag = null;
+let retryArmed = true;
 
 /* ---------- the YouTube IFrame API, loaded once ---------- */
 
@@ -158,6 +159,22 @@ function loadYouTubeApi() {
 
 /* ---------- playback ---------- */
 
+/**
+ * SillyTavern serves its pages with `Referrer-Policy: no-referrer`, and every
+ * iframe inherits it - YouTube rejects embeds that arrive without a referrer
+ * (every video, error 150, while thumbnail and metadata still load fine).
+ * The official embed snippet pins the policy on the iframe; the IFrame API
+ * builds its own, so we pin it on the one it made - synchronously, before
+ * its navigation task runs - beside the official `allow` list.
+ */
+function pinEmbed(instance) {
+    const frame = instance?.getIframe?.();
+    if (!frame) return;
+    frame.referrerPolicy = 'strict-origin-when-cross-origin';
+    frame.setAttribute('allow', 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share');
+    frame.allowFullscreen = true;
+}
+
 async function playById(id) {
     await loadYouTubeApi();
 
@@ -168,7 +185,15 @@ async function playById(id) {
             width: '100%',
             height: '100%',
             videoId: id,
-            playerVars: { autoplay: 1, playsinline: 1, modestbranding: 1, rel: 0 },
+            // No YouTube chrome: the widget is the control surface.
+            playerVars: {
+                autoplay: 1,
+                playsinline: 1,
+                modestbranding: 1,
+                rel: 0,
+                controls: 0,
+                origin: window.location.origin,
+            },
             events: {
                 onReady: () => {
                     applyVolume();
@@ -178,6 +203,7 @@ async function playById(id) {
                 onError: event => onPlayerError(event.data),
             },
         });
+        pinEmbed(player);
     } else {
         player.loadVideoById(id);
         player.playVideo();
@@ -189,6 +215,7 @@ async function playById(id) {
 function onPlayerState(code) {
     const PLAYING = 1;
     state.playing = code === PLAYING;
+    if (state.playing) retryArmed = true;
 
     try {
         const data = player?.getVideoData?.();
@@ -204,18 +231,47 @@ function onPlayerState(code) {
 }
 
 const PLAYER_ERRORS = {
-    2: 'That is not a video YouTube understands.',
-    5: 'This video cannot play in the embedded player.',
+    2: 'YouTube does not understand that video reference.',
+    5: 'YouTube refused playback here - the stream would not load.',
     100: 'That video is gone or private.',
-    101: 'That video cannot be embedded.',
-    150: 'That video cannot be embedded.',
+    101: 'The owner of that video blocks embedded playback.',
+    150: 'The owner of that video blocks embedded playback.',
 };
 
+/* A fresh instance settles a born-broken player from a genuinely blocked
+   video - so these get one rebuild and one retry before any error shows. */
+const RETRY_ERRORS = new Set([5, 101, 150]);
+
 function onPlayerError(code) {
-    state.error = PLAYER_ERRORS[code] ?? 'This video cannot play here.';
+    const message = PLAYER_ERRORS[code] ?? 'This video cannot play here.';
+    console.warn(`${LOG} embed error ${code} for ${state.videoId ?? '(none)'}`);
+
+    if (retryArmed && RETRY_ERRORS.has(code) && state.videoId) {
+        retryArmed = false;
+        rebuildPlayer(state.videoId);
+        return;
+    }
+
+    state.error = message;
     state.playing = false;
+    state.panelOpen = true;
     render();
-    notify(state.error, 'warning');
+    notify(message, 'warning');
+}
+
+/** Tears the embed down and plays the same video in a fresh one, once. */
+function rebuildPlayer(id) {
+    try {
+        player?.destroy?.();
+    } catch {
+        /* the embed answers when it answers */
+    }
+    player = null;
+    render();
+
+    playById(id).catch(error => {
+        console.warn(`${LOG} the embed failed`, error);
+    });
 }
 
 function applyVolume() {
@@ -250,6 +306,7 @@ function playRequest(text, { mood = null } = {}) {
     state.title = '';
     state.channel = '';
     state.error = null;
+    retryArmed = true;
     render();
 
     playById(ref.id).catch(error => {
@@ -343,6 +400,7 @@ const WIDGET_HTML = `
     <button class="mz-ibtn" type="button" title="Undock" aria-label="Undock the player" data-mz-music="dock">${svg('undock')}</button>
 </div>
 <div class="mz-music-body" data-mz-music-body hidden>
+    <a class="mz-btn-ghost mz-music-watch" data-mz-music-watch href="#" target="_blank" rel="noreferrer noopener" hidden>Watch on YouTube</a>
     <div class="mz-music-row">
         <input class="mz-select mz-music-input" data-mz-music="input" placeholder="Paste a YouTube link or video ID" aria-label="YouTube link or video ID">
         <button class="mz-btn-ghost" type="button" data-mz-music="load">Play</button>
@@ -391,6 +449,7 @@ export function mountMusic({ slot, frame }) {
         dock: widget.querySelector('[data-mz-music="dock"]'),
         volume: widget.querySelector('[data-mz-music="volume"]'),
         input: widget.querySelector('[data-mz-music="input"]'),
+        watch: widget.querySelector('[data-mz-music-watch]'),
         embed: stage.querySelector('.mz-music-embed'),
     };
 
@@ -606,10 +665,18 @@ function render() {
 
     els.volume.value = String(clampVolume(settings().musicVolume));
 
-    // The stage: the video panel when open, an audio-only clip when not -
-    // and gone entirely while no track has ever played.
-    const embedLive = !!player;
-    stage.hidden = !on || !live || !(state.videoOpen || embedLive);
+    // The escape hatch: a blocked or gone video is still one click away.
+    if (live) {
+        els.watch.href = `https://www.youtube.com/watch?v=${state.videoId}`;
+        els.watch.hidden = !state.error;
+    } else {
+        els.watch.hidden = true;
+    }
+
+    // The stage renders whenever a track exists - an embed created inside a
+    // `display:none` box fails exactly like a blocked video, so the clip
+    // hides the audio-only stage visually and never with `hidden`.
+    stage.hidden = !on || !live;
     stage.classList.toggle('is-open', state.videoOpen);
     stage.classList.toggle('is-audio', !state.videoOpen);
     positionStage();

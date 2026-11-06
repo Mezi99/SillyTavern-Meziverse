@@ -168,6 +168,14 @@
     accent-color: var(--mz-accent);
 }
 
+/* The error state's escape hatch: the video is still one click away. */
+.mz-music-watch {
+    justify-self: start;
+    text-decoration: none;
+}
+
+.mz-music-watch:hover { color: var(--mz-accent); }
+
 /* ---------- the video stage ---------- */
 
 /* Fixed and frame-level, like the cue popover. While audio plays without
