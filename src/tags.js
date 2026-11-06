@@ -179,6 +179,12 @@ export function scenesOf(tags) {
     return tags.filter(tag => tag.name === 'scene' && tag.closed);
 }
 
+/** Every complete `<speech>` tag, in the order it appears. */
+export function speechesOf(tags) {
+    if (!Array.isArray(tags)) return [];
+    return tags.filter(tag => tag.name === 'speech' && tag.closed);
+}
+
 /**
  * Splits a message at complete scene tags, so prose and inline scene rows can
  * be interleaved; at the inline cues (`lie`, `filter`, `flashback`) that leave

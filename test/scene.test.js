@@ -7,6 +7,8 @@ import {
     clockHour,
     describeScene,
     describeScenes,
+    describeSpeech,
+    describeSpeeches,
     hourFromWords,
     indoorEffect,
     indoorLight,
@@ -314,4 +316,63 @@ test('indoorPlan gathers the room, its side and its light', () => {
 
     assert.equal(indoorPlan(describeScene(tag('<scene date="Day 1" location="Kitchen" locationTag="Outdoor" />'))), null);
     assert.equal(indoorPlan(null), null);
+});
+
+test('describeSpeech reads who speaks, how, and what', () => {
+    const speech = describeSpeech(tag('<speech character="Mike" tone="wry">"Not my fault."</speech>'));
+
+    assert.equal(speech.character, 'Mike');
+    assert.equal(speech.tone, 'wry');
+    assert.equal(speech.body, '"Not my fault."');
+    assert.equal(speech.words, 'Not my fault.');
+});
+
+test('describeSpeech forgives spellings and lifts one quote pair', () => {
+    const alias = describeSpeech(tag('<speech Speaker="mara" MOOD="soft">\'again\'</speech>'));
+    assert.equal(alias.character, 'mara');
+    assert.equal(alias.tone, 'soft');
+    assert.equal(alias.words, 'again');
+
+    const curly = describeSpeech(tag('<speech character="A">\u201cstop\u201d</speech>'));
+    assert.equal(curly.words, 'stop');
+
+    const inner = describeSpeech(tag('<speech character="A">"He said "stop" loudly."</speech>'));
+    assert.equal(inner.words, 'He said "stop" loudly.');
+
+    const plain = describeSpeech(tag('<speech character="A">plain words</speech>'));
+    assert.equal(plain.words, 'plain words');
+    assert.equal(plain.body, 'plain words');
+
+    const bare = describeSpeech(tag('<speech>"no speaker"</speech>'));
+    assert.equal(bare.character, '');
+    assert.equal(bare.tone, '');
+    assert.equal(bare.words, 'no speaker');
+});
+
+test('describeSpeech refuses half tags and other tags', () => {
+    const half = parseTags('<speech character="Mike">"unfinished')[0];
+    assert.equal(describeSpeech(half), null);
+    assert.equal(describeSpeech(tag('<scene date="Day 1" />')), null);
+    assert.equal(describeSpeech(null), null);
+});
+
+test('describeSpeeches gathers a message in order, cached', () => {
+    const message = {
+        mes: 'She smiled. <speech character="Mike" tone="wry">"Of course."</speech> Then '
+            + '<speech character="Mara" mood="cold">"Never."</speech> Left.',
+    };
+
+    const first = describeSpeeches(message);
+    assert.deepEqual(first.map(speech => speech.character), ['Mike', 'Mara']);
+    assert.deepEqual(first.map(speech => speech.tone), ['wry', 'cold']);
+    assert.deepEqual(first.map(speech => speech.words), ['Of course.', 'Never.']);
+
+    assert.equal(describeSpeeches(message), first);
+
+    message.mes = '<speech character="Only">"one"</speech>';
+    const again = describeSpeeches(message);
+    assert.deepEqual(again.map(speech => speech.character), ['Only']);
+
+    assert.deepEqual(describeSpeeches(null), []);
+    assert.deepEqual(describeSpeeches('a string'), []);
 });

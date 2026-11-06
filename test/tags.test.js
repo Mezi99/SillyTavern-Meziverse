@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseMessage, parseTags, scenesOf, splitCues, stripNonSceneTags, stripTags } from '../src/tags.js';
+import { parseMessage, parseTags, scenesOf, speechesOf, splitCues, stripNonSceneTags, stripTags } from '../src/tags.js';
 
 const scene = attrs => `<scene ${attrs} />`;
 
@@ -55,6 +55,16 @@ test('every complete scene is returned, in order, with no collapsing', () => {
     const tags = parseTags('one <scene date="Day 1" /> two <scene date="Day 2" /> three');
 
     assert.deepEqual(scenesOf(tags).map(tag => tag.attrs.date), ['Day 1', 'Day 2']);
+});
+
+test('speechesOf returns complete speech tags, in order', () => {
+    const tags = parseTags('a <speech character="Mike">"one"</speech> b <speech character="Mara">"two"</speech> c');
+    assert.deepEqual(speechesOf(tags).map(tag => tag.attrs.character), ['Mike', 'Mara']);
+
+    const half = parseTags('a <speech character="Mike">"one');
+    assert.deepEqual(speechesOf(half), []);
+
+    assert.deepEqual(speechesOf('not an array'), []);
 });
 
 test('unknown HTML is not a tag', () => {
