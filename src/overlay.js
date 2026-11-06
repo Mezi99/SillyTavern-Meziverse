@@ -1355,7 +1355,7 @@ function applyBackground(forcedUrl) {
 
     const forced = typeof forcedUrl === 'string' ? forcedUrl.trim() : '';
     const inline = document.getElementById('bg1')?.style.backgroundImage?.trim() || '';
-    const image = sceneUrl(forced) || sceneUrl(inline);
+    const image = sceneUrl(forced, document.baseURI) || sceneUrl(inline, document.baseURI);
 
     // An unusable stranger is dropped and the last good picture stays.
     if (!image && !isNoPicture(forced) && !isNoPicture(inline)) return;
@@ -1363,7 +1363,7 @@ function applyBackground(forcedUrl) {
     // Nothing showing - empty, none, or SillyTavern's transparent placeholder -
     // falls through: SillyTavern's own default first, then the procedural
     // scene. The stage is never a black hole.
-    const shown = image || sceneUrl(stDefaultBackground());
+    const shown = image || sceneUrl(stDefaultBackground(), document.baseURI);
     if (shown) {
         frame.style.setProperty('--mz-st-bg', shown);
         frame.classList.add('is-bg-st');

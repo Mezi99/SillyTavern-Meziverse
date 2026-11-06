@@ -343,12 +343,28 @@ export function restorePlan(store, currentLock) {
  * rather than paint a stranger's.
  *
  * @param {*} value
+ * @param {string} [base] resolve the url against this base - the mirror's
+ *   values land in our own stylesheet, where relative urls would resolve
+ *   against the extension's folder. Empty keeps the value as authored.
  * @returns {string|null} the authored value, or null when unusable
  */
-export function sceneUrl(value) {
+export function sceneUrl(value, base = '') {
     const clean = typeof value === 'string' ? value.trim() : '';
     if (!clean || !/^url\(/i.test(clean) || /cross-fade/i.test(clean)) return null;
-    return clean;
+    if (!base) return clean;
+
+    // The mirror's value lands in OUR stylesheet - where a relative url
+    // resolves against the extension's own folder and quietly 404s (the
+    // black hole a chat's default background used to fall into). Make it
+    // absolute once, here: still an authored url(), just unambiguous.
+    const inner = clean.slice(clean.indexOf('(') + 1, clean.lastIndexOf(')')).trim().replace(/^["']|["']$/g, '');
+    if (!inner || /^(?:data:|#)/i.test(inner)) return clean;
+
+    try {
+        return `url("${new URL(inner, base).href}")`;
+    } catch {
+        return clean;
+    }
 }
 
 /* 'Nothing is showing': an empty value, CSS's own none, or SillyTavern's
