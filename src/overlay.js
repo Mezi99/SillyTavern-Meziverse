@@ -7,7 +7,7 @@
  */
 
 import { chatMessages, currentChatId, errorText, imageGenerationStatus, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer, stDefaultBackground } from './st.js';
-import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, bgImagesOn, weatherFxOn, indoorFxOn, DEV_EXTRAS } from './settings.js';
+import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, bgImagesOn, weatherFxOn, indoorFxOn, speechFxOn, DEV_EXTRAS } from './settings.js';
 import {
     forceBackground,
     getLastWatcherRequest,
@@ -29,7 +29,7 @@ import { closeFloats } from './floats.js';
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr } from './notify.js';
 
-const VERSION = '2.6.1';
+const VERSION = '2.7.0';
 const PANE_DEFAULT = 300;
 const LOG_W_DEFAULT = 720;
 const LOG_H_SHARE = 0.7;
@@ -190,12 +190,12 @@ const FRAME_HTML = `
 
         <div class="mz-seg mz-set-tabs" role="tablist" aria-label="Settings sections">
             <button class="is-on" type="button" role="tab" aria-selected="true" data-mz-tab="general">General</button>
-            <button type="button" role="tab" aria-selected="false" data-mz-tab="image">Images</button>
+            <button type="button" role="tab" aria-selected="false" data-mz-tab="image">Features</button>
             <button type="button" role="tab" aria-selected="false" data-mz-tab="mode">Meziverse mode</button>
         </div>
 
-        <div class="mz-set-group" data-mz-pane="general">
-            <h3>Appearance</h3>
+        <div class="mz-set-group mz-set-group--fold" data-mz-pane="general">
+            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="appearance">Appearance ${svg('chevdown')}</button></h3>
             <div class="mz-set-row">
                 <span class="mz-set-label"><b>Theme</b><small>Ink and one metal. Everything follows it.</small></span>
                 <div class="mz-theme-picks" role="group" aria-label="Theme">
@@ -225,8 +225,8 @@ const FRAME_HTML = `
             </div>
         </div>
 
-        <div class="mz-set-group" data-mz-pane="general">
-            <h3>Type</h3>
+        <div class="mz-set-group mz-set-group--fold" data-mz-pane="general">
+            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="type">Type ${svg('chevdown')}</button></h3>
             <div class="mz-set-row">
                 <span class="mz-set-label"><b>Interface scale</b><small>Menus, headers and buttons.</small></span>
                 <div class="mz-step">
@@ -274,8 +274,8 @@ const FRAME_HTML = `
             </div>
         </div>
 
-        <div class="mz-set-group" data-mz-pane="general">
-            <h3>Motion</h3>
+        <div class="mz-set-group mz-set-group--fold" data-mz-pane="general">
+            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="motion">Motion ${svg('chevdown')}</button></h3>
             <div class="mz-set-row">
                 <span class="mz-set-label"><b>Reduced motion</b><small>Fades and slides become instant.</small></span>
                 <button class="mz-switch" type="button" role="switch" aria-checked="false" aria-label="Reduced motion" data-mz-action="motion"><i></i></button>
@@ -356,16 +356,24 @@ const FRAME_HTML = `
             </div>
         </div>
 
-        <div class="mz-set-group" data-mz-pane="mode">
-            <h3>Meziverse mode</h3>
+        <div class="mz-set-group mz-set-group--fold" data-mz-pane="image">
+            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="speech">Speech ${svg('chevdown')}</button></h3>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Speech bubbles</b><small>Spoken lines wear a bubble in the reading pane - the speaker's name and picture when the cast holds one, the words, and the tone said in, quietly after. Off leaves the prose plain.</small></span>
+                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Speech bubbles" data-mz-action="speech-fx"><i></i></button>
+            </div>
+        </div>
+
+        <div class="mz-set-group mz-set-group--fold" data-mz-pane="mode">
+            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="mode-main">Meziverse mode ${svg('chevdown')}</button></h3>
             <div class="mz-set-row">
                 <span class="mz-set-label"><b>Mode on/off</b><small>The master switch for the extras - ledger, cues, mindscape, thought bubbles. Off leaves the base extension alone. Best set before the chat starts.</small></span>
                 <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Meziverse mode" data-mz-action="mode"><i></i></button>
             </div>
         </div>
 
-        <div class="mz-set-group" data-mz-pane="mode">
-            <h3>Tracker entries</h3>
+        <div class="mz-set-group mz-set-group--fold" data-mz-pane="mode">
+            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="entries">Tracker entries ${svg('chevdown')}</button></h3>
             <div class="mz-set-row">
                 <span class="mz-set-label"><b>Standing</b><small>How the world sees you.</small></span>
                 <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Standing" data-mz-entry="standing"><i></i></button>
@@ -400,8 +408,8 @@ const FRAME_HTML = `
             </div>
         </div>
 
-        <div class="mz-set-group" data-mz-pane="mode">
-            <h3>Cues</h3>
+        <div class="mz-set-group mz-set-group--fold" data-mz-pane="mode">
+            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="cues">Cues ${svg('chevdown')}</button></h3>
             <div class="mz-set-row">
                 <span class="mz-set-label"><b>Popovers</b><small>How the truth behind a mark opens.</small></span>
                 <div class="mz-seg" role="group" aria-label="Popovers">
@@ -608,6 +616,7 @@ export function mount() {
     buildWeather();
     applyWeatherFx();
     applyIndoorFx();
+    applySpeechFx();
     applyEntries();
     setSettingsTab('general');
     applyBrush();
@@ -1017,6 +1026,15 @@ function applyWeatherFx() {
 function applyIndoorFx() {
     const on = indoorFxOn();
     for (const button of root.querySelectorAll('[data-mz-action="indoor-fx"]')) {
+        button.classList.toggle('is-on', on);
+        button.setAttribute('aria-checked', String(on));
+    }
+}
+
+/** Syncs the speech bubbles switch with the setting. */
+function applySpeechFx() {
+    const on = speechFxOn();
+    for (const button of root.querySelectorAll('[data-mz-action="speech-fx"]')) {
         button.classList.toggle('is-on', on);
         button.setAttribute('aria-checked', String(on));
     }
@@ -2027,10 +2045,20 @@ function wireActions() {
 
         const section = event.target.closest('[data-mz-section]');
         if (section) {
-            // A foldable group's header opens and closes its rows. The sheet
-            // is built once, so the state sticks for the session.
+            // A foldable group's header opens and closes its rows - and an
+            // opening header closes every other fold, so the sheet never
+            // grows long. The sheet is built once, so the state sticks for
+            // the session.
             const group = section.closest('.mz-set-group');
             const open = group ? !group.classList.contains('is-open') : true;
+
+            if (open) {
+                root.querySelectorAll('.mz-set-group--fold.is-open').forEach(other => {
+                    other.classList.remove('is-open');
+                    other.querySelector('.mz-set-head')?.setAttribute('aria-expanded', 'false');
+                });
+            }
+
             group?.classList.toggle('is-open', open);
             section.setAttribute('aria-expanded', String(open));
             return;
@@ -2159,6 +2187,12 @@ function wireActions() {
                 settings().indoorFx = !settings().indoorFx;
                 applyIndoorFx();
                 applyWeather(lastShown);
+                saveSettings();
+                break;
+            case 'speech-fx':
+                settings().speechFx = !settings().speechFx;
+                applySpeechFx();
+                transcript?.refresh();
                 saveSettings();
                 break;
             case 'bg-images':

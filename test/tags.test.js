@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseMessage, parseTags, scenesOf, splitCues, stripNonSceneTags, stripTags } from '../src/tags.js';
+import { parseMessage, parseTags, scenesOf, speechesOf, splitCues, stripNonSceneTags, stripTags } from '../src/tags.js';
 
 const scene = attrs => `<scene ${attrs} />`;
 
@@ -57,6 +57,16 @@ test('every complete scene is returned, in order, with no collapsing', () => {
     assert.deepEqual(scenesOf(tags).map(tag => tag.attrs.date), ['Day 1', 'Day 2']);
 });
 
+test('speechesOf returns complete speech tags, in order', () => {
+    const tags = parseTags('a <speech character="Mike">"one"</speech> b <speech character="Mara">"two"</speech> c');
+    assert.deepEqual(speechesOf(tags).map(tag => tag.attrs.character), ['Mike', 'Mara']);
+
+    const half = parseTags('a <speech character="Mike">"one');
+    assert.deepEqual(speechesOf(half), []);
+
+    assert.deepEqual(speechesOf('not an array'), []);
+});
+
 test('unknown HTML is not a tag', () => {
     assert.deepEqual(parseTags('<div class="x"><b>A</b></div>'), []);
     assert.equal(stripTags('<div class="x">A<br>B</div>'), '<div class="x">A<br>B</div>');
@@ -110,6 +120,20 @@ test('a box cuts the prose like a scene row', () => {
     const cues = splitCues('a<meanwhile event="one" />b<scene date="Day 1" />c');
 
     assert.deepEqual(cues.map(cue => cue.type), ['text', 'box', 'text', 'scene', 'text']);
+});
+
+test('a speech tag becomes an inline cue and keeps the prose whole', () => {
+    const cues = splitCues('She smiled. <speech character="Mike" tone="wry">"Of course."</speech> Then left.');
+
+    assert.deepEqual(cues.map(cue => cue.type), ['text', 'speech', 'text']);
+    assert.equal(cues[0].text, 'She smiled. ');
+    assert.equal(cues[1].tag.name, 'speech');
+    assert.equal(cues[1].tag.attrs.character, 'Mike');
+    assert.equal(cues[2].text, ' Then left.');
+
+    const half = splitCues('one <speech character="Mike">"unfinished');
+    assert.deepEqual(half.map(cue => cue.type), ['text']);
+    assert.equal(half[0].text, 'one "unfinished');
 });
 
 test('meanwhile boxes stack in reading order', () => {

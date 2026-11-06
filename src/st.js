@@ -131,6 +131,17 @@ export function castImages() {
     return cast && typeof cast === 'object' && !Array.isArray(cast) ? cast : {};
 }
 
+/**
+ * A stored portrait path as the page can show it: already a url or root path
+ * passes through, a bare `user/...` path gains its leading slash.
+ */
+export function imageSource(path) {
+    const value = typeof path === 'string' ? path.trim() : '';
+    if (!value) return '';
+    if (/^(?:[a-z][a-z0-9+.-]*:|\/)/i.test(value)) return value;
+    return `/${value}`;
+}
+
 /** Writes one portrait path into the open chat's metadata and persists it. */
 export function setCastImage(name, path) {
     const key = castKey(name);

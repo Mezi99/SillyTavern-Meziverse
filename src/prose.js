@@ -9,11 +9,11 @@
  * `meanwhile`.
  */
 
-import { formatMessage, say } from './st.js';
+import { castImages, castKey, formatMessage, imageSource, say } from './st.js';
 import { splitCues, stripTags } from './tags.js';
-import { describeScene, isUsableScene } from './scene.js';
+import { describeScene, describeSpeech, isUsableScene } from './scene.js';
 import { iconHtml } from './icons.js';
-import { modeOn } from './settings.js';
+import { avatarsOn, modeOn, speechFxOn } from './settings.js';
 
 const OPENING_BREAKS = /^(?:\s|<br\s*\/?>)+/i;
 const CLOSING_BREAKS = /(?:\s|<br\s*\/?>)+$/i;
@@ -81,8 +81,9 @@ function sceneRow(tag, { compact, persona }) {
 
 /* ---------- inline marks ---------- */
 
-// A private-use slot stands in for a mark inside the text SillyTavern
-// formats; the mark's own markup is swapped in afterwards.
+// A private-use slot stands in for a mark or a speech bubble inside the text
+// SillyTavern formats; the real markup is swapped in afterwards. A slot holds
+// either a mark tag (rendered at swap time) or a whole bubble's HTML.
 const SLOT_OPEN = String.fromCharCode(0xe100);
 const SLOT_CLOSE = String.fromCharCode(0xe101);
 const SLOT_RE = new RegExp(`${SLOT_OPEN}(\\d+)${SLOT_CLOSE}`, 'g');
@@ -148,6 +149,43 @@ function markHtml(tag) {
     return '';
 }
 
+/* ---------- speech bubbles ---------- */
+
+/** One fragment as SillyTavern would draw it, without the paragraph shell. */
+function inlineFormat(message, index, source) {
+    const text = typeof source === 'string' ? source : '';
+    if (!text.trim()) return '';
+
+    const html = tidy(formatMessage({ ...message, mes: text }, index));
+    return (html.replace(/^<p[^>]*>/i, '').replace(/<\/p>$/i, '').trim())
+        || escapeHtml(text).replace(/\r\n|\r|\n/g, '<br>');
+}
+
+/**
+ * One spoken line as the pane draws it: the speaker's label, the words in a
+ * quiet bubble, and the tone said in, as a tiny italic after it. When the
+ * cast holds a picture for the name and avatars are on, the label carries its
+ * thumbnail - the interlace proof; the real display modes are designed later.
+ * A name with no picture falls back to the label alone.
+ */
+function bubbleHtml(tag, { message, index }) {
+    const speech = describeSpeech(tag);
+    if (!speech) return '';
+
+    const who = say(speech.character || '').trim();
+    const tone = say(speech.tone || '').trim();
+    const face = avatarsOn() && who ? imageSource(castImages()[castKey(who)] || '') : '';
+
+    return '<span class="mz-speech">'
+        + '<span class="mz-speech-who">'
+        + (face ? `<img class="mz-speech-face" src="${escapeHtml(face)}" alt="">` : '')
+        + `<b class="mz-speech-name">${escapeHtml(who || 'Someone')}</b>`
+        + '</span>'
+        + `<span class="mz-speech-bub">${inlineFormat(message, index, speech.words)}</span>`
+        + (tone ? `<em class="mz-speech-tone">${escapeHtml(tone)}</em>` : '')
+        + '</span>';
+}
+
 /* ---------- the meanwhile box ---------- */
 
 /**
@@ -195,27 +233,30 @@ export function toHtml(message, index, { compact = false, persona = '' } = {}) {
 
     const parts = [];
     let run = '';
-    let marks = [];
+    let slots = [];
     let at = 0;
 
-    // One formatMessage call per run of prose, so a mark in the middle of a
-    // paragraph does not break the paragraph: its slot rides through the
-    // formatting and is swapped for the mark afterwards.
+    // One formatMessage call per run of prose, so a mark or a bubble in the
+    // middle of a paragraph does not break the paragraph: its slot rides
+    // through the formatting and is swapped for the real markup afterwards.
     const flushRun = () => {
         if (!run.trim()) {
             run = '';
-            marks = [];
+            slots = [];
             return;
         }
 
         const formatted = tidy(formatMessage({ ...message, mes: run }, index));
         const html = formatted || escapeHtml(run).replace(/\r\n|\r|\n/g, '<br>');
         if (html.trim()) {
-            parts.push(html.replace(SLOT_RE, (all, n) => markHtml(marks[Number(n)])));
+            parts.push(html.replace(SLOT_RE, (all, n) => {
+                const entry = slots[Number(n)];
+                return typeof entry === 'string' ? entry : markHtml(entry);
+            }));
         }
 
         run = '';
-        marks = [];
+        slots = [];
     };
 
     for (const cue of cues) {
@@ -239,8 +280,28 @@ export function toHtml(message, index, { compact = false, persona = '' } = {}) {
 
         if (cue.type === 'mark') {
             if (!modeOn()) continue;
-            run += slot(marks.length);
-            marks.push(cue.tag);
+            run += slot(slots.length);
+            slots.push(cue.tag);
+            continue;
+        }
+
+        if (cue.type === 'speech') {
+            // Bubbles are the pane's own and ride their switch; the log, and
+            // any pane with the switch off, keeps the words exactly as the
+            // format asks the model to write them - quote marks and all.
+            if (compact || !speechFxOn()) {
+                run += cue.tag.body ?? '';
+                continue;
+            }
+
+            const bubble = bubbleHtml(cue.tag, { message, index });
+            if (!bubble) {
+                run += cue.tag.body ?? '';
+                continue;
+            }
+
+            run += slot(slots.length);
+            slots.push(bubble);
             continue;
         }
 

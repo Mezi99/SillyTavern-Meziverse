@@ -6,7 +6,7 @@
  * only the caller knows SillyTavern's persona name.
  */
 
-import { parseMessage, scenesOf } from './tags.js';
+import { parseMessage, scenesOf, speechesOf } from './tags.js';
 
 /* A trailing clock: 9:40 PM, 20:17, 8 PM, or a tolerated 14.20. */
 const TIME = /(?:\b\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AaPp]\.?\s*[Mm]\.?)?|\b\d{1,2}\s*[AaPp]\.?\s*[Mm]\.?|\b\d{1,2}[.,]\d{2}\b)/g;
@@ -14,6 +14,7 @@ const TIME = /(?:\b\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AaPp]\.?\s*[Mm]\.?)?|\b\d{1,2}
 const TRAILING_SEPARATORS = /[\s,;:|\-\u2013\u2014\u00b7]+$/;
 
 const describeCache = new WeakMap();
+const speechCache = new WeakMap();
 
 function text(value) {
     return typeof value === 'string' ? value : '';
@@ -480,6 +481,73 @@ export function describeScenes(message, { persona = '' } = {}) {
 
     describeCache.set(message, { mes, persona: person, scenes });
     return scenes;
+}
+
+/* ---------- speech ---------- */
+
+/* One matched outer quote pair, whatever the keyboard: straight, curly,
+   single or double. */
+const QUOTE_PAIRS = [['"', '"'], ["'", "'"], ['\u201c', '\u201d'], ['\u2018', '\u2019']];
+
+/** Lifts one matched outer quote pair off a spoken line; inner quotes stay. */
+function unquote(line) {
+    const clean = text(line).trim();
+
+    for (const [open, close] of QUOTE_PAIRS) {
+        if (clean.length >= 2 && clean.startsWith(open) && clean.endsWith(close)) {
+            return clean.slice(open.length, clean.length - close.length).trim();
+        }
+    }
+
+    return clean;
+}
+
+/**
+ * The display fields of one speech tag: who speaks, how, and what.
+ *
+ * `body` is the line as authored - quote marks included, because plain prose
+ * (the bubbles off, or the log) must show it exactly as the format asks the
+ * model to write it. `words` lifts one matched outer quote pair: the bubble
+ * itself is the quoting. `mood` is accepted beside `tone` - the field may
+ * grow from delivery to expression one day.
+ *
+ * @param {object} tag
+ * @returns {{character:string, tone:string, body:string, words:string}|null}
+ */
+export function describeSpeech(tag) {
+    if (!tag || tag.name !== 'speech' || !tag.closed) return null;
+
+    const attrs = tag.attrs || {};
+    const body = text(tag.body).trim();
+
+    return {
+        character: pickAttr(attrs, 'character', 'speaker', 'name').trim(),
+        tone: pickAttr(attrs, 'tone', 'mood').trim(),
+        body,
+        words: unquote(body),
+    };
+}
+
+/**
+ * Every complete speech tag of one message, in order, with its display
+ * fields. Cached on identity + `mes`, like the scenes.
+ *
+ * @param {object} message
+ * @returns {Array<{character:string, tone:string, body:string, words:string}>}
+ */
+export function describeSpeeches(message) {
+    if (!message || typeof message !== 'object') return [];
+
+    const { mes, tags } = parseMessage(message);
+    const hit = speechCache.get(message);
+    if (hit && hit.mes === mes) return hit.speeches;
+
+    const speeches = speechesOf(tags)
+        .map(describeSpeech)
+        .filter(Boolean);
+
+    speechCache.set(message, { mes, speeches });
+    return speeches;
 }
 
 /**
