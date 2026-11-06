@@ -423,6 +423,182 @@
     display: none;
 }
 
+/* ---------- indoor effects ----------
+   Weather's quiet twin: what the room is alive with. No tag names it - the
+   place is born with its mood (seeded, stable per room), and the clock only
+   colors the window's light. The same stage: behind the pane, fading in the
+   mindscape, frozen still under reduced motion. */
+.mz-weather {
+    --mz-wx-side-x: 14%;
+    --mz-wx-side-dir: 1;
+    --mz-wx-light-rgb: 255, 250, 235;
+    --mz-wx-in-alpha: .8;
+}
+
+.mz-frame[data-mz-wx-side="right"] .mz-weather {
+    --mz-wx-side-x: 86%;
+    --mz-wx-side-dir: -1;
+}
+
+.mz-frame[data-mz-wx-light="morning"] .mz-weather { --mz-wx-light-rgb: 214, 231, 255; }
+.mz-frame[data-mz-wx-light="evening"] .mz-weather { --mz-wx-light-rgb: 255, 202, 148; }
+.mz-frame[data-mz-wx-light="night"] .mz-weather { --mz-wx-light-rgb: 168, 194, 242; }
+
+.mz-frame[data-mz-wx="candle"] .mz-wx-candle,
+.mz-frame[data-mz-wx="fireplace"] .mz-wx-fireplace,
+.mz-frame[data-mz-wx="window"] .mz-wx-window,
+.mz-frame[data-mz-wx="dust"] .mz-wx-dust,
+.mz-frame[data-mz-wx="lamp"] .mz-wx-lamp {
+    opacity: var(--mz-wx-in-alpha);
+}
+
+/* ---------- candlelight ---------- */
+/* a flame's breath: two warm glows on their own irregular beats */
+.mz-wx-candle i {
+    position: absolute;
+    top: 18%;
+    left: var(--mz-wx-side-x);
+    width: 46vmax;
+    height: 46vmax;
+    border-radius: 50%;
+    background: radial-gradient(circle at center, rgba(255, 176, 84, .32), rgba(255, 150, 60, .12) 42%, transparent 70%);
+    animation: mz-flame-a 7s ease-in-out infinite;
+}
+
+.mz-wx-candle i:nth-child(1) {
+    width: 26vmax;
+    height: 26vmax;
+    background: radial-gradient(circle at center, rgba(255, 196, 110, .38), rgba(255, 164, 70, .12) 45%, transparent 70%);
+}
+
+.mz-wx-candle i:nth-child(2) { animation: mz-flame-b 11s ease-in-out infinite; }
+
+@keyframes mz-flame-a {
+    0%, 100% { opacity: .85; transform: translate(-50%, -30%) scale(1); }
+    9% { opacity: 1; transform: translate(-50%, -30%) scale(1.05); }
+    17% { opacity: .78; }
+    26% { opacity: .95; transform: translate(-50%, -30%) scale(.98); }
+    38% { opacity: .82; }
+    52% { opacity: 1; transform: translate(-50%, -30%) scale(1.07); }
+    63% { opacity: .76; }
+    74% { opacity: .92; }
+    85% { opacity: .84; transform: translate(-50%, -30%) scale(.99); }
+}
+
+@keyframes mz-flame-b {
+    0%, 100% { opacity: .7; transform: translate(-50%, -30%) scale(1); }
+    14% { opacity: .95; }
+    31% { opacity: .65; transform: translate(-50%, -30%) scale(1.04); }
+    47% { opacity: .88; }
+    68% { opacity: .72; transform: translate(-50%, -30%) scale(.97); }
+    83% { opacity: .92; }
+}
+
+/* ---------- fireplace ---------- */
+/* a deeper pulse from the corner, embers rising off it */
+.mz-wx-fireplace i.mz-wx-fglow {
+    top: auto;
+    bottom: -14%;
+    left: var(--mz-wx-side-x);
+    width: 62vmax;
+    height: 46vmax;
+    border-radius: 50%;
+    background: radial-gradient(circle at center, rgba(255, 128, 48, .32), rgba(255, 96, 32, .1) 45%, transparent 72%);
+    animation: mz-hearth-pulse 6s ease-in-out infinite;
+}
+
+.mz-wx-fireplace i.mz-wx-fglow:nth-child(2) {
+    width: 34vmax;
+    height: 26vmax;
+    background: radial-gradient(circle at center, rgba(255, 168, 84, .36), rgba(255, 120, 44, .1) 48%, transparent 72%);
+    animation-duration: 9s;
+    animation-delay: -3s;
+}
+
+.mz-wx-fireplace i.mz-wx-ember {
+    left: calc(var(--mz-wx-side-x) + var(--x, 0px));
+    top: var(--y, 62%);
+    width: var(--size, 3px);
+    height: var(--size, 3px);
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, rgba(255, 200, 120, .95), rgba(255, 120, 40, .5) 60%, transparent 100%);
+    animation: mz-ember-rise var(--dur, 7s) ease-out infinite;
+    animation-delay: var(--delay, 0s);
+}
+
+@keyframes mz-hearth-pulse {
+    0%, 100% { opacity: .85; transform: translateX(-50%) scale(1); }
+    32% { opacity: 1; transform: translateX(-50%) scale(1.06); }
+    58% { opacity: .8; }
+    79% { opacity: .95; transform: translateX(-50%) scale(1.02); }
+}
+
+@keyframes mz-ember-rise {
+    from { transform: translate(0, 0) scale(.6); opacity: 0; }
+    12% { opacity: .9; }
+    60% { opacity: .65; }
+    to { transform: translate(calc(18px * var(--mz-wx-side-dir)), -46vh) scale(1); opacity: 0; }
+}
+
+/* ---------- window light ---------- */
+/* one shaft leaning in - the daycycle's only indoor echo - and dust turning
+   slowly inside it */
+.mz-wx-window i.mz-wx-shaft {
+    top: -18%;
+    left: var(--mz-wx-side-x);
+    width: 30vmax;
+    height: 150vh;
+    transform-origin: top center;
+    transform: translateX(-50%) rotate(calc(var(--mz-wx-side-dir) * 18deg));
+    background: linear-gradient(to bottom, rgba(var(--mz-wx-light-rgb), .22), rgba(var(--mz-wx-light-rgb), .06) 55%, transparent 80%);
+    mask-image: linear-gradient(90deg, transparent, #000 30%, #000 70%, transparent);
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 30%, #000 70%, transparent);
+    animation: mz-beam-breathe 14s ease-in-out infinite alternate;
+}
+
+.mz-wx-window i.mz-wx-mote,
+.mz-wx-dust i {
+    position: absolute;
+    left: var(--x, 20%);
+    top: var(--y, 60%);
+    width: var(--size, 3px);
+    height: var(--size, 3px);
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, rgba(255, 248, 220, .8), rgba(255, 232, 180, .3) 60%, transparent 100%);
+    animation: mz-mote-float var(--dur, 14s) ease-in-out infinite alternate;
+    animation-delay: var(--delay, 0s);
+}
+
+/* a night window is a quiet window */
+.mz-frame[data-mz-wx-light="night"] .mz-wx-window {
+    opacity: calc(var(--mz-wx-in-alpha, .8) * .6);
+}
+
+/* ---------- lamp glow ---------- */
+/* a steady pool of warm light, breathing slowly */
+.mz-wx-lamp i {
+    position: absolute;
+    top: 12%;
+    left: var(--mz-wx-side-x);
+    width: 38vmax;
+    height: 38vmax;
+    border-radius: 50%;
+    background: radial-gradient(circle at center, rgba(255, 214, 150, .3), rgba(255, 196, 120, .1) 45%, transparent 72%);
+    animation: mz-lamp-breathe 9s ease-in-out infinite alternate;
+}
+
+.mz-wx-lamp i:nth-child(2) {
+    width: 64vmax;
+    height: 52vmax;
+    background: radial-gradient(circle at center, rgba(255, 208, 140, .16), rgba(255, 190, 116, .06) 50%, transparent 74%);
+    animation-duration: 13s;
+}
+
+@keyframes mz-lamp-breathe {
+    from { opacity: .82; transform: translate(-50%, -40%) scale(1); }
+    to { opacity: 1; transform: translate(-50%, -40%) scale(1.05); }
+}
+
 /* ---------- still weather ----------
    Reduced motion - the setting or the system - freezes every particle where
    its desynced clock stands: a still photograph of the weather. Lightning

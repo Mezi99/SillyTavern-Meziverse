@@ -7,7 +7,7 @@
  */
 
 import { chatMessages, currentChatId, errorText, imageGenerationStatus, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer, stDefaultBackground } from './st.js';
-import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, bgImagesOn, weatherFxOn, DEV_EXTRAS } from './settings.js';
+import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, bgImagesOn, weatherFxOn, indoorFxOn, DEV_EXTRAS } from './settings.js';
 import {
     forceBackground,
     getLastWatcherRequest,
@@ -22,7 +22,7 @@ import { createTranscript } from './transcript.js';
 import { mountCast, refreshCastSizing, renderCast, renderThoughts, renderTells, clearCascade, redrawCast } from './cast.js';
 import { resolveLedger } from './ledger.js';
 import { parseMessage } from './tags.js';
-import { weatherPlan } from './scene.js';
+import { weatherPlan, indoorPlan } from './scene.js';
 import { placeHtml } from './prose.js';
 import { mountCues, closeMemory } from './cues.js';
 import { closeFloats } from './floats.js';
@@ -350,6 +350,10 @@ const FRAME_HTML = `
                 <span class="mz-set-label"><b>Weather effects</b><small>Rain, snow, lightning and light on the background stage. Outdoors scenes only - the scene tag's weatherTag and locationTag decide.</small></span>
                 <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Weather effects" data-mz-action="weather-fx"><i></i></button>
             </div>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Indoor effects</b><small>The room's quiet mood - candlelight, hearth, window light, dust, lamp. Indoors scenes only; the place itself picks the mood.</small></span>
+                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Indoor effects" data-mz-action="indoor-fx"><i></i></button>
+            </div>
         </div>
 
         <div class="mz-set-group" data-mz-pane="mode">
@@ -603,6 +607,7 @@ export function mount() {
     applyBgControls();
     buildWeather();
     applyWeatherFx();
+    applyIndoorFx();
     applyEntries();
     setSettingsTab('general');
     applyBrush();
@@ -944,6 +949,59 @@ function buildWeather() {
         particle.style.setProperty('--delay', `-${wxRand(0, 7).toFixed(1)}s`);
     });
     layer.appendChild(wind);
+
+    // candlelight: two warm glows breathing on their own beats
+    effect('mz-wx-candle', 2, () => {});
+
+    // fireplace: the hearth's pulse and a handful of embers rising
+    const hearth = document.createElement('div');
+    hearth.className = 'mz-wx mz-wx-fireplace';
+    for (let i = 0; i < 2; i += 1) {
+        const glow = document.createElement('i');
+        glow.className = 'mz-wx-fglow';
+        hearth.appendChild(glow);
+    }
+    for (let i = 0; i < 6; i += 1) {
+        const ember = document.createElement('i');
+        ember.className = 'mz-wx-ember';
+        ember.style.setProperty('--x', `${wxRand(-30, 30).toFixed(0)}px`);
+        ember.style.setProperty('--y', `${wxRand(52, 78).toFixed(1)}%`);
+        ember.style.setProperty('--size', `${wxRand(2, 4).toFixed(1)}px`);
+        ember.style.setProperty('--dur', `${wxRand(5, 9).toFixed(1)}s`);
+        ember.style.setProperty('--delay', `-${wxRand(0, 9).toFixed(1)}s`);
+        hearth.appendChild(ember);
+    }
+    layer.appendChild(hearth);
+
+    // window light: one shaft and the dust turning slowly inside it
+    const windowLight = document.createElement('div');
+    windowLight.className = 'mz-wx mz-wx-window';
+    const shaft = document.createElement('i');
+    shaft.className = 'mz-wx-shaft';
+    windowLight.appendChild(shaft);
+    for (let i = 0; i < 10; i += 1) {
+        const mote = document.createElement('i');
+        mote.className = 'mz-wx-mote';
+        mote.style.setProperty('--x', `${wxRand(30, 75).toFixed(1)}%`);
+        mote.style.setProperty('--y', `${wxRand(25, 85).toFixed(1)}%`);
+        mote.style.setProperty('--size', `${wxRand(2, 4.5).toFixed(1)}px`);
+        mote.style.setProperty('--dur', `${wxRand(11, 19).toFixed(1)}s`);
+        mote.style.setProperty('--delay', `-${wxRand(0, 14).toFixed(1)}s`);
+        windowLight.appendChild(mote);
+    }
+    layer.appendChild(windowLight);
+
+    // still dust: plain motes in the air
+    effect('mz-wx-dust', 14, particle => {
+        particle.style.setProperty('--x', `${wxRand(6, 94).toFixed(1)}%`);
+        particle.style.setProperty('--y', `${wxRand(15, 90).toFixed(1)}%`);
+        particle.style.setProperty('--size', `${wxRand(2, 4).toFixed(1)}px`);
+        particle.style.setProperty('--dur', `${wxRand(12, 22).toFixed(1)}s`);
+        particle.style.setProperty('--delay', `-${wxRand(0, 18).toFixed(1)}s`);
+    });
+
+    // lamp glow: a steady pool of warm light
+    effect('mz-wx-lamp', 2, () => {});
 }
 
 /** Syncs the weather switch with the setting. */
@@ -955,21 +1013,44 @@ function applyWeatherFx() {
     }
 }
 
+/** Syncs the indoor effects switch with the setting. */
+function applyIndoorFx() {
+    const on = indoorFxOn();
+    for (const button of root.querySelectorAll('[data-mz-action="indoor-fx"]')) {
+        button.classList.toggle('is-on', on);
+        button.setAttribute('aria-checked', String(on));
+    }
+}
+
 /**
- * Puts the governing scene's weather on the background stage - or takes it
- * off. The plan decides the state and its strength; the layer only fades
- * between what is already built.
+ * Puts the governing scene's weather - or the room's quiet mood - on the
+ * background stage, or takes it off. Outdoors the weatherTag decides;
+ * indoors the place itself is born with its effect. The plan decides the
+ * state and its strength; the layer only fades between what is already built.
  */
 function applyWeather(record) {
-    const plan = weatherFxOn() ? weatherPlan(record?.scene || null) : null;
+    const scene = record?.scene || null;
+    const plan = weatherFxOn() ? weatherPlan(scene) : null;
+    const room = !plan && indoorFxOn() ? indoorPlan(scene) : null;
     if (!frame) return;
 
     if (plan) {
         frame.dataset.mzWx = plan.state;
         frame.dataset.mzWxInt = plan.intensity;
+    } else if (room) {
+        frame.dataset.mzWx = room.state;
+        frame.dataset.mzWxInt = 'med';
     } else {
         delete frame.dataset.mzWx;
         delete frame.dataset.mzWxInt;
+    }
+
+    if (room) {
+        frame.dataset.mzWxSide = room.side;
+        frame.dataset.mzWxLight = room.light;
+    } else {
+        delete frame.dataset.mzWxSide;
+        delete frame.dataset.mzWxLight;
     }
 
     applySun(plan);
@@ -2071,6 +2152,12 @@ function wireActions() {
             case 'weather-fx':
                 settings().weatherFx = !settings().weatherFx;
                 applyWeatherFx();
+                applyWeather(lastShown);
+                saveSettings();
+                break;
+            case 'indoor-fx':
+                settings().indoorFx = !settings().indoorFx;
+                applyIndoorFx();
                 applyWeather(lastShown);
                 saveSettings();
                 break;

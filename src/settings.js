@@ -46,6 +46,9 @@ const DEFAULTS = {
     // names the state, locationTag gates it to outdoors, and the free-text
     // weather's tone words tune its strength. Off leaves the scene still.
     weatherFx: true,
+    // Indoor effects: the room's quiet mood, seeded per place. Independent
+    // of the weather switch and of image generation.
+    indoorFx: true,
     // The watcher prompts the user tunes: the scene-tagged hand and the
     // plain-prose hand. The answer format is appended by code.
     bgPromptOn: DEFAULT_BG_PROMPT_ON,
@@ -128,6 +131,11 @@ export function bgImagesOn() {
 /** Whether the weather effects play on the background stage. */
 export function weatherFxOn() {
     return settings().weatherFx !== false;
+}
+
+/** Whether the indoor effects play - the room's quiet mood. */
+export function indoorFxOn() {
+    return settings().indoorFx !== false;
 }
 
 /**
