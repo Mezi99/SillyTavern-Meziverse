@@ -1,5 +1,24 @@
 # Meziverse — version log
 
+## 2.7.0 — 2026-11-06
+
+The spoken word finds its shape: every line said aloud wears a bubble, and the settings learn to make room.
+
+### Speech bubbles
+- Every `<speech character tone>` line a reply carries shows in the reading pane as a quiet bubble: **the speaker's name above it** — with the cast's portrait riding the label when avatars hold one for that name — the words inside, and **the tone said in**, a tiny italic after it, like a dialogue tag the model never had to write.
+- **The bubble is the quoting**: the quote marks the format asks the model to write are lifted inside it, and come back untouched whenever the words fall to plain prose — the log drawer, or the switch off.
+- The name is the contract: the same one word in `present` and `speech character` maps the speaker to their portrait. Narration runs around the bubble; the paragraph never breaks.
+- A **Speech bubbles** switch in Features (on by default). Untagged quotes keep their speech color, as always.
+- The display form is the quick one, on purpose — the presentation modes (what a bubble does when the speaker wears an avatar) are designed next.
+
+### The settings make room
+- The **Images tab is Features** now — four folds: Avatars, Backgrounds, Weather, Speech. The images were never the point.
+- **Every header is a fold, closed by default**, and opening one closes the rest: the sheet stays short however much lands in it.
+
+### Notes
+- The scene and dialogue instructions still live in the author's note — the extension will carry them itself, fixed and hidden, once testing and tuning are done.
+- The synthetic suite stands at 168 tests.
+
 ## 2.6.1 — 2026-11-06
 
 The stage is never black, the pictures have a master switch, and the room turns out to be alive.
