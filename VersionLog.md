@@ -1,5 +1,24 @@
 # Meziverse — version log
 
+## 2.6.0 — 2026-11-06
+
+The weather arrives: rain on the glass, sun across the floor, and the scene tag learns the clock.
+
+### The scene tag grows
+- **`weatherTag` names the weather** from an exact list — Clear / Sunny / Rain / Storm / Snow / Fog / Overcast / Wind — and **`locationTag`** (`Indoor` / `Outdoor`) gates it: effects play outdoors only, strictly, so it never rains inside the house. Replies that spell things their own way fold quietly (drizzle, thunder, blizzard, mist, cloudy…), and anything unknown shows nothing.
+- **`time="(HH:MM)"` becomes its own field.** The clock is too load-bearing to live in free text: the light's place in the sky reads it, and older tags still work — a clock buried in `date`, or day words like "Early Evening", still speak.
+- The location chain keeps its four named levels — the world it names (a Vegas suburb is not a Pyongyang suburb is not a village in a fantasy realm) sets the art direction of every generated picture — and now **reads like a path** in the UI: `Japan › Suburban neighborhood › Jammie's house › Kitchen window`, the model's own `|` kept in the tooltip.
+
+### Weather on the background stage
+- One layer where the tint stood — over the background, behind the cast, rails and narration pane. **Rain** falls as a leaning curtain of streaks; **storm** brings the downpour and cold lightning that double-strikes on co-prime cycles so the beat never repeats; **snow** drifts with sway; **fog** slides in soft banks; **overcast** moves as cloud you notice; **wind** carries streaks, leaves and dust; **blizzard** is snow on the wind.
+- **The sun sits where the story's clock says** — the same clock that lit the painted backdrop, so the light and the picture agree. Its beams fan across the whole stage and sweep slowly; night hours dim the set to a faint cool whisper.
+- The free-text weather's tone words — heavy, light, drizzle, thick — tune how hard each effect reads, in three tiers.
+- A **Weather** switch in Image Settings (on by default). Reduced motion freezes every particle where its desynced clock stands — a still photograph of the weather — and lightning never fires. The mindscape lets it fade with the pane.
+
+### Notes
+- The background shows **clean**: the dark wash over images is commented out, waiting — it may return as the daycycle (day/night) layer.
+- The synthetic suite stands at 157 tests.
+
 ## 2.5.3 — 2026-11-05
 
 The scene stays lit, and the glass keeps its hands to itself.

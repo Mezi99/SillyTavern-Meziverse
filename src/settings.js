@@ -37,6 +37,10 @@ const DEFAULTS = {
     bgStyle: 'anime style, visual novel background art, detailed environment, cinematic lighting',
     bgNegative: 'people, characters, crowd, portrait, text, watermark, logo, signature, blurry, low quality',
     bgSize: 'landscape',
+    // Weather effects on the background stage: the scene tag's weatherTag
+    // names the state, locationTag gates it to outdoors, and the free-text
+    // weather's tone words tune its strength. Off leaves the scene still.
+    weatherFx: true,
     // The watcher prompts the user tunes: the scene-tagged hand and the
     // plain-prose hand. The answer format is appended by code.
     bgPromptOn: DEFAULT_BG_PROMPT_ON,
@@ -109,6 +113,11 @@ export function avatarsOn() {
 /** Whether automatic background generation is on. The brush needs no gate. */
 export function bgAutoOn() {
     return settings().bgAuto === true;
+}
+
+/** Whether the weather effects play on the background stage. */
+export function weatherFxOn() {
+    return settings().weatherFx !== false;
 }
 
 /**

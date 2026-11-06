@@ -7,7 +7,7 @@
  */
 
 import { chatMessages, currentChatId, errorText, imageGenerationStatus, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer } from './st.js';
-import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, DEV_EXTRAS } from './settings.js';
+import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, weatherFxOn, DEV_EXTRAS } from './settings.js';
 import {
     forceBackground,
     getLastWatcherRequest,
@@ -22,12 +22,14 @@ import { createTranscript } from './transcript.js';
 import { mountCast, refreshCastSizing, renderCast, renderThoughts, renderTells, clearCascade, redrawCast } from './cast.js';
 import { resolveLedger } from './ledger.js';
 import { parseMessage } from './tags.js';
+import { weatherPlan } from './scene.js';
+import { placeHtml } from './prose.js';
 import { mountCues, closeMemory } from './cues.js';
 import { closeFloats } from './floats.js';
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr } from './notify.js';
 
-const VERSION = '2.5.3';
+const VERSION = '2.6.0';
 const PANE_DEFAULT = 300;
 const LOG_W_DEFAULT = 720;
 const LOG_H_SHARE = 0.7;
@@ -61,6 +63,7 @@ const FRAME_HTML = `
 <div class="mz-frame" role="dialog" aria-modal="true" aria-label="Meziverse">
     <div class="mz-bg" aria-hidden="true"></div>
     <div class="mz-bgsoft" aria-hidden="true"></div>
+    <div class="mz-weather" aria-hidden="true"></div>
     <div class="mz-scrim" aria-hidden="true"></div>
 
     <header class="mz-header">
@@ -337,6 +340,14 @@ const FRAME_HTML = `
             </div>
         </div>
 
+        <div class="mz-set-group mz-set-group--fold" data-mz-pane="image">
+            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="weather">Weather ${svg('chevdown')}</button></h3>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Weather effects</b><small>Rain, snow, lightning and light on the background stage. Outdoors scenes only - the scene tag's weatherTag and locationTag decide.</small></span>
+                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Weather effects" data-mz-action="weather-fx"><i></i></button>
+            </div>
+        </div>
+
         <div class="mz-set-group" data-mz-pane="mode">
             <h3>Meziverse mode</h3>
             <div class="mz-set-row">
@@ -488,6 +499,7 @@ export function mount() {
         time: root.querySelector('[data-mz="time"]'),
         place: root.querySelector('[data-mz="place"]'),
         weather: root.querySelector('[data-mz="weather"]'),
+        weatherLayer: root.querySelector('.mz-weather'),
         cast: root.querySelector('.mz-cast'),
         prose: root.querySelector('[data-mz="prose"]'),
         speaker: root.querySelector('[data-mz="speaker"]'),
@@ -584,6 +596,8 @@ export function mount() {
     applyAvatars();
     applyBgAuto();
     applyBgControls();
+    buildWeather();
+    applyWeatherFx();
     applyEntries();
     setSettingsTab('general');
     applyBrush();
@@ -768,6 +782,192 @@ function applyBgControls() {
         button.classList.toggle('is-on', isOn);
         button.setAttribute('aria-pressed', String(isOn));
     });
+}
+
+/* ---------- weather on the background stage ---------- */
+
+const wxRand = (min, max) => min + Math.random() * (max - min);
+
+/**
+ * Builds the weather layer's effects once. They are scenery, not a script:
+ * every particle is spawned here with its own desynced clock and never
+ * touched again - states only fade the effects in and out.
+ */
+function buildWeather() {
+    const layer = els.weatherLayer;
+    if (!layer || layer.childElementCount) return;
+
+    const effect = (className, count, dress) => {
+        const wrap = document.createElement('div');
+        wrap.className = `mz-wx ${className}`;
+        for (let i = 0; i < count; i += 1) {
+            const particle = document.createElement('i');
+            dress(particle);
+            wrap.appendChild(particle);
+        }
+        layer.appendChild(wrap);
+    };
+
+    // rain: a leaning curtain of streaks at mixed depths
+    effect('mz-wx-rain', 34, particle => {
+        particle.style.left = `${wxRand(-4, 104).toFixed(1)}%`;
+        particle.style.setProperty('--w', `${wxRand(1.2, 2.6).toFixed(1)}px`);
+        particle.style.setProperty('--len', `${wxRand(34, 72).toFixed(0)}px`);
+        particle.style.setProperty('--dur', `${wxRand(1, 2.1).toFixed(2)}s`);
+        particle.style.setProperty('--delay', `-${wxRand(0, 2.4).toFixed(2)}s`);
+        particle.style.opacity = wxRand(0.3, 0.7).toFixed(2);
+    });
+
+    // snow: flakes in three sizes, each on its own sway
+    effect('mz-wx-snow', 24, particle => {
+        particle.style.left = `${wxRand(-2, 102).toFixed(1)}%`;
+        particle.style.setProperty('--size', `${wxRand(3, 7).toFixed(1)}px`);
+        particle.style.setProperty('--dur', `${wxRand(7, 15).toFixed(1)}s`);
+        particle.style.setProperty('--delay', `-${wxRand(0, 12).toFixed(1)}s`);
+        particle.style.opacity = wxRand(0.35, 0.85).toFixed(2);
+    });
+
+    // storm: two lightning sheets, their beat shaped in css
+    effect('mz-wx-storm', 2, () => {});
+
+    // fog: three soft banks
+    effect('mz-wx-fog', 3, () => {});
+
+    // sunny: beams out of the sun's place, a warm wash, dust and soft orbs
+    const sun = document.createElement('div');
+    sun.className = 'mz-wx mz-wx-sun';
+    for (const name of ['wash', 'glow']) {
+        const part = document.createElement('div');
+        part.className = `mz-wx-sun-${name}`;
+        sun.appendChild(part);
+    }
+
+    const beams = document.createElement('div');
+    beams.className = 'mz-wx-sun-beams';
+    for (const [tilt, width, dur, delay] of [[7, 15, 9, 0], [18, 22, 13, -4], [29, 13, 11, -7]]) {
+        const beam = document.createElement('i');
+        beam.style.setProperty('--tilt', `${tilt}deg`);
+        beam.style.setProperty('--w', `${width}vw`);
+        beam.style.setProperty('--dur', `${dur}s`);
+        beam.style.setProperty('--delay', `${delay}s`);
+        beams.appendChild(beam);
+    }
+    sun.appendChild(beams);
+
+    const motes = document.createElement('div');
+    motes.className = 'mz-wx-sun-motes';
+    for (let i = 0; i < 10; i += 1) {
+        const mote = document.createElement('i');
+        mote.style.setProperty('--x', `${wxRand(8, 92).toFixed(1)}%`);
+        mote.style.setProperty('--y', `${wxRand(25, 85).toFixed(1)}%`);
+        mote.style.setProperty('--size', `${wxRand(2, 4.5).toFixed(1)}px`);
+        mote.style.setProperty('--dur', `${wxRand(9, 17).toFixed(1)}s`);
+        mote.style.setProperty('--delay', `-${wxRand(0, 12).toFixed(1)}s`);
+        motes.appendChild(mote);
+    }
+    sun.appendChild(motes);
+
+    const orbs = document.createElement('div');
+    orbs.className = 'mz-wx-sun-orbs';
+    for (const [x, y, size, dur, delay] of [[26, 38, 150, 24, -6], [68, 62, 110, 30, -17]]) {
+        const orb = document.createElement('i');
+        orb.style.setProperty('--x', `${x}%`);
+        orb.style.setProperty('--y', `${y}%`);
+        orb.style.setProperty('--size', `${size}px`);
+        orb.style.setProperty('--dur', `${dur}s`);
+        orb.style.setProperty('--delay', `${delay}s`);
+        orbs.appendChild(orb);
+    }
+    sun.appendChild(orbs);
+    layer.appendChild(sun);
+
+    // overcast: three cloud banks, their drift shaped in css
+    effect('mz-wx-overcast', 3, () => {});
+
+    // wind: streaks, leaves tumbling, dust carried along
+    const wind = document.createElement('div');
+    wind.className = 'mz-wx mz-wx-wind';
+    const drift = (className, count, dress) => {
+        for (let i = 0; i < count; i += 1) {
+            const particle = document.createElement('i');
+            particle.className = className;
+            dress(particle);
+            wind.appendChild(particle);
+        }
+    };
+    drift('mz-wx-streak', 8, particle => {
+        particle.style.setProperty('--y', `${wxRand(6, 94).toFixed(1)}%`);
+        particle.style.setProperty('--len', `${wxRand(60, 130).toFixed(0)}px`);
+        particle.style.setProperty('--dur', `${wxRand(2, 3.6).toFixed(2)}s`);
+        particle.style.setProperty('--delay', `-${wxRand(0, 3.6).toFixed(2)}s`);
+    });
+    drift('mz-wx-leaf', 4, particle => {
+        particle.style.setProperty('--y', `${wxRand(15, 85).toFixed(1)}%`);
+        particle.style.setProperty('--size', `${wxRand(8, 13).toFixed(1)}px`);
+        particle.style.setProperty('--dur', `${wxRand(5, 9).toFixed(1)}s`);
+        particle.style.setProperty('--delay', `-${wxRand(0, 9).toFixed(1)}s`);
+    });
+    drift('mz-wx-mote', 6, particle => {
+        particle.style.setProperty('--y', `${wxRand(10, 90).toFixed(1)}%`);
+        particle.style.setProperty('--size', `${wxRand(2, 4).toFixed(1)}px`);
+        particle.style.setProperty('--dur', `${wxRand(4, 7).toFixed(1)}s`);
+        particle.style.setProperty('--delay', `-${wxRand(0, 7).toFixed(1)}s`);
+    });
+    layer.appendChild(wind);
+}
+
+/** Syncs the weather switch with the setting. */
+function applyWeatherFx() {
+    const on = weatherFxOn();
+    for (const button of root.querySelectorAll('[data-mz-action="weather-fx"]')) {
+        button.classList.toggle('is-on', on);
+        button.setAttribute('aria-checked', String(on));
+    }
+}
+
+/**
+ * Puts the governing scene's weather on the background stage - or takes it
+ * off. The plan decides the state and its strength; the layer only fades
+ * between what is already built.
+ */
+function applyWeather(record) {
+    const plan = weatherFxOn() ? weatherPlan(record?.scene || null) : null;
+    if (!frame) return;
+
+    if (plan) {
+        frame.dataset.mzWx = plan.state;
+        frame.dataset.mzWxInt = plan.intensity;
+    } else {
+        delete frame.dataset.mzWx;
+        delete frame.dataset.mzWxInt;
+    }
+
+    applySun(plan);
+}
+
+/**
+ * The sun's place in the sky, from the scene's clock - the same clock that
+ * lit the painted backdrop, so the light and the picture agree. No clock, no
+ * claim: the light stays where it is. Night hours keep the set, dimmed to a
+ * faint cool whisper.
+ */
+function applySun(plan) {
+    const night = !!plan && plan.state === 'sunny'
+        && Number.isFinite(plan.hour) && (plan.hour >= 20 || plan.hour < 6);
+
+    if (night) frame.dataset.mzWxNight = '1';
+    else delete frame.dataset.mzWxNight;
+
+    const sun = els.weatherLayer?.querySelector('.mz-wx-sun');
+    if (!sun || plan?.state !== 'sunny' || !Number.isFinite(plan.hour)) return;
+
+    const progress = Math.min(1, Math.max(0, (plan.hour - 6) / 14));
+    const x = 8 + progress * 84;
+    const arc = (progress - 0.5) * 2;
+
+    sun.style.setProperty('--mz-sun-x', `${x.toFixed(1)}%`);
+    sun.style.setProperty('--mz-sun-y', `${(10 + 26 * arc * arc).toFixed(1)}%`);
+    sun.style.setProperty('--mz-sun-dir', String(x > 50 ? -1 : 1));
 }
 
 /**
@@ -1140,7 +1340,7 @@ function applyScene(record) {
     els.date.title = scene?.dateRaw || '';
     els.time.textContent = scene ? scene.time : '--:--';
     els.time.title = scene?.time || '';
-    els.place.textContent = scene?.placeFull || '\u2014';
+    els.place.innerHTML = scene?.placeFull ? placeHtml(scene.placeFull) : '\u2014';
     els.place.title = scene?.placeFull || '';
 
     if (scene?.weather) {
@@ -1154,6 +1354,7 @@ function applyScene(record) {
     measureChatbar();
     renderCast(scene);
     queueBackgroundSwap();
+    applyWeather(record);
 }
 
 /**
@@ -1831,6 +2032,12 @@ function wireActions() {
                 transcript.refresh({ stick: true });
                 applyScene(lastShown);
                 applyLedger(lastEntry);
+                break;
+            case 'weather-fx':
+                settings().weatherFx = !settings().weatherFx;
+                applyWeatherFx();
+                applyWeather(lastShown);
+                saveSettings();
                 break;
             case 'bg-auto':
                 settings().bgAuto = !settings().bgAuto;

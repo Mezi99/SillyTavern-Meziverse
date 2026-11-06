@@ -3,15 +3,23 @@ import assert from 'node:assert/strict';
 
 import { parseTags } from '../src/tags.js';
 import {
+    clockHour,
     describeScene,
     describeScenes,
+    hourFromWords,
     initials,
     isUsableScene,
+    locationTagValue,
+    parseClock,
     resolveScene,
     sceneAt,
     splitDate,
     splitLocation,
     splitPresent,
+    weatherEffect,
+    weatherIntensity,
+    weatherPlan,
+    weatherTagValue,
 } from '../src/scene.js';
 
 const tag = mes => parseTags(mes)[0];
@@ -135,4 +143,126 @@ test('resolveScene returns null when nothing is usable', () => {
 
 test('sceneAt is the older name for resolveScene', () => {
     assert.equal(sceneAt, resolveScene);
+});
+
+test('parseClock lifts the clock and its hour', () => {
+    assert.deepEqual(parseClock('19:12'), { time: '19:12', hour: 19 });
+    assert.deepEqual(parseClock('7:12 PM'), { time: '7:12 PM', hour: 19 });
+    assert.deepEqual(parseClock('around 8 PM'), { time: '8 PM', hour: 20 });
+    assert.deepEqual(parseClock('14.20'), { time: '14.20', hour: 14 });
+    assert.deepEqual(parseClock('Early Evening'), { time: 'Early Evening', hour: 18 });
+    assert.deepEqual(parseClock('noonish'), { time: 'noonish', hour: 12 });
+    assert.deepEqual(parseClock(''), { time: '', hour: null });
+});
+
+test('clockHour reads 12-hour and 24-hour clocks alike', () => {
+    assert.equal(clockHour('9:40 PM'), 21);
+    assert.equal(clockHour('12 AM'), 0);
+    assert.equal(clockHour('12 PM'), 12);
+    assert.equal(clockHour('20:17'), 20);
+    assert.equal(clockHour('8 PM'), 20);
+    assert.equal(clockHour('14.20'), 14);
+    assert.equal(clockHour('13:00 approx'), 13);
+    assert.equal(clockHour(''), null);
+});
+
+test('hourFromWords knows the shape of a day', () => {
+    assert.equal(hourFromWords('Friday, Early Evening'), 18);
+    assert.equal(hourFromWords('morning'), 9);
+    assert.equal(hourFromWords('early morning'), 7);
+    assert.equal(hourFromWords('late afternoon'), 16);
+    assert.equal(hourFromWords('Midnight bell'), 0);
+    assert.equal(hourFromWords('late night'), 2);
+    assert.equal(hourFromWords('Tuesday, March 4'), null);
+});
+
+test('describeScene follows the clock precedence chain', () => {
+    const withTime = describeScene(tag('<scene date="Friday, Mid-April" time="19:12" />'));
+    assert.equal(withTime.time, '19:12');
+    assert.equal(withTime.timeRaw, '19:12');
+    assert.equal(withTime.hour, 19);
+    assert.equal(withTime.date, 'Friday, Mid-April');
+
+    const legacy = describeScene(tag('<scene date="Friday, Mid-April, 7:12 PM" />'));
+    assert.equal(legacy.time, '7:12 PM');
+    assert.equal(legacy.hour, 19);
+
+    const words = describeScene(tag('<scene date="Friday, Early Evening" />'));
+    assert.equal(words.time, '');
+    assert.equal(words.hour, 18);
+
+    const slips = describeScene(tag('<scene date="Friday" time="Early Evening" />'));
+    assert.equal(slips.time, 'Early Evening');
+    assert.equal(slips.hour, 18);
+
+    const none = describeScene(tag('<scene date="Friday, Mid-April" />'));
+    assert.equal(none.time, '');
+    assert.equal(none.hour, null);
+});
+
+test('describeScene reads the weather and location tags, spelling forgiving', () => {
+    const scene = describeScene(tag('<scene date="Day 1" weatherTag="Rain" locationTag="Outdoor" />'));
+    assert.equal(scene.weatherTag, 'rain');
+    assert.equal(scene.locationTag, 'outdoor');
+
+    const folded = describeScene(tag('<scene date="Day 1" weathertag="Blizzard" location_tag="\'Indoor\'" />'));
+    assert.equal(folded.weatherTag, 'blizzard');
+    assert.equal(folded.locationTag, 'indoor');
+
+    const bare = describeScene(tag('<scene date="Day 1" />'));
+    assert.equal(bare.weatherTag, '');
+    assert.equal(bare.locationTag, '');
+});
+
+test('weatherTagValue folds synonyms and forgets the rest', () => {
+    assert.equal(weatherTagValue('Rain'), 'rain');
+    assert.equal(weatherTagValue('THUNDER'), 'storm');
+    assert.equal(weatherTagValue('Blizzard'), 'blizzard');
+    assert.equal(weatherTagValue('light rain'), 'rain');
+    assert.equal(weatherTagValue('Clear skies'), 'clear');
+    assert.equal(weatherTagValue('Sleet'), 'snow');
+    assert.equal(weatherTagValue('dust storm'), 'storm');
+    assert.equal(weatherTagValue('xyzzy'), '');
+    assert.equal(weatherTagValue(''), '');
+    assert.equal(weatherTagValue(weatherTagValue('Sleet')), 'snow');
+});
+
+test('locationTagValue folds synonyms and forgets the rest', () => {
+    assert.equal(locationTagValue('Indoor'), 'indoor');
+    assert.equal(locationTagValue('OUTDOOR'), 'outdoor');
+    assert.equal(locationTagValue("'Outdoor'"), 'outdoor');
+    assert.equal(locationTagValue('outside'), 'outdoor');
+    assert.equal(locationTagValue('inside'), 'indoor');
+    assert.equal(locationTagValue(''), '');
+    assert.equal(locationTagValue('submarine'), '');
+});
+
+test('weatherEffect plays only outdoors, and never for clear', () => {
+    const scene = mes => describeScene(tag(mes));
+    assert.equal(weatherEffect(scene('<scene date="Day 1" weatherTag="Rain" locationTag="Outdoor" />')), 'rain');
+    assert.equal(weatherEffect(scene('<scene date="Day 1" weatherTag="Storm" locationTag="Outdoor" />')), 'storm');
+    assert.equal(weatherEffect(scene('<scene date="Day 1" weatherTag="Rain" locationTag="Indoor" />')), '');
+    assert.equal(weatherEffect(scene('<scene date="Day 1" weatherTag="Rain" />')), '');
+    assert.equal(weatherEffect(scene('<scene date="Day 1" weatherTag="Clear" locationTag="Outdoor" />')), '');
+    assert.equal(weatherEffect(scene('<scene date="Day 1" weatherTag="Nuclear" locationTag="Outdoor" />')), '');
+    assert.equal(weatherEffect(null), '');
+});
+
+test('weatherIntensity scales from the free-text weather', () => {
+    assert.equal(weatherIntensity('Heavy rain, 8\u00b0C'), 'heavy');
+    assert.equal(weatherIntensity('drizzle, mild'), 'light');
+    assert.equal(weatherIntensity('Clear, golden sunset light'), 'light');
+    assert.equal(weatherIntensity('Rain'), 'med');
+    assert.equal(weatherIntensity(''), 'med');
+});
+
+test('weatherPlan gathers state, intensity and the hour of the light', () => {
+    const scene = describeScene(tag('<scene date="Friday" time="19:12" weather="heavy rain" weatherTag="Storm" locationTag="Outdoor" />'));
+    assert.deepEqual(weatherPlan(scene), { state: 'storm', intensity: 'heavy', hour: 19 });
+
+    const sun = describeScene(tag('<scene date="Friday" time="9:00" weather="clear skies" weatherTag="Sunny" locationTag="Outdoor" />'));
+    assert.deepEqual(weatherPlan(sun), { state: 'sunny', intensity: 'med', hour: 9 });
+
+    const indoors = describeScene(tag('<scene date="Friday" time="19:12" weather="heavy rain" weatherTag="Storm" locationTag="Indoor" />'));
+    assert.equal(weatherPlan(indoors), null);
 });

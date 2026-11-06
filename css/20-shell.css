@@ -152,10 +152,14 @@ body.mz-open .popup { z-index: 9500 !important; }
     );
 }
 
-/* SillyTavern's current background, when the setting asks for it */
+/* SillyTavern's current background, when the setting asks for it.
+   The dark wash that used to sit over the image is parked below, commented
+   out: backgrounds show clean now. It may return as the daycycle (day/night)
+   layer - until then nothing dims the picture. */
 .mz-frame.is-bg-st .mz-bg,
 .mz-frame.is-bg-st .mz-bgsoft {
     background-color: var(--mz-bg);
+    /*
     background-image:
         linear-gradient(
             180deg,
@@ -163,9 +167,11 @@ body.mz-open .popup { z-index: 9500 !important; }
             color-mix(in srgb, var(--mz-scrim-ink) 74%, transparent)
         ),
         var(--mz-st-bg, none);
-    background-position: center, center;
-    background-size: cover, cover;
-    background-repeat: no-repeat, no-repeat;
+    */
+    background-image: var(--mz-st-bg, none);
+    background-position: center;
+    background-size: cover;
+    background-repeat: no-repeat;
 }
 
 .mz-frame.is-bg-st .mz-bg::before,
