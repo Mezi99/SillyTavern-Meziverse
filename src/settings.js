@@ -49,6 +49,9 @@ const DEFAULTS = {
     // Indoor effects: the room's quiet mood, seeded per place. Independent
     // of the weather switch and of image generation.
     indoorFx: true,
+    // Speech bubbles in the reading pane: the speaker's label, the words in
+    // a quiet bubble, the tone said in after. Off leaves the prose plain.
+    speechFx: true,
     // The watcher prompts the user tunes: the scene-tagged hand and the
     // plain-prose hand. The answer format is appended by code.
     bgPromptOn: DEFAULT_BG_PROMPT_ON,
@@ -136,6 +139,11 @@ export function weatherFxOn() {
 /** Whether the indoor effects play - the room's quiet mood. */
 export function indoorFxOn() {
     return settings().indoorFx !== false;
+}
+
+/** Whether the speech bubbles play in the reading pane. */
+export function speechFxOn() {
+    return settings().speechFx !== false;
 }
 
 /**

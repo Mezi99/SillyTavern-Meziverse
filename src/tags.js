@@ -198,7 +198,7 @@ export function speechesOf(tags) {
  * tag's place between the runs and never joins a paragraph.
  *
  * @param {string} mes
- * @returns {Array<{type:'text', text:string}|{type:'scene', tag:object}|{type:'box', tag:object}|{type:'mark', tag:object}>}
+ * @returns {Array<{type:'text', text:string}|{type:'scene', tag:object}|{type:'box', tag:object}|{type:'mark', tag:object}|{type:'speech', tag:object}>}
  */
 export function splitCues(mes) {
     const text = typeof mes === 'string' ? mes : '';
@@ -265,6 +265,17 @@ export function splitCues(mes) {
                 cursor = text.length;
                 break;
             }
+            cursor = tag.end;
+            continue;
+        }
+
+        // A complete speech tag becomes a cue of its own, standing where it
+        // stood inside the prose run: the bubble is inline and never cuts the
+        // paragraph. A half tag falls through to the fold below - those words
+        // are prose until the tag closes.
+        if (tag.name === 'speech' && tag.closed) {
+            flush();
+            cues.push({ type: 'speech', tag });
             cursor = tag.end;
             continue;
         }

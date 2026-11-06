@@ -7,7 +7,7 @@
  * file only prepares a small WebP and then hands it over.
  */
 
-import { castImages, castKey, currentChatId, removeCastImage, say, setCastImage, uploadImage } from './st.js';
+import { castImages, castKey, currentChatId, imageSource, removeCastImage, say, setCastImage, uploadImage } from './st.js';
 import { initials } from './scene.js';
 import { icon } from './icons.js';
 import { notify } from './notify.js';
@@ -748,13 +748,6 @@ function castSignature() {
         .join('\u0001');
 
     return `${chat}\u0003${busy}\u0003${cast}`;
-}
-
-function imageSource(path) {
-    const value = typeof path === 'string' ? path.trim() : '';
-    if (!value) return '';
-    if (/^(?:[a-z][a-z0-9+.-]*:|\/)/i.test(value)) return value;
-    return `/${value}`;
 }
 
 function fileName(name, format) {

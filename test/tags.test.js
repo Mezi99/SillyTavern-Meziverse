@@ -122,6 +122,20 @@ test('a box cuts the prose like a scene row', () => {
     assert.deepEqual(cues.map(cue => cue.type), ['text', 'box', 'text', 'scene', 'text']);
 });
 
+test('a speech tag becomes an inline cue and keeps the prose whole', () => {
+    const cues = splitCues('She smiled. <speech character="Mike" tone="wry">"Of course."</speech> Then left.');
+
+    assert.deepEqual(cues.map(cue => cue.type), ['text', 'speech', 'text']);
+    assert.equal(cues[0].text, 'She smiled. ');
+    assert.equal(cues[1].tag.name, 'speech');
+    assert.equal(cues[1].tag.attrs.character, 'Mike');
+    assert.equal(cues[2].text, ' Then left.');
+
+    const half = splitCues('one <speech character="Mike">"unfinished');
+    assert.deepEqual(half.map(cue => cue.type), ['text']);
+    assert.equal(half[0].text, 'one "unfinished');
+});
+
 test('meanwhile boxes stack in reading order', () => {
     const cues = splitCues('intro<meanwhile event="one" /><meanwhile event="two" />outro');
 

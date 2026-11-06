@@ -7,7 +7,7 @@
  */
 
 import { chatMessages, currentChatId, errorText, imageGenerationStatus, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer, stDefaultBackground } from './st.js';
-import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, bgImagesOn, weatherFxOn, indoorFxOn, DEV_EXTRAS } from './settings.js';
+import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, bgImagesOn, weatherFxOn, indoorFxOn, speechFxOn, DEV_EXTRAS } from './settings.js';
 import {
     forceBackground,
     getLastWatcherRequest,
@@ -356,6 +356,14 @@ const FRAME_HTML = `
             </div>
         </div>
 
+        <div class="mz-set-group mz-set-group--fold" data-mz-pane="image">
+            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="speech">Speech ${svg('chevdown')}</button></h3>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Speech bubbles</b><small>Spoken lines wear a bubble in the reading pane - the speaker's name and picture when the cast holds one, the words, and the tone said in, quietly after. Off leaves the prose plain.</small></span>
+                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Speech bubbles" data-mz-action="speech-fx"><i></i></button>
+            </div>
+        </div>
+
         <div class="mz-set-group" data-mz-pane="mode">
             <h3>Meziverse mode</h3>
             <div class="mz-set-row">
@@ -608,6 +616,7 @@ export function mount() {
     buildWeather();
     applyWeatherFx();
     applyIndoorFx();
+    applySpeechFx();
     applyEntries();
     setSettingsTab('general');
     applyBrush();
@@ -1017,6 +1026,15 @@ function applyWeatherFx() {
 function applyIndoorFx() {
     const on = indoorFxOn();
     for (const button of root.querySelectorAll('[data-mz-action="indoor-fx"]')) {
+        button.classList.toggle('is-on', on);
+        button.setAttribute('aria-checked', String(on));
+    }
+}
+
+/** Syncs the speech bubbles switch with the setting. */
+function applySpeechFx() {
+    const on = speechFxOn();
+    for (const button of root.querySelectorAll('[data-mz-action="speech-fx"]')) {
         button.classList.toggle('is-on', on);
         button.setAttribute('aria-checked', String(on));
     }
@@ -2159,6 +2177,12 @@ function wireActions() {
                 settings().indoorFx = !settings().indoorFx;
                 applyIndoorFx();
                 applyWeather(lastShown);
+                saveSettings();
+                break;
+            case 'speech-fx':
+                settings().speechFx = !settings().speechFx;
+                applySpeechFx();
+                transcript?.refresh();
                 saveSettings();
                 break;
             case 'bg-images':
