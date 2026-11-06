@@ -64,6 +64,10 @@ const DEFAULTS = {
     // wide screens and re-docks itself on narrow ones. Its remembered spot.
     musicDocked: true,
     musicPos: null,
+    // The YouTube Data API key behind song search - the user's own free
+    // Google key, used from the browser. Restrict it by HTTP referrer (the
+    // search fetch pins one) or by IP; never leave it unrestricted.
+    musicApiKey: '',
     // The watcher prompts the user tunes: the scene-tagged hand and the
     // plain-prose hand. The answer format is appended by code.
     bgPromptOn: DEFAULT_BG_PROMPT_ON,
@@ -166,6 +170,12 @@ export function musicOn() {
 /** Whether a `<music>` tag in a reply may start playback on arrival. */
 export function musicAutoOn() {
     return settings().musicAuto !== false;
+}
+
+/** The saved YouTube Data API key, or '' when song search has none. */
+export function musicKey() {
+    const value = settings().musicApiKey;
+    return typeof value === 'string' ? value.trim() : '';
 }
 
 /**

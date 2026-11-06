@@ -1,26 +1,27 @@
 /**
  * The music player: the scene's soundtrack, played from YouTube.
  *
- * Phase 1 is the player itself and the two ways to start it by hand: pasting
- * a YouTube link or video ID into the player, and a `<music>` tag in a reply
- * asking for one. Song search - a story naming a song to find - arrives with
- * the Music DJ; a request that needs search is remembered and shown, never
- * played blind.
+ * The player and the two ways to start it: pasting a YouTube link or video
+ * ID into the player, and a `<music>` tag in a reply asking for one. A named
+ * song - a search phrase - plays too, through the user's own YouTube Data
+ * API key (`musicsearch.js` filters the results to what can embed); without
+ * a key the request is remembered and shown, never played blind. Automatic
+ * mood-based picks - the Music DJ - are the next phase.
  *
  * The player rides the master switch: with the scene closed, requests are
  * ignored and whatever is playing pauses. SillyTavern is touched only through
- * the seam (`st.js`), and the audio is an embedded YouTube player - no key,
- * no login, no fetch beyond the embed itself.
+ * the seam (`st.js`), and the audio is an embedded YouTube player.
  *
  * Pure: the request read (`parseVideoRef`, `readMusicTag`, `thumbnailUrl`,
- * `clampVolume`) has no DOM and no side effects. The widget below is the
- * only thing that renders.
+ * `clampVolume`) and the search read (`musicsearch.js`) have no DOM and no
+ * side effects. The widget below is the only thing that renders.
  */
 
 import { chatMessages, on } from './st.js';
-import { musicAutoOn, musicOn, saveSettings, settings } from './settings.js';
+import { musicAutoOn, musicKey, musicOn, saveSettings, settings } from './settings.js';
 import { notify } from './notify.js';
 import { parseTags } from './tags.js';
+import { buildSearchUrl, friendlySearchError, preferredDuration, toResults } from './musicsearch.js';
 
 const LOG = '[Meziverse music]';
 
@@ -120,8 +121,11 @@ const state = {
     pending: null,
     error: null,
     playing: false,
+    searching: false,
     panelOpen: false,
     videoOpen: false,
+    candidates: null,
+    candidateAt: 0,
 };
 
 const NARROW = 760;
@@ -252,6 +256,20 @@ function onPlayerError(code) {
         return;
     }
 
+    // The video itself is blocked or gone: fall through to the next search
+    // candidate before saying anything - only the last one speaks.
+    if (RETRY_ERRORS.has(code) && state.candidates && state.candidateAt + 1 < state.candidates.length) {
+        state.candidateAt += 1;
+        const next = state.candidates[state.candidateAt];
+        retryArmed = true;
+        state.videoId = next;
+        state.title = '';
+        state.channel = '';
+        render();
+        rebuildPlayer(next);
+        return;
+    }
+
     state.error = message;
     state.playing = false;
     state.panelOpen = true;
@@ -282,9 +300,9 @@ function applyVolume() {
 }
 
 /**
- * Plays a request - a link or id now, a search phrase remembered for the
- * Music DJ. This is where every way in meets: the story's `<music>` tag and
- * the player's own input.
+ * Plays a request - a link or id at once, a named song through search. This
+ * is where every way in meets: the story's `<music>` tag and the player's
+ * own input.
  */
 function playRequest(text, { mood = null } = {}) {
     if (!musicOn()) return;
@@ -293,10 +311,14 @@ function playRequest(text, { mood = null } = {}) {
     if (ref.kind === 'empty') return;
 
     if (ref.kind === 'query') {
-        state.pending = ref.query;
-        state.mood = mood;
-        render();
-        notify(`\u201c${ref.query}\u201d \u2014 song search arrives with the Music DJ.`, 'info');
+        if (!musicKey()) {
+            state.pending = ref.query;
+            state.mood = mood;
+            render();
+            notify(`\u201c${ref.query}\u201d \u2014 song search needs a YouTube Data API key (Settings \u25b8 Features \u25b8 Music).`, 'info');
+            return;
+        }
+        searchAndPlay(ref.query, { mood });
         return;
     }
 
@@ -306,12 +328,99 @@ function playRequest(text, { mood = null } = {}) {
     state.title = '';
     state.channel = '';
     state.error = null;
+    state.candidates = null;
+    state.candidateAt = 0;
     retryArmed = true;
     render();
 
     playById(ref.id).catch(error => {
         console.warn(`${LOG} the embed failed`, error);
     });
+}
+
+/* ---------- song search ---------- */
+
+/* One session's answers, so a repeated request costs no quota. */
+const searchCache = new Map();
+const SEARCH_CACHE_MAX = 30;
+
+/**
+ * One API call. The page's `Referrer-Policy: no-referrer` (SillyTavern's
+ * default) is inherited by fetches - which would break every
+ * referrer-restricted key - so the referrer is pinned here, exactly like
+ * the embed's.
+ */
+async function searchFetch(url) {
+    const res = await fetch(url, { referrerPolicy: 'strict-origin-when-cross-origin' });
+    const body = await res.text();
+    if (!res.ok) throw new Error(friendlySearchError(res.status, body));
+    try {
+        return JSON.parse(body);
+    } catch {
+        throw new Error('YouTube search answered with something unreadable.');
+    }
+}
+
+/** The playable candidates for a query: filtered, deduped, cached. */
+async function searchVideos(query) {
+    const hit = searchCache.get(query);
+    if (hit) return hit;
+
+    const key = musicKey();
+    const limit = 5;
+
+    const preferred = await searchFetch(buildSearchUrl(query, key, { limit, duration: preferredDuration(query) }));
+    let results = toResults(preferred.items);
+    if (!results.length) {
+        // The long-form pass came back empty; a plain track may still fit.
+        const fallback = await searchFetch(buildSearchUrl(query, key, { limit }));
+        results = toResults(fallback.items);
+    }
+    results = results.slice(0, limit);
+
+    if (searchCache.size >= SEARCH_CACHE_MAX) {
+        searchCache.delete(searchCache.keys().next().value);
+    }
+    searchCache.set(query, results);
+    return results;
+}
+
+/** Searches a named song and plays the best candidate. */
+async function searchAndPlay(query, { mood = null } = {}) {
+    state.searching = true;
+    state.pending = query;
+    state.mood = mood;
+    state.error = null;
+    render();
+
+    try {
+        const results = await searchVideos(query);
+        if (!results.length) {
+            state.error = `Nothing playable found for \u201c${query}\u201d.`;
+            state.panelOpen = true;
+            notify(state.error, 'warning');
+            return;
+        }
+
+        state.pending = null;
+        state.candidates = results.map(result => result.videoId);
+        state.candidateAt = 0;
+        state.videoId = results[0].videoId;
+        state.title = results[0].title;
+        state.channel = results[0].channel;
+        retryArmed = true;
+        render();
+
+        await playById(results[0].videoId);
+    } catch (error) {
+        state.error = error instanceof Error ? error.message : 'YouTube search failed.';
+        state.panelOpen = true;
+        render();
+        notify(state.error, 'warning');
+    } finally {
+        state.searching = false;
+        render();
+    }
 }
 
 /* ---------- the read of new turns ---------- */
@@ -392,7 +501,7 @@ const WIDGET_HTML = `
     </button>
     <button class="mz-music-title" type="button" data-mz-music="toggle-panel">
         <b data-mz-music="title">No track</b>
-        <small data-mz-music="sub">Paste a YouTube link to start</small>
+        <small data-mz-music="sub">Paste a link or name a song</small>
     </button>
     <button class="mz-ibtn" type="button" title="Play" aria-label="Play" data-mz-music="playpause">${svg('play')}</button>
     <button class="mz-ibtn" type="button" title="Stop" aria-label="Stop" data-mz-music="stop">${svg('stop')}</button>
@@ -402,7 +511,7 @@ const WIDGET_HTML = `
 <div class="mz-music-body" data-mz-music-body hidden>
     <a class="mz-btn-ghost mz-music-watch" data-mz-music-watch href="#" target="_blank" rel="noreferrer noopener" hidden>Watch on YouTube</a>
     <div class="mz-music-row">
-        <input class="mz-select mz-music-input" data-mz-music="input" placeholder="Paste a YouTube link or video ID" aria-label="YouTube link or video ID">
+        <input class="mz-select mz-music-input" data-mz-music="input" placeholder="YouTube link, video ID, or song to find" aria-label="YouTube link, video ID, or song to find">
         <button class="mz-btn-ghost" type="button" data-mz-music="load">Play</button>
     </div>
     <div class="mz-music-row">
@@ -633,11 +742,13 @@ function render() {
     els.body.hidden = !(undocked || state.panelOpen);
 
     els.title.textContent = state.error
-        ?? (state.title || (live ? 'Loading\u2026' : 'No track'));
+        ?? (state.searching ? 'Searching\u2026' : (state.title || (live ? 'Loading\u2026' : 'No track')));
     els.sub.textContent = state.pending
-        ? `Wants: \u201c${state.pending}\u201d \u00b7 search lands with the Music DJ`
+        ? (musicKey()
+            ? `\u201c${state.pending}\u201d`
+            : `Wants: \u201c${state.pending}\u201d \u00b7 add an API key to play named songs`)
         : (state.channel
-            || (state.mood ? `Mood: ${state.mood}` : (live ? '' : 'Paste a YouTube link to start')));
+            || (state.mood ? `Mood: ${state.mood}` : (live ? '' : 'Paste a link or name a song')));
 
     const thumb = els.thumb;
     if (live) {

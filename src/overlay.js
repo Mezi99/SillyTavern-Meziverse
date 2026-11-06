@@ -7,7 +7,7 @@
  */
 
 import { chatMessages, currentChatId, errorText, imageGenerationStatus, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer, stDefaultBackground } from './st.js';
-import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, bgImagesOn, weatherFxOn, indoorFxOn, speechFxOn, musicOn, musicAutoOn, DEV_EXTRAS } from './settings.js';
+import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, bgImagesOn, weatherFxOn, indoorFxOn, speechFxOn, musicOn, musicAutoOn, musicKey, DEV_EXTRAS } from './settings.js';
 import {
     forceBackground,
     getLastWatcherRequest,
@@ -28,7 +28,7 @@ import { mountCues, closeMemory } from './cues.js';
 import { closeFloats } from './floats.js';
 import { mountMusic, musicUiClosed, musicUiOpened, refreshMusic } from './music.js';
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
-import { interceptToastr } from './notify.js';
+import { interceptToastr, notify } from './notify.js';
 
 const VERSION = '2.8.0';
 const PANE_DEFAULT = 300;
@@ -373,8 +373,17 @@ const FRAME_HTML = `
                 <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Music player" data-mz-action="music"><i></i></button>
             </div>
             <div class="mz-set-row">
-                <span class="mz-set-label"><b>Story requests</b><small>A &lt;music&gt; tag in a reply starts playback when the reply lands. A link plays at once; a named song waits for the Music DJ's search.</small></span>
+                <span class="mz-set-label"><b>Story requests</b><small>A &lt;music&gt; tag in a reply starts playback when the reply lands. A link plays at once; a named song is searched with the key below.</small></span>
                 <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Story requests" data-mz-action="music-auto"><i></i></button>
+            </div>
+            <div class="mz-set-row mz-set-row--prompt">
+                <span class="mz-set-label"><b>YouTube Data API key</b><small>Lets a named song be searched and played. Free key: Google Cloud Console \u25b8 enable \u201cYouTube Data API v3\u201d \u25b8 Credentials. Restrict it by HTTP referrer and allow this SillyTavern address (http://localhost:8000/*), or by your IP - never leave it open. It stays in SillyTavern's extension settings and is used from your browser.</small></span>
+                <input class="mz-select" type="password" data-mz="music-key" aria-label="YouTube Data API key" placeholder="AIza...">
+                <div>
+                    <button class="mz-btn-ghost" type="button" data-mz-action="music-key-save">Save key</button>
+                    <button class="mz-btn-ghost" type="button" data-mz-action="music-key-remove">Remove</button>
+                    <span class="mz-music-keystate" data-mz="music-key-state"></span>
+                </div>
             </div>
         </div>
 
@@ -524,6 +533,8 @@ export function mount() {
         bgPromptOn: root.querySelector('[data-mz="bg-prompt-on"]'),
         bgPromptOff: root.querySelector('[data-mz="bg-prompt-off"]'),
         bgRequest: root.querySelector('[data-mz="bg-request"]'),
+        musicKey: root.querySelector('[data-mz="music-key"]'),
+        musicKeyState: root.querySelector('[data-mz="music-key-state"]'),
         sceneCluster: root.querySelector('.mz-chatbar-left'),
         date: root.querySelector('[data-mz="date"]'),
         time: root.querySelector('[data-mz="time"]'),
@@ -1073,6 +1084,22 @@ function applyMusic() {
         button.classList.toggle('is-on', musicAutoOn());
         button.setAttribute('aria-checked', String(musicAutoOn()));
     }
+
+    // The player's own rows step aside with the master switch.
+    const group = root.querySelector('[data-mz-section="music"]')?.closest('.mz-set-group');
+    group?.querySelectorAll('.mz-set-row').forEach(row => {
+        if (row.hasAttribute('data-mz-music-master')) return;
+        row.hidden = !musicOn();
+    });
+
+    // The key: shown as saved, never clobbered mid-typing.
+    if (els.musicKey && document.activeElement !== els.musicKey) {
+        els.musicKey.value = settings().musicApiKey ?? '';
+    }
+    if (els.musicKeyState) {
+        els.musicKeyState.textContent = musicKey() ? 'Key configured' : 'No key saved';
+    }
+
     refreshMusic();
 }
 
@@ -2240,6 +2267,20 @@ function wireActions() {
                 settings().musicAuto = !settings().musicAuto;
                 applyMusic();
                 saveSettings();
+                break;
+            case 'music-key-save': {
+                const value = (els.musicKey?.value ?? '').trim();
+                settings().musicApiKey = value;
+                applyMusic();
+                saveSettings();
+                notify(value ? 'YouTube search key saved.' : 'The key field is empty - nothing saved.', value ? 'success' : 'info');
+                break;
+            }
+            case 'music-key-remove':
+                settings().musicApiKey = '';
+                applyMusic();
+                saveSettings();
+                notify('YouTube search key removed.', 'info');
                 break;
             case 'bg-images':
                 settings().bgImages = !settings().bgImages;
