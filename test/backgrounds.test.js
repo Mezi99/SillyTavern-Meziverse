@@ -28,6 +28,7 @@ import {
     resolveRecordId,
     resolveStampId,
     restorePlan,
+    isNoPicture,
     sceneUrl,
     setStamp,
     stampOf,
@@ -231,6 +232,19 @@ test('sceneUrl trusts authored urls and nothing else', () => {
     assert.equal(sceneUrl('none'), null);
     assert.equal(sceneUrl(''), null);
     assert.equal(sceneUrl(null), null);
+});
+
+test('isNoPicture knows the shapes of nothing showing', () => {
+    assert.equal(isNoPicture(''), true);
+    assert.equal(isNoPicture(null), true);
+    assert.equal(isNoPicture('none'), true);
+    assert.equal(isNoPicture('NONE'), true);
+    assert.equal(isNoPicture('url("backgrounds/__transparent.png")'), true);
+    assert.equal(isNoPicture("url('backgrounds/__transparent.png')"), true);
+    assert.equal(isNoPicture('url(backgrounds/__transparent.png)'), true);
+    assert.equal(isNoPicture('url("/user/images/docks.png")'), false);
+    assert.equal(isNoPicture('url("backgrounds/city rain.png")'), false);
+    assert.equal(isNoPicture('cross-fade(url("/a.png") 50%, none)'), false);
     assert.equal(sceneUrl(42), null);
 });
 

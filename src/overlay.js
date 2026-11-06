@@ -6,7 +6,7 @@
  * only owns the chrome around it.
  */
 
-import { chatMessages, currentChatId, errorText, imageGenerationStatus, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer } from './st.js';
+import { chatMessages, currentChatId, errorText, imageGenerationStatus, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer, stDefaultBackground } from './st.js';
 import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, weatherFxOn, DEV_EXTRAS } from './settings.js';
 import {
     forceBackground,
@@ -16,7 +16,7 @@ import {
     uiClosed,
     uiOpened,
 } from './bgchain.js';
-import { DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_OFF, sceneUrl } from './backgrounds.js';
+import { DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_OFF, sceneUrl, isNoPicture } from './backgrounds.js';
 import { injectSprite } from './icons.js';
 import { createTranscript } from './transcript.js';
 import { mountCast, refreshCastSizing, renderCast, renderThoughts, renderTells, clearCascade, redrawCast } from './cast.js';
@@ -1231,7 +1231,6 @@ function applyCueMeanwhile() {
  */
 function applyBackground(forcedUrl) {
     const useSt = settings().background === 'st';
-    frame.classList.toggle('is-bg-st', useSt);
     root.querySelectorAll('[data-mz-pick-bg]').forEach(button => {
         const isOn = button.dataset.mzPickBg === (useSt ? 'st' : 'none');
         button.classList.toggle('is-on', isOn);
@@ -1240,6 +1239,7 @@ function applyBackground(forcedUrl) {
 
     if (!useSt) {
         frame.style.removeProperty('--mz-st-bg');
+        frame.classList.remove('is-bg-st');
         return;
     }
 
@@ -1247,15 +1247,21 @@ function applyBackground(forcedUrl) {
     const inline = document.getElementById('bg1')?.style.backgroundImage?.trim() || '';
     const image = sceneUrl(forced) || sceneUrl(inline);
 
-    if (image) {
-        frame.style.setProperty('--mz-st-bg', image);
+    // An unusable stranger is dropped and the last good picture stays.
+    if (!image && !isNoPicture(forced) && !isNoPicture(inline)) return;
+
+    // Nothing showing - empty, none, or SillyTavern's transparent placeholder -
+    // falls through: SillyTavern's own default first, then the procedural
+    // scene. The stage is never a black hole.
+    const shown = image || sceneUrl(stDefaultBackground());
+    if (shown) {
+        frame.style.setProperty('--mz-st-bg', shown);
+        frame.classList.add('is-bg-st');
         return;
     }
 
-    // No picture on screen - SillyTavern shows none - clears the mirror; an
-    // unusable stranger is dropped and the last good picture stays.
-    const raw = forced || inline;
-    if (!raw || /^none$/i.test(raw)) frame.style.removeProperty('--mz-st-bg');
+    frame.style.removeProperty('--mz-st-bg');
+    frame.classList.remove('is-bg-st');
 }
 
 /* ---------- full screen ---------- */

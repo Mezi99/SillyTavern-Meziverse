@@ -8,6 +8,28 @@
 
 import { normalizeStore, setStamp, toCssBgUrl } from './backgrounds.js';
 
+/* SillyTavern's Backgrounds module, loaded softly: the node suite runs this
+   file outside the app, where the path resolves to nothing - which is fine,
+   because nothing there asks for the default. */
+let stBackgrounds = null;
+import('../../../../backgrounds.js').then(module => {
+    stBackgrounds = module;
+}).catch(() => {});
+
+/**
+ * The background SillyTavern shows by default - the authored url its own
+ * Backgrounds module keeps. The mirror's first fallback for a chat with
+ * nothing recorded, before the procedural scene. Empty when SillyTavern
+ * can't say (yet).
+ */
+export function stDefaultBackground() {
+    try {
+        return String(stBackgrounds?.background_settings?.url ?? '').trim();
+    } catch {
+        return '';
+    }
+}
+
 /**
  * SillyTavern's own context object, or null while the app is still loading.
  *

@@ -351,6 +351,25 @@ export function sceneUrl(value) {
     return clean;
 }
 
+/* 'Nothing is showing': an empty value, CSS's own none, or SillyTavern's
+   transparent placeholder tile - its way of saying no picture. A stranger
+   is none of these. */
+const NO_PICTURE = /^(?:none|url\(["']?(?:[^"')]*\/)?__transparent\.png["']?\))$/i;
+
+/**
+ * Whether a background value means no picture at all. The mirror's fall
+ * through to SillyTavern's own default starts here; a true stranger (a value
+ * that exists but cannot be mirrored) answers false and keeps the last good
+ * picture instead.
+ *
+ * @param {*} value
+ * @returns {boolean}
+ */
+export function isNoPicture(value) {
+    const clean = typeof value === 'string' ? value.trim() : '';
+    return !clean || NO_PICTURE.test(clean);
+}
+
 /**
  * The CSS `url(...)` value SillyTavern's background module expects, wrapped
  * the same way its own force-set handler wraps image paths.
