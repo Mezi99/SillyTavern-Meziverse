@@ -874,7 +874,7 @@ function buildWeather() {
 
     const beams = document.createElement('div');
     beams.className = 'mz-wx-sun-beams';
-    for (const [tilt, width, dur, delay] of [[7, 15, 9, 0], [18, 22, 13, -4], [29, 13, 11, -7]]) {
+    for (const [tilt, width, dur, delay] of [[4, 13, 9, 0], [11, 21, 12, -3], [19, 27, 10, -6], [27, 19, 13, -9], [35, 12, 11, -12]]) {
         const beam = document.createElement('i');
         beam.style.setProperty('--tilt', `${tilt}deg`);
         beam.style.setProperty('--w', `${width}vw`);

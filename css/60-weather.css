@@ -200,9 +200,11 @@
     opacity: var(--mz-wx-alpha);
 }
 
+/* a night hour keeps the rays, dimmed to a faint cool whisper - the moon and
+   stars of the daycycle are a later story */
 .mz-frame[data-mz-wx="sunny"][data-mz-wx-night="1"] .mz-wx-sun {
     --mz-wx-sun-rgb: 186, 205, 245;
-    opacity: calc(var(--mz-wx-alpha, .85) * .35);
+    opacity: calc(var(--mz-wx-alpha, .85) * .55);
 }
 
 .mz-wx-sun-wash {
@@ -228,12 +230,19 @@
 }
 
 /* the beams fan downward from the sun; the mirror flips the fan to the
-   sun's side of the sky */
+   sun's side of the sky, and the whole fan sweeps slowly - the light passes
+   across the scene instead of standing still */
 .mz-wx-sun-beams {
     position: absolute;
     inset: 0;
     transform: scaleX(var(--mz-sun-dir));
     transform-origin: var(--mz-sun-x) top;
+    animation: mz-beam-sweep 38s ease-in-out infinite alternate;
+}
+
+@keyframes mz-beam-sweep {
+    from { transform: scaleX(var(--mz-sun-dir)) rotate(-3.5deg); }
+    to { transform: scaleX(var(--mz-sun-dir)) rotate(3.5deg); }
 }
 
 .mz-wx-sun-beams i {
@@ -244,7 +253,7 @@
     height: 170vh;
     transform-origin: top center;
     transform: translateX(-50%) rotate(var(--tilt, 14deg));
-    background: linear-gradient(to bottom, rgba(var(--mz-wx-sun-rgb), .16), rgba(var(--mz-wx-sun-rgb), .05) 55%, transparent 78%);
+    background: linear-gradient(to bottom, rgba(var(--mz-wx-sun-rgb), .22), rgba(var(--mz-wx-sun-rgb), .08) 55%, transparent 78%);
     mask-image: linear-gradient(90deg, transparent, #000 35%, #000 65%, transparent);
     -webkit-mask-image: linear-gradient(90deg, transparent, #000 35%, #000 65%, transparent);
     animation: mz-beam-breathe var(--dur, 9s) ease-in-out infinite alternate;
