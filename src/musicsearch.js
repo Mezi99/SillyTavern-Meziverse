@@ -14,6 +14,7 @@
  */
 
 const SEARCH_URL = 'https://www.googleapis.com/youtube/v3/search';
+const VIDEOS_URL = 'https://www.googleapis.com/youtube/v3/videos';
 
 /* Noise a music search should never answer with. */
 const QUERY_EXCLUSIONS = `-shorts -short -tiktok -meme -"be like"`;
@@ -65,6 +66,38 @@ export function buildSearchUrl(query, key, { limit = 5, duration } = {}) {
 /** A Shorts/meme/reaction title or channel - never a soundtrack. */
 export function isLowValueResult(result) {
     return LOW_VALUE_RE.test(`${result?.title ?? ''} ${result?.channel ?? ''}`);
+}
+
+/**
+ * The URL that checks candidates before they reach the player. The search
+ * filter's `videoEmbeddable` flag is honest but can go stale, so the
+ * candidates are verified in one cheap call (1 quota unit against the
+ * search's 100) before any embed frame is loaded.
+ *
+ * @param {string[]} ids
+ * @param {string} key the YouTube Data API key
+ */
+export function buildVideosUrl(ids, key) {
+    const params = new URLSearchParams({
+        part: 'status',
+        id: (Array.isArray(ids) ? ids : []).filter(Boolean).slice(0, 50).join(','),
+        key: typeof key === 'string' ? key : '',
+    });
+    return `${VIDEOS_URL}?${params}`;
+}
+
+/**
+ * The candidates minus the ones the API now reports unembeddable. A video
+ * the check never saw keeps its place: the player's own fallback through
+ * the candidates is the safety net, not this filter.
+ *
+ * @param {Array<{videoId:string}>} results
+ * @param {Map<string, boolean>|Object<string, boolean>} statuses embeddable by id
+ */
+export function dropUnembeddable(results, statuses) {
+    const list = Array.isArray(results) ? results : [];
+    const map = statuses instanceof Map ? statuses : new Map(Object.entries(statuses ?? {}));
+    return list.filter(result => map.get(result?.videoId) !== false);
 }
 
 /**

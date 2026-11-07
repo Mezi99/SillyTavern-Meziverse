@@ -21,7 +21,7 @@ import { chatMessages, on } from './st.js';
 import { musicAutoOn, musicDjOn, musicKey, musicOn, musicPickMode, saveSettings, settings } from './settings.js';
 import { notify } from './notify.js';
 import { parseTags } from './tags.js';
-import { buildSearchUrl, friendlySearchError, preferredDuration, toResults } from './musicsearch.js';
+import { buildSearchUrl, buildVideosUrl, dropUnembeddable, friendlySearchError, preferredDuration, toResults } from './musicsearch.js';
 import { initMusicDj, musicDjArrived, musicDjFreshPick, resetMusicDjPacing } from './musicdj.js';
 
 const LOG = '[Meziverse music]';
@@ -112,6 +112,32 @@ export function clampVolume(value) {
     return Math.max(0, Math.min(100, Math.round(n)));
 }
 
+/**
+ * How a player error is handled. A transient failure earns one fresh
+ * instance - that has settled born-broken players before - while a blocked
+ * or gone video never will: no rebuild can unblock it, so the next
+ * candidate is the only cure. Unknown codes count as blocked: reaching for
+ * the next candidate is never wrong.
+ */
+export function errorClass(code) {
+    return Number(code) === 5 ? 'transient' : 'blocked';
+}
+
+/**
+ * The candidate to play under rotation: the first one neither playing now
+ * nor among the tracks just heard, so a fresh pick is never a repeat. With
+ * nowhere fresh left, the first candidate stands.
+ *
+ * @param {Array<{videoId:string}>} results
+ * @param {Array<string>} [skipIds]
+ */
+export function rotateIndex(results, skipIds = []) {
+    const list = Array.isArray(results) ? results : [];
+    const skip = new Set(skipIds);
+    const at = list.findIndex(result => !skip.has(result?.videoId));
+    return at >= 0 ? at : 0;
+}
+
 /* ---------- the player state ---------- */
 
 const state = {
@@ -141,6 +167,18 @@ let ytApiPromise = null;
 let lastHandled = null;
 let drag = null;
 let retryArmed = true;
+
+/* The tracks heard this session - a rotating pick never returns to one. */
+const RECENT_MAX = 5;
+const recentIds = [];
+
+function rememberPlayed(id) {
+    if (!id) return;
+    const at = recentIds.indexOf(id);
+    if (at >= 0) recentIds.splice(at, 1);
+    recentIds.unshift(id);
+    if (recentIds.length > RECENT_MAX) recentIds.pop();
+}
 
 /* ---------- the YouTube IFrame API, loaded once ---------- */
 
@@ -190,6 +228,11 @@ async function playById(id) {
             width: '100%',
             height: '100%',
             videoId: id,
+            // Privacy-enhanced mode: youtube-nocookie.com sets no cookies
+            // until the listener interacts - which also silences most of
+            // the cross-site cookie noise Firefox logs for youtube.com
+            // frames on every load.
+            host: 'https://www.youtube-nocookie.com',
             // No YouTube chrome: the widget is the control surface.
             playerVars: {
                 autoplay: 1,
@@ -220,7 +263,10 @@ async function playById(id) {
 function onPlayerState(code) {
     const PLAYING = 1;
     state.playing = code === PLAYING;
-    if (state.playing) retryArmed = true;
+    if (state.playing) {
+        retryArmed = true;
+        rememberPlayed(state.videoId);
+    }
 
     try {
         const data = player?.getVideoData?.();
@@ -240,34 +286,28 @@ const PLAYER_ERRORS = {
     5: 'YouTube refused playback here - the stream would not load.',
     100: 'That video is gone or private.',
     101: 'The owner of that video blocks embedded playback.',
+    105: 'That video is gone or private.',
     150: 'The owner of that video blocks embedded playback.',
+    153: 'The owner of that video blocks embedded playback here.',
 };
-
-/* A fresh instance settles a born-broken player from a genuinely blocked
-   video - so these get one rebuild and one retry before any error shows. */
-const RETRY_ERRORS = new Set([5, 101, 150]);
 
 function onPlayerError(code) {
     const message = PLAYER_ERRORS[code] ?? 'This video cannot play here.';
     console.warn(`${LOG} embed error ${code} for ${state.videoId ?? '(none)'}`);
 
-    if (retryArmed && RETRY_ERRORS.has(code) && state.videoId) {
+    // A transient failure earns one fresh instance - that has settled
+    // born-broken players before. A blocked video is blocked in any
+    // instance, so it goes straight to the candidates below.
+    if (errorClass(code) === 'transient' && retryArmed && state.videoId) {
         retryArmed = false;
         rebuildPlayer(state.videoId);
         return;
     }
 
-    // The video itself is blocked or gone: fall through to the next search
-    // candidate before saying anything - only the last one speaks.
-    if (RETRY_ERRORS.has(code) && state.candidates && state.candidateAt + 1 < state.candidates.length) {
-        state.candidateAt += 1;
-        const next = state.candidates[state.candidateAt];
-        retryArmed = true;
-        state.videoId = next;
-        state.title = '';
-        state.channel = '';
-        render();
-        rebuildPlayer(next);
+    // Blocked or gone: fall through to the next search candidate before
+    // saying anything - only the last one speaks.
+    if (state.candidates && state.candidateAt + 1 < state.candidates.length) {
+        advanceCandidate();
         return;
     }
 
@@ -276,6 +316,18 @@ function onPlayerError(code) {
     state.panelOpen = true;
     render();
     notify(message, 'warning');
+}
+
+/** Steps to the next search candidate - its own title, channel and all. */
+function advanceCandidate() {
+    state.candidateAt += 1;
+    const next = state.candidates[state.candidateAt];
+    retryArmed = true;
+    state.videoId = next.videoId;
+    state.title = next.title ?? '';
+    state.channel = next.channel ?? '';
+    render();
+    rebuildPlayer(next.videoId);
 }
 
 /** Tears the embed down and plays the same video in a fresh one, once. */
@@ -379,12 +431,31 @@ async function searchVideos(query) {
         results = toResults(fallback.items);
     }
     results = results.slice(0, limit);
+    results = await verifyEmbeddable(results);
 
     if (searchCache.size >= SEARCH_CACHE_MAX) {
         searchCache.delete(searchCache.keys().next().value);
     }
     searchCache.set(query, results);
     return results;
+}
+
+/**
+ * Drops candidates the API now reports unembeddable before any embed frame
+ * is loaded - one cheap call (1 quota unit against the search's 100). A
+ * check that fails changes nothing: the player's own fallback through the
+ * candidates is the safety net.
+ */
+async function verifyEmbeddable(results) {
+    if (!results.length) return results;
+    try {
+        const data = await searchFetch(buildVideosUrl(results.map(result => result.videoId), musicKey()));
+        const statuses = new Map((data.items ?? []).map(item => [item.id, item?.status?.embeddable]));
+        return dropUnembeddable(results, statuses);
+    } catch (error) {
+        console.warn(`${LOG} the embeddable check changed nothing`, error);
+        return results;
+    }
 }
 
 /** Searches a named song and plays the best candidate. */
@@ -405,11 +476,10 @@ async function searchAndPlay(query, { mood = null, rotate = false } = {}) {
         }
 
         state.pending = null;
-        state.candidates = results.map(result => result.videoId);
-        // A rotating pick skips the track already playing - the next
-        // candidate carries the same mood instead of repeating it.
-        const skip = rotate ? results.findIndex(result => result.videoId !== state.videoId) : -1;
-        state.candidateAt = skip >= 0 ? skip : 0;
+        state.candidates = results;
+        // A rotating pick skips what plays now and what played recently -
+        // the next candidate carries the same mood instead of repeating it.
+        state.candidateAt = rotate ? rotateIndex(results, [state.videoId, ...recentIds]) : 0;
         const pick = results[state.candidateAt];
         state.videoId = pick.videoId;
         state.title = pick.title;

@@ -29,9 +29,10 @@ test('both pick styles take the genre from the story itself', () => {
         assert.match(PICK_MODES[mode], /genre/, `${mode} lets the story's own world decide the sound`);
         assert.match(PICK_MODES[mode], /era/);
     }
-    assert.match(PICK_MODES.orchestra, /instrumental/);
-    assert.match(PICK_MODES.orchestra, /Prefer specific known pieces/);
+    assert.match(PICK_MODES.orchestra, /instrumental/i);
+    assert.match(PICK_MODES.orchestra, /Never choose vocal songs/);
     assert.match(PICK_MODES.songs, /Artist - Title/);
+    assert.match(PICK_MODES.songs, /Prefer the official or artist upload/);
     assert.match(PICK_MODES.songs, /fall back to a precise vibe query/);
     assert.match(PICK_MODES.songs, /Never invent songs/);
 });

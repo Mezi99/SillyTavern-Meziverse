@@ -1,7 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { clampVolume, parseVideoRef, readMusicTag, thumbnailUrl } from '../src/music.js';
+import { clampVolume, errorClass, parseVideoRef, readMusicTag, rotateIndex, thumbnailUrl } from '../src/music.js';
+
+test('a transient error earns one rebuild; a blocked one never does', () => {
+    assert.equal(errorClass(5), 'transient', 'a stream that would not load may settle in a fresh instance');
+    for (const code of [2, 100, 101, 105, 150, 153, 999]) {
+        assert.equal(errorClass(code), 'blocked', `error ${code} goes to the next candidate`);
+    }
+});
+
+test('rotation skips the track playing and the ones just heard', () => {
+    const results = [{ videoId: 'a' }, { videoId: 'b' }, { videoId: 'c' }];
+    assert.equal(rotateIndex(results, ['a']), 1);
+    assert.equal(rotateIndex(results, ['a', 'b']), 2);
+    assert.equal(rotateIndex(results, ['a', 'b', 'c']), 0, 'nowhere fresh left: the first candidate stands');
+    assert.equal(rotateIndex(results, []), 0);
+    assert.equal(rotateIndex([], ['a']), 0, 'no candidates at all');
+});
 
 /* ---------- parseVideoRef ---------- */
 

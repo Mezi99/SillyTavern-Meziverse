@@ -65,8 +65,8 @@ Rules:
  * invent anything.
  */
 export const PICK_MODES = {
-    orchestra: 'PICK STYLE - ORCHESTRA: write a precise search query for an instrumental score that fits this story\u2019s own genre and era - western guitars and harmonica for a Wild West tale, synth and electronics for science fiction, lute, flute and choir for a medieval one. Prefer specific known pieces when they are apt. Favor instrumental, ambient, soundtrack, OST, official audio, extended, mix, or no-copyright results.',
-    songs: 'PICK STYLE - SONGS: name one specific, well-known real song as "Artist - Title" that fits this story\u2019s own genre, era, and mood - the pop and rock its characters would actually know for a modern tale, country and western for a Wild West one. Add "official audio" to the query when it helps. If no specific song clearly fits, fall back to a precise vibe query. Never invent songs.',
+    orchestra: 'PICK STYLE - ORCHESTRA: write a precise search query for an INSTRUMENTAL score or instrumental rendition that fits this story\u2019s own genre and era - western guitars and harmonica for a Wild West tale, synth and electronics for science fiction, lute, flute and choir for a medieval one. Never choose vocal songs. Favor OST, soundtrack, ambient, extended, mix, or no-copyright results.',
+    songs: 'PICK STYLE - SONGS: name one specific, well-known real song as "Artist - Title" that fits this story\u2019s own genre, era, and mood - the pop and rock its characters would actually know for a modern tale, country and western for a Wild West one. Prefer the official or artist upload; add "official audio" to the query when it helps. If no specific song clearly fits, fall back to a precise vibe query. Never invent songs.',
 };
 
 const ANSWER_FORMAT = [

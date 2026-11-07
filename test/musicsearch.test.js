@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 
 import {
     buildSearchUrl,
+    buildVideosUrl,
+    dropUnembeddable,
     friendlySearchError,
     isLowValueResult,
     preferredDuration,
@@ -132,4 +134,24 @@ test('every refusal names the fix', () => {
         /referr?ers?/i,
     );
     assert.match(friendlySearchError(500, '<html>boom</html>'), /500/);
+});
+
+test('the embeddable check URL lists the candidates and carries the key', () => {
+    const url = new URL(buildVideosUrl(['aaa', 'bbb', ''], 'KEY'));
+    assert.equal(url.origin + url.pathname, 'https://www.googleapis.com/youtube/v3/videos');
+    assert.equal(url.searchParams.get('part'), 'status');
+    assert.equal(url.searchParams.get('id'), 'aaa,bbb');
+    assert.equal(url.searchParams.get('key'), 'KEY');
+});
+
+test('candidates the API now calls unembeddable drop; unchecked ones stand', () => {
+    const results = [{ videoId: 'a' }, { videoId: 'b' }, { videoId: 'c' }];
+
+    assert.deepEqual(
+        dropUnembeddable(results, new Map([['a', true], ['b', false]])).map(result => result.videoId),
+        ['a', 'c'],
+        'the stale flag is dropped and the rest keep their order');
+    assert.deepEqual(dropUnembeddable(results, { b: false }).map(result => result.videoId), ['a', 'c']);
+    assert.deepEqual(dropUnembeddable(results, {}), results, 'an empty check changes nothing');
+    assert.deepEqual(dropUnembeddable(null, {}), []);
 });
