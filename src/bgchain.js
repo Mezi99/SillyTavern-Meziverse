@@ -467,7 +467,10 @@ async function runWatcherChain({ store, messages, index, swipeId, place, scene, 
         const reply = await generateRaw({
             prompt: request.prompt,
             systemPrompt: request.systemPrompt,
-            jsonSchema: request.jsonSchema,
+            // No jsonSchema: some connections reject structured output
+            // outright (422 Unprocessable Entity), and nothing here needs
+            // it - parseWatcherReply reads the JSON out of the answer text,
+            // plain-text protocol tolerated, same as the music DJ.
         });
 
         if (my !== chainSeq) return { status: 'superseded' };
