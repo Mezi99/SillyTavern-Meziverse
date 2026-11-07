@@ -10,26 +10,46 @@
  * The protocol is Marinara's YouTube DJ contract in our own words: one JSON
  * intent (`play` / `volume` / `none`) with a mood and a search query - the
  * app searches and plays the top candidate, so the DJ never invents video
- * ids. The prompt core is the user's to edit; the answer format is appended
- * by code, so no edit can break parsing.
+ * ids. The story arrives as the chat's own recent turns (see history.js):
+ * raw, tags and all, with only the user's prompt regexes applied - the DJ
+ * judges the story the way the main chat model reads it.
  *
- * Pure: the prompt assembly, the story excerpt and the answer parse have no
- * DOM and no side effects. The watcher call and the pacing below are the
- * runtime, and the player is reached only through the controller handed in.
+ * The prompt core is the user's to edit; the pick style and the answer
+ * format are appended by code, so no edit can break parsing - or take the
+ * story's own genre out of the pick.
+ *
+ * Pure: the prompt assembly and the answer parse have no DOM and no side
+ * effects. The watcher call and the pacing below are the runtime, and the
+ * player is reached only through the controller handed in.
  */
 
 import { chatMessages, generateRaw } from './st.js';
-import { stripTags } from './tags.js';
+import { splitStory } from './history.js';
 
 const LOG = '[Meziverse music dj]';
 
 /* ---------- the protocol (pure) ---------- */
 
 /**
- * The DJ's rules - the creative core the user may edit. The answer format is
- * appended by `djSystemPrompt`, never part of this text.
+ * The DJ's rules - the creative core the user may edit. The pick style and
+ * the answer format are appended by `djSystemPrompt`, never part of this
+ * text.
  */
-export const DEFAULT_DJ_PROMPT = `You are the scene's music DJ. Read the latest story turn and answer with a playback intent that fits its mood, setting, pace, and genre. You have no tools: the app searches YouTube and plays the top result for your searchQuery.
+export const DEFAULT_DJ_PROMPT = `You are the scene's music DJ. You read the story's recent turns - the latest story turn kept separate at the end - and answer with a playback intent that fits its mood, setting, pace, and genre. You have no tools: the app searches YouTube and plays the top result for your searchQuery.
+
+Rules:
+- Let the story's own genre and era decide the sound: a Wild West tale, a science-fiction tale, a medieval tale and a modern tale must never end up sounding alike.
+- Keep the current track with action "none" while it still clearly fits.
+- Change only on a clear mood shift, or when the question marks a forced fresh pick, which needs a different, fitting choice.
+- Never target Shorts, memes, reaction videos, compilations, or joke clips.
+- Use volume 20-40 for quiet scenes and 60-85 for action; answer "volume" alone when only loudness should change.`;
+
+/**
+ * The default core as v2.8.0 shipped it. A saved settings copy still holding
+ * this exact text is not a user's edit - settings.js refreshes it to the
+ * current default.
+ */
+export const LEGACY_DEFAULT_DJ_PROMPT = `You are the scene's music DJ. Read the latest story turn and answer with a playback intent that fits its mood, setting, pace, and genre. You have no tools: the app searches YouTube and plays the top result for your searchQuery.
 
 Rules:
 - Keep the current track with action "none" while it still clearly fits.
@@ -38,59 +58,65 @@ Rules:
 - Never target Shorts, memes, reaction videos, compilations, or joke clips.
 - Use volume 20-40 for quiet scenes and 60-85 for action; answer "volume" alone when only loudness should change.`;
 
+/**
+ * The pick styles, code-owned so the core stays free of mode plumbing. Both
+ * take the genre from the story itself - the whole point is that different
+ * worlds sound different - and both fall back to a vibe query rather than
+ * invent anything.
+ */
+export const PICK_MODES = {
+    orchestra: 'PICK STYLE - ORCHESTRA: write a precise search query for an instrumental score that fits this story\u2019s own genre and era - western guitars and harmonica for a Wild West tale, synth and electronics for science fiction, lute, flute and choir for a medieval one. Prefer specific known pieces when they are apt. Favor instrumental, ambient, soundtrack, OST, official audio, extended, mix, or no-copyright results.',
+    songs: 'PICK STYLE - SONGS: name one specific, well-known real song as "Artist - Title" that fits this story\u2019s own genre, era, and mood - the pop and rock its characters would actually know for a modern tale, country and western for a Wild West one. Add "official audio" to the query when it helps. If no specific song clearly fits, fall back to a precise vibe query. Never invent songs.',
+};
+
 const ANSWER_FORMAT = [
     'Answer with one JSON object and nothing else:',
     '{"action":"play"|"volume"|"none","mood":"brief detected mood","searchQuery":"YouTube search query or null","volume":number|null}',
 ].join('\n');
 
 /**
- * The DJ's whole system prompt: the core (the user's) with the answer format
- * appended by code.
+ * The DJ's whole system prompt: the core (the user's), then the pick style
+ * and the answer format, appended by code.
  *
- * @param {{core?:string}} [options]
+ * @param {{core?:string, mode?:'orchestra'|'songs'}} [options]
  */
-export function djSystemPrompt({ core = DEFAULT_DJ_PROMPT } = {}) {
+export function djSystemPrompt({ core = DEFAULT_DJ_PROMPT, mode = 'orchestra' } = {}) {
     const base = typeof core === 'string' && core.trim() ? core.trim() : DEFAULT_DJ_PROMPT;
-    return `${base}\n\n${ANSWER_FORMAT}`;
+    const style = PICK_MODES[mode] ?? PICK_MODES.orchestra;
+    return `${base}\n\n${style}\n\n${ANSWER_FORMAT}`;
 }
 
 /**
- * The story the DJ reads: the last few replies with every tag stripped - the
- * narration the reading pane shows and nothing else - from the end.
+ * The DJ's question, as chat turns shaped like the main chat: the story's
+ * recent turns in their own roles, the latest story turn as its own
+ * assistant message (the turn to judge), and one user message carrying what
+ * plays and - on a manual retry - the order to choose differently.
  *
- * @param {Array<{mes?:string, is_user?:boolean}>} messages
- * @param {{turns?:number, maxChars?:number}} [options]
+ * @param {{history?:Array<{role:string, text:string}>, last?:{role:string, text:string}|null, playing?:{title?:string, channel?:string, mood?:string}|null, forceFreshPick?:boolean}} parts
+ * @returns {Array<{role:string, content:string}>}
  */
-export function djStory(messages, { turns = 2, maxChars = 2000 } = {}) {
-    const replies = (Array.isArray(messages) ? messages : [])
-        .filter(message => message && !message.is_user)
-        .slice(-Math.max(1, turns))
-        .map(message => stripTags(typeof message.mes === 'string' ? message.mes : '').trim())
-        .filter(Boolean);
+export function djMessages({ history = [], last = null, playing = null, forceFreshPick = false } = {}) {
+    const messages = [];
 
-    return replies.join('\n\n').slice(-maxChars);
-}
+    for (const turn of history) {
+        if (turn?.text) messages.push({ role: turn.role === 'user' ? 'user' : 'assistant', content: turn.text });
+    }
+    if (last?.text) messages.push({ role: last.role === 'user' ? 'user' : 'assistant', content: last.text });
 
-/**
- * The DJ's question: what is playing, the story, and - on a manual retry -
- * the order to choose differently.
- *
- * @param {{story:string, playing?:{title?:string, channel?:string}, forceFreshPick?:boolean}} parts
- */
-export function djQuestion({ story, playing = null, forceFreshPick = false } = {}) {
     const lines = [];
-
     lines.push(playing?.title
-        ? `CURRENTLY PLAYING: ${playing.title}${playing.channel ? ` - ${playing.channel}` : ''}`
+        ? `CURRENTLY PLAYING: ${playing.title}${playing.channel ? ` - ${playing.channel}` : ''}${playing.mood ? ` (chosen for mood: ${playing.mood})` : ''}`
         : 'CURRENTLY PLAYING: nothing');
     if (forceFreshPick) {
         lines.push('FORCED FRESH PICK: the current track is rejected - choose a different, fitting one.');
     }
     lines.push('');
-    lines.push('LATEST STORY:');
-    lines.push(story || '(the story is just beginning)');
+    lines.push(last?.text
+        ? 'The assistant message just above is the latest story turn. Pick the music for it, weighing it against the recent turns before it.'
+        : 'The story is just beginning. Pick the music for it.');
+    messages.push({ role: 'user', content: lines.join('\n') });
 
-    return lines.join('\n');
+    return messages;
 }
 
 /**
@@ -146,6 +172,14 @@ function extractObject(text) {
 
 /* ---------- the watcher (runtime) ---------- */
 
+/**
+ * How many story turns the DJ reads before the one it judges. Small on
+ * purpose - the story is the chat's own words, so one or two turns carry the
+ * scene - and tunable for small local models (Show last request shows
+ * exactly what a value sends).
+ */
+const DJ_STORY_TURNS = 2;
+
 let uiIsOpen = () => true;
 let controller = null;
 let sinceDj = 0;
@@ -155,7 +189,8 @@ let lastDjRequest = null;
  * Wires the DJ to the story through the player's controller. The DJ only
  * ever asks and applies: it plays through `controller.play` and turns the
  * volume through `controller.setVolume`, and reads the settings it needs
- * through the same door.
+ * through the same door. `enabled` is the floor (the player and the key);
+ * `auto` is the watcher's own switch - Fresh pick works without it.
  *
  * @param {{isOpen?:() => boolean, controller:object}} parts
  */
@@ -173,9 +208,10 @@ export function resetMusicDjPacing() {
  * One finished reply arrived: at the set pace - at most one call every N
  * replies - ask the DJ what the scene should sound like. A reply whose
  * `<music>` tag already cued a track never gets here (music.js decides).
+ * The auto watcher's own switch gates this; Fresh pick does not use it.
  */
 export function musicDjArrived() {
-    if (!controller?.enabled?.() || !uiIsOpen()) return;
+    if (!controller?.enabled?.() || !controller?.auto?.() || !uiIsOpen()) return;
 
     sinceDj += 1;
     const everyN = Math.max(1, Number(controller.everyN?.()) || 1);
@@ -200,10 +236,12 @@ export function getLastDjRequest() {
 
 /** Asks the DJ and applies its one intent. */
 async function askDj({ forceFreshPick = false } = {}) {
+    const { history, last } = await splitStory(chatMessages(), { turns: DJ_STORY_TURNS });
     const request = {
-        systemPrompt: djSystemPrompt({ core: controller?.promptCore?.() }),
-        prompt: djQuestion({
-            story: djStory(chatMessages()),
+        systemPrompt: djSystemPrompt({ core: controller?.promptCore?.(), mode: controller?.pickMode?.() }),
+        prompt: djMessages({
+            history,
+            last,
             playing: controller?.current?.() ?? null,
             forceFreshPick,
         }),

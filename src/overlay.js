@@ -7,7 +7,7 @@
  */
 
 import { chatMessages, currentChatId, errorText, imageGenerationStatus, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer, stDefaultBackground } from './st.js';
-import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, bgImagesOn, weatherFxOn, indoorFxOn, speechFxOn, musicOn, musicAutoOn, musicDjOn, musicKey, DEV_EXTRAS } from './settings.js';
+import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, bgImagesOn, weatherFxOn, indoorFxOn, speechFxOn, musicOn, musicAutoOn, musicDjOn, musicKey, musicPickMode, DEV_EXTRAS } from './settings.js';
 import { DEFAULT_DJ_PROMPT, getLastDjRequest } from './musicdj.js';
 import {
     forceBackground,
@@ -387,7 +387,7 @@ const FRAME_HTML = `
                 </div>
             </div>
             <div class="mz-set-row">
-                <span class="mz-set-label"><b>Music DJ</b><small>After each new reply a quiet watcher call reads the scene and picks music to match its mood - its own call, pace and prompt, independent of the background watcher. Needs the API key above.</small></span>
+                <span class="mz-set-label"><b>Music DJ</b><small>After each new reply a quiet watcher call reads the scene and picks music to match its mood - its own call, pace and prompt, independent of the background watcher. Off leaves Fresh pick on the player as the manual trigger. Needs the API key above.</small></span>
                 <button class="mz-switch" type="button" role="switch" aria-checked="false" aria-label="Music DJ" data-mz-action="music-dj"><i></i></button>
             </div>
             <div class="mz-set-row">
@@ -396,6 +396,13 @@ const FRAME_HTML = `
                     <button type="button" data-mz-step="music-dj-every" data-dir="-1" aria-label="Ask less often">\u2212</button>
                     <span data-mz="music-dj-every-value">1</span>
                     <button type="button" data-mz-step="music-dj-every" data-dir="1" aria-label="Ask more often">+</button>
+                </div>
+            </div>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Pick style</b><small>What the DJ reaches for: an instrumental score, or one specific real song that fits the case. Either way the story\u2019s own genre and era decide the sound - a Wild West tale and a sci-fi tale never pick alike.</small></span>
+                <div class="mz-seg" role="group" aria-label="Pick style">
+                    <button type="button" data-mz-pick-musicpick="orchestra">Orchestra</button>
+                    <button type="button" data-mz-pick-musicpick="songs">Songs</button>
                 </div>
             </div>
             <div class="mz-set-row mz-set-row--prompt">
@@ -1097,6 +1104,17 @@ function applySpeechFx() {
 }
 
 /**
+ * A watcher request as the settings panel shows it: the system prompt, and
+ * exactly what rode the question - message turns labelled with their role.
+ */
+function requestText(request) {
+    const prompt = Array.isArray(request?.prompt)
+        ? request.prompt.map(message => `[${message.role}]\n${message.content}`).join('\n\n')
+        : String(request?.prompt ?? '');
+    return `${request.systemPrompt}\n\n\u2014\u2014 sent as \u2014\u2014\n\n${prompt}`;
+}
+
+/**
  * Syncs the music switches - the player master and story requests - with the
  * settings, and hands the player its own re-read. Off: the widget hides and
  * whatever was playing stops.
@@ -1117,6 +1135,11 @@ function applyMusic() {
     if (els.musicDjValue) {
         els.musicDjValue.textContent = String(Math.max(1, Number(settings().musicDjEveryN) || 1));
     }
+    root.querySelectorAll('[data-mz-pick-musicpick]').forEach(button => {
+        const isOn = button.dataset.mzPickMusicpick === musicPickMode();
+        button.classList.toggle('is-on', isOn);
+        button.setAttribute('aria-pressed', String(isOn));
+    });
     if (els.musicDjPrompt && document.activeElement !== els.musicDjPrompt) {
         els.musicDjPrompt.value = settings().musicDjPrompt ?? DEFAULT_DJ_PROMPT;
     }
@@ -2104,6 +2127,14 @@ function wireActions() {
             return;
         }
 
+        const musicPick = event.target.closest('[data-mz-pick-musicpick]');
+        if (musicPick) {
+            settings().musicPick = musicPick.dataset.mzPickMusicpick;
+            applyMusic();
+            saveSettings();
+            return;
+        }
+
         const cuePop = event.target.closest('[data-mz-pick-cuepop]');
         if (cuePop) {
             settings().cuePopovers = cuePop.dataset.mzPickCuepop;
@@ -2335,7 +2366,7 @@ function wireActions() {
                 if (els.musicDjRequest) {
                     const request = getLastDjRequest();
                     els.musicDjRequest.textContent = request
-                        ? `${request.systemPrompt}\n\n\u2014\u2014 sent as \u2014\u2014\n\n${request.prompt}`
+                        ? requestText(request)
                         : 'Nothing has been asked yet in this session.';
                     els.musicDjRequest.hidden = !els.musicDjRequest.hidden;
                 }
@@ -2368,7 +2399,7 @@ function wireActions() {
                 if (els.bgRequest) {
                     const request = getLastWatcherRequest();
                     els.bgRequest.textContent = request
-                        ? `${request.systemPrompt}\n\n\u2014\u2014 sent as \u2014\u2014\n\n${request.prompt}`
+                        ? requestText(request)
                         : 'Nothing has been asked yet in this session.';
                     els.bgRequest.hidden = !els.bgRequest.hidden;
                 }

@@ -16,6 +16,16 @@ import('../../../../backgrounds.js').then(module => {
     stBackgrounds = module;
 }).catch(() => {});
 
+/* SillyTavern's regex engine, loaded softly the same way. It carries the
+   user's own prompt regexes - the scripts presets ship to clean their
+   scaffolding out of the story - and it is the ONLY cleaning a story excerpt
+   gets. Where it is missing (a fork without it, the node suite) the text
+   goes raw: we strip nothing ourselves. */
+let stRegex = null;
+const stRegexReady = import('../../../regex/engine.js').then(module => {
+    stRegex = module;
+}).catch(() => {});
+
 /**
  * The background SillyTavern shows by default - the authored url its own
  * Backgrounds module keeps. The mirror's first fallback for a chat with
@@ -914,16 +924,25 @@ export async function imagine({ prompt, negative, width, height, signal } = {}) 
  * chat history, so the caller decides exactly what the LLM sees. Structured
  * output is requested with a schema when the caller has one.
  *
+ * The prompt can be one string, or chat-style messages (`{role, content}`) -
+ * SillyTavern renders those with the preset's own chat format, so the story
+ * arrives shaped like the main chat does.
+ *
  * There is no abort signal to give: SillyTavern's own stop button governs
  * raw generation, same as its other quiet calls.
  *
- * @param {{prompt:string, systemPrompt?:string, responseLength?:number, jsonSchema?:object}} request
+ * @param {{prompt:string|Array<{role:string, content:string}>, systemPrompt?:string, responseLength?:number, jsonSchema?:object}} request
  * @returns {Promise<{ok:boolean, text:string, error:string}>}
  */
 export async function generateRaw({ prompt, systemPrompt, responseLength, jsonSchema } = {}) {
     const context = ctx();
-    const text = String(prompt ?? '').trim();
-    if (!text) return { ok: false, text: '', error: 'The watcher prompt is empty.' };
+    const messages = Array.isArray(prompt)
+        ? prompt.filter(message => message && typeof message === 'object' && String(message.content ?? '').trim())
+        : null;
+    const text = messages ?? String(prompt ?? '').trim();
+    if (!text || (Array.isArray(text) && !text.length)) {
+        return { ok: false, text: '', error: 'The watcher prompt is empty.' };
+    }
 
     if (typeof context?.generateRaw !== 'function') {
         return { ok: false, text: '', error: 'SillyTavern offers no raw generation here.' };
@@ -941,5 +960,38 @@ export async function generateRaw({ prompt, systemPrompt, responseLength, jsonSc
     } catch (error) {
         console.warn('[Meziverse] the watcher call failed', error);
         return { ok: false, text: '', error: `The watcher call failed: ${errorText(error)}` };
+    }
+}
+
+/**
+ * One message as SillyTavern would send it in the chat prompt: the user's own
+ * prompt regexes applied (their placement rules included) and NOTHING else.
+ * We decide no stripping of our own - whatever the user's scripts clean out
+ * of the story goes, and whatever they leave stays, tags and scaffolding
+ * alike. This is exactly the pass SillyTavern runs on each chat message when
+ * it builds a prompt (see its `getRegexedString(..., { isPrompt: true })`).
+ *
+ * `depth` is the message's distance from the chat's end, so scripts scoped
+ * to a depth band still land where they would in the main chat.
+ *
+ * @param {string} text
+ * @param {{isUser?:boolean, depth?:number}} [who]
+ * @returns {Promise<string>}
+ */
+export async function promptClean(text, { isUser = false, depth } = {}) {
+    const raw = typeof text === 'string' ? text : String(text ?? '');
+    await stRegexReady;
+
+    const engine = stRegex;
+    if (typeof engine?.getRegexedString !== 'function') return raw;
+
+    try {
+        return engine.getRegexedString(
+            raw,
+            isUser ? engine.regex_placement.USER_INPUT : engine.regex_placement.AI_OUTPUT,
+            { isPrompt: true, depth },
+        );
+    } catch {
+        return raw;
     }
 }

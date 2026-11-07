@@ -18,7 +18,7 @@
  */
 
 import { chatMessages, on } from './st.js';
-import { musicAutoOn, musicDjOn, musicKey, musicOn, saveSettings, settings } from './settings.js';
+import { musicAutoOn, musicDjOn, musicKey, musicOn, musicPickMode, saveSettings, settings } from './settings.js';
 import { notify } from './notify.js';
 import { parseTags } from './tags.js';
 import { buildSearchUrl, friendlySearchError, preferredDuration, toResults } from './musicsearch.js';
@@ -473,15 +473,20 @@ export function initMusic({ isOpen } = {}) {
     if (typeof isOpen === 'function') uiIsOpen = isOpen;
 
     // The DJ is its own watcher - switch, pace, prompt and call - reaching
-    // the player only through this controller. The gate demands the key:
-    // a pick the app cannot search cannot play.
+    // the player only through this controller. `enabled` is the floor (the
+    // player and the key: a pick the app cannot search cannot play);
+    // `auto` is the watcher's own switch. Fresh pick needs only the floor,
+    // so a manual pick is always one tap away - the brush beside the
+    // background watcher's own switch.
     initMusicDj({
         isOpen,
         controller: {
-            enabled: () => musicOn() && musicDjOn() && !!musicKey(),
+            enabled: () => musicOn() && !!musicKey(),
+            auto: () => musicDjOn(),
             everyN: () => Number(settings().musicDjEveryN) || 1,
             promptCore: () => settings().musicDjPrompt,
-            current: () => ({ title: state.title, channel: state.channel }),
+            pickMode: () => musicPickMode(),
+            current: () => ({ title: state.title, channel: state.channel, mood: state.mood }),
             play: (query, options) => playRequest(query, { ...options, rotate: true }),
             setVolume,
         },
@@ -820,7 +825,9 @@ function render() {
     els.dock.setAttribute('aria-label', undocked ? 'Dock the player' : 'Undock the player');
 
     els.volume.value = String(clampVolume(settings().musicVolume));
-    els.dj.hidden = !musicDjOn();
+    // Fresh pick is the manual trigger: it lives wherever a search can run,
+    // the Music DJ switch (the auto watcher) notwithstanding.
+    els.dj.hidden = !musicKey();
 
     // The escape hatch: a blocked or gone video is still one click away.
     if (live) {

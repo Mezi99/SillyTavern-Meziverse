@@ -6,8 +6,8 @@
  */
 
 import { ctx } from './st.js';
-import { DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_OFF } from './backgrounds.js';
-import { DEFAULT_DJ_PROMPT } from './musicdj.js';
+import { DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_OFF, LEGACY_DEFAULT_BG_PROMPT_ON, LEGACY_DEFAULT_BG_PROMPT_OFF } from './backgrounds.js';
+import { DEFAULT_DJ_PROMPT, LEGACY_DEFAULT_DJ_PROMPT } from './musicdj.js';
 
 const DEFAULTS = {
     // Meziverse mode: the master switch for the extras (see modeOn). Phase 5
@@ -75,8 +75,11 @@ const DEFAULTS = {
     musicDj: false,
     // The DJ asks at most once every N AI replies (user turns never count).
     musicDjEveryN: 1,
-    // The DJ prompt the user tunes: the rules. The answer format is
-    // appended by code.
+    // What the DJ picks: an instrumental score, or one specific real song.
+    // Either way the story's own genre and era decide the sound.
+    musicPick: 'orchestra',
+    // The DJ prompt the user tunes: the rules. The pick style and the answer
+    // format are appended by code.
     musicDjPrompt: DEFAULT_DJ_PROMPT,
     // The watcher prompts the user tunes: the scene-tagged hand and the
     // plain-prose hand. The answer format is appended by code.
@@ -104,6 +107,16 @@ const DEFAULTS = {
     logHeight: null,
 };
 
+/**
+ * Saved prompt cores that still equal an older default, paired with the
+ * current one - see `settings()` for why they follow the default forward.
+ */
+const PROMPT_DEFAULT_REFRESH = [
+    ['musicDjPrompt', LEGACY_DEFAULT_DJ_PROMPT, DEFAULT_DJ_PROMPT],
+    ['bgPromptOn', LEGACY_DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_ON],
+    ['bgPromptOff', LEGACY_DEFAULT_BG_PROMPT_OFF, DEFAULT_BG_PROMPT_OFF],
+];
+
 /** The live settings object, with defaults filled in on first use. */
 export function settings() {
     const store = ctx()?.extensionSettings;
@@ -115,6 +128,13 @@ export function settings() {
 
     for (const [key, value] of Object.entries(DEFAULTS)) {
         if (store.meziverse[key] === undefined) store.meziverse[key] = value;
+    }
+
+    // A saved prompt core still holding an older default is not a user's
+    // text - it followed the default once and keeps following it. An edited
+    // core is the user's own and is never touched.
+    for (const [key, legacy, fresh] of PROMPT_DEFAULT_REFRESH) {
+        if (store.meziverse[key] === legacy) store.meziverse[key] = fresh;
     }
 
     return store.meziverse;
@@ -191,6 +211,11 @@ export function musicKey() {
 /** Whether the Music DJ picks for new replies. Opt-in. */
 export function musicDjOn() {
     return settings().musicDj === true;
+}
+
+/** What the DJ picks: 'songs' for one specific real song, else the score. */
+export function musicPickMode() {
+    return settings().musicPick === 'songs' ? 'songs' : 'orchestra';
 }
 
 /**
