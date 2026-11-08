@@ -7,7 +7,7 @@
  */
 
 import { chatMessages, currentChatId, errorText, imageGenerationStatus, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer, stDefaultBackground } from './st.js';
-import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, bgImagesOn, weatherFxOn, indoorFxOn, speechFxOn, musicOn, musicAutoOn, musicDjOn, musicKey, musicPickMode, DEV_EXTRAS } from './settings.js';
+import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, bgImagesOn, weatherFxOn, indoorFxOn, speechFxOn, musicOn, musicAutoOn, musicDjOn, musicKey, musicPickMode, mapOn, mapMiniOn, DEV_EXTRAS } from './settings.js';
 import { DEFAULT_DJ_PROMPT, getLastDjRequest } from './musicdj.js';
 import {
     forceBackground,
@@ -28,6 +28,7 @@ import { placeHtml } from './prose.js';
 import { mountCues, closeMemory } from './cues.js';
 import { closeFloats } from './floats.js';
 import { mountMusic, musicUiClosed, musicUiOpened, refreshMusic } from './music.js';
+import { mountMap, mapUiClosed, mapUiOpened, refreshMap, isMapWinOpen, openMapWin, closeMapWin } from './map.js';
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr, notify } from './notify.js';
 
@@ -417,6 +418,30 @@ const FRAME_HTML = `
             </div>
         </div>
 
+        <div class="mz-set-group mz-set-group--fold" data-mz-pane="image">
+            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="map">Map ${svg('chevdown')}</button></h3>
+            <div class="mz-set-row" data-mz-map-master>
+                <span class="mz-set-label"><b>Map</b><small>The story's places as a live atlas - the minimap window on screen opens the full map of everywhere the story has been. Built from the scene tags; without tags, from the backgrounds the chat has drawn.</small></span>
+                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Map" data-mz-action="map"><i></i></button>
+            </div>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Minimap</b><small>The small window in the corner, game-minimap style. Off leaves the compact map button, which still opens the full map.</small></span>
+                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Minimap" data-mz-action="map-mini"><i></i></button>
+            </div>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Map depth</b><small>How deep the atlas shows places; deeper spots fold into their place until the detail card.</small></span>
+                <div class="mz-step">
+                    <button type="button" data-mz-step="map-depth" data-dir="-1" aria-label="Show fewer levels">\u2212</button>
+                    <span data-mz="map-depth-value">All</span>
+                    <button type="button" data-mz-step="map-depth" data-dir="1" aria-label="Show more levels">+</button>
+                </div>
+            </div>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Open the map</b><small>The full atlas: places, visits and the pictures drawn there.</small></span>
+                <button class="mz-btn-ghost" type="button" data-mz-action="map-open">Open map</button>
+            </div>
+        </div>
+
         <div class="mz-set-group mz-set-group--fold" data-mz-pane="mode">
             <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="mode-main">Meziverse mode ${svg('chevdown')}</button></h3>
             <div class="mz-set-row">
@@ -627,6 +652,7 @@ export function mount() {
     mountCast(els.cast);
     mountDock(root);
     mountMusic({ slot: root.querySelector('[data-mz="music-slot"]'), frame });
+    mountMap({ frame, goto: index => transcript?.show(index) });
 
     transcript = createTranscript({
         frame,
@@ -677,6 +703,7 @@ export function mount() {
     applyIndoorFx();
     applySpeechFx();
     applyMusic();
+    applyMap();
     applyEntries();
     setSettingsTab('general');
     applyBrush();
@@ -749,6 +776,7 @@ export function open() {
     // opening that wants a picture presses the brush.
     uiOpened().finally(() => applyBackground());
     musicUiOpened();
+    mapUiOpened();
     transcript.refresh({ followLatest: true });
     desiredPane = Number(settings().paneHeight) || PANE_DEFAULT;
     applyPaneHeight(desiredPane);
@@ -773,6 +801,8 @@ export function close() {
     uiClosed();
     // The music stops with the scene: the master switch governs sound too.
     musicUiClosed();
+    // The map window goes away with the scene as well.
+    mapUiClosed();
 
     if (frame.contains(document.activeElement)) document.activeElement.blur();
 
@@ -1160,6 +1190,33 @@ function applyMusic() {
     }
 
     refreshMusic();
+}
+
+/** Syncs the Map settings rows with the settings, then refreshes the map. */
+function applyMap() {
+    for (const button of root.querySelectorAll('[data-mz-action="map"]')) {
+        button.classList.toggle('is-on', mapOn());
+        button.setAttribute('aria-checked', String(mapOn()));
+    }
+    for (const button of root.querySelectorAll('[data-mz-action="map-mini"]')) {
+        button.classList.toggle('is-on', mapMiniOn());
+        button.setAttribute('aria-checked', String(mapMiniOn()));
+    }
+
+    const depthValue = root.querySelector('[data-mz="map-depth-value"]');
+    if (depthValue) {
+        const depth = Number(settings().mapDepth);
+        depthValue.textContent = depth === 99 ? 'All' : String(depth);
+    }
+
+    // The map's own rows step aside with the master switch.
+    const group = root.querySelector('[data-mz-section="map"]')?.closest('.mz-set-group');
+    group?.querySelectorAll('.mz-set-row').forEach(row => {
+        if (row.hasAttribute('data-mz-map-master')) return;
+        row.hidden = !mapOn();
+    });
+
+    refreshMap();
 }
 
 /**
@@ -2219,6 +2276,9 @@ function wireActions() {
             } else if (which === 'music-dj-every') {
                 settings().musicDjEveryN = stepNumber(Number(settings().musicDjEveryN) || 1, dir, 1, 60);
                 applyMusic();
+            } else if (which === 'map-depth') {
+                settings().mapDepth = stepValue([2, 3, 4, 99], Number(settings().mapDepth) || 4, dir);
+                applyMap();
             } else {
                 settings().narrSize = stepValue(NARR_STEPS, Number(settings().narrSize) || 18.5, dir);
                 applyNarration();
@@ -2284,7 +2344,8 @@ function wireActions() {
                 else enterFullscreen();
                 break;
             case 'dismiss':
-                if (isCardOpen()) closeCard();
+                if (isMapWinOpen()) closeMapWin();
+                else if (isCardOpen()) closeCard();
                 else if (isDockOpen()) closeDock();
                 else if (transcript.isLogOpen()) transcript.closeLog();
                 else closeSettings();
@@ -2370,6 +2431,22 @@ function wireActions() {
                         : 'Nothing has been asked yet in this session.';
                     els.musicDjRequest.hidden = !els.musicDjRequest.hidden;
                 }
+                break;
+            case 'map':
+                settings().map = !settings().map;
+                applyMap();
+                saveSettings();
+                break;
+            case 'map-mini':
+                settings().mapMini = !settings().mapMini;
+                applyMap();
+                saveSettings();
+                break;
+            case 'map-open':
+                openMapWin();
+                break;
+            case 'map-close':
+                closeMapWin();
                 break;
             case 'bg-images':
                 settings().bgImages = !settings().bgImages;
@@ -2500,7 +2577,8 @@ function wireKeys() {
             // rest of the scene.
             if (closeFloats()) return;
             if (closeMemory()) return;
-            if (isCardOpen()) closeCard();
+            if (isMapWinOpen()) closeMapWin();
+            else if (isCardOpen()) closeCard();
             else if (isDockOpen()) closeDock();
             else if (transcript?.isLogOpen()) transcript.closeLog();
             else if (frame.classList.contains('is-settings-open')) closeSettings();

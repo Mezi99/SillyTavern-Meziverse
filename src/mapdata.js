@@ -32,6 +32,7 @@
  * curator - never a merge.
  */
 
+import { stampOf } from './backgrounds.js';
 import { describeScenes } from './scene.js';
 
 /* ---------- chain splitting ---------- */
@@ -156,6 +157,44 @@ export function extractObservations(messages, { persona = '' } = {}) {
                 locationTag: scene.locationTag || '',
                 present: scene.present || [],
             });
+        });
+    });
+
+    return out;
+}
+
+/**
+ * The flat fallback for a story without scene tags: every stamped reply's
+ * background record already names its place (the watcher wrote the name), so
+ * the chat's drawn pictures become a simple map of visited places - the
+ * Frame spec's original promise. One observation per stamped reply; a reply
+ * without a stamp inherits nothing and simply has no place of its own.
+ *
+ * @param {Array<{extra?:object}>} messages SillyTavern's chat array
+ * @param {Record<string, {place?:string}>} records the bg store's records
+ * @returns {object[]} observations like `extractObservations`, chains of one level
+ */
+export function extractStampObservations(messages, records = {}) {
+    const list = Array.isArray(messages) ? messages : [];
+    const out = [];
+
+    list.forEach((message, msgIndex) => {
+        const id = stampOf(message);
+        const record = id ? records?.[id] : null;
+        const place = record && typeof record.place === 'string' ? record.place.trim() : '';
+        const chain = splitMapChain(place);
+        if (!chain.length) return;
+
+        out.push({
+            at: { msgIndex, tagIndex: 0 },
+            placeFull: place,
+            chain,
+            date: '',
+            time: '',
+            hour: null,
+            weather: '',
+            locationTag: '',
+            present: [],
         });
     });
 
@@ -354,7 +393,9 @@ export function buildAtlas(observations, { equivalences = [] } = {}) {
         return out;
     }
 
-    obs.forEach(entry => place(entry));
+    obs.forEach(entry => {
+        entry.nodeId = place(entry)?.id || null;
+    });
 
     /* Kinds: mobile and transient as detected, leaves as spots, containers by
        level - the tag contract's own Region | Area | Place | Spot reading. */

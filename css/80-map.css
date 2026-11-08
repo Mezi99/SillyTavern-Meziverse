@@ -1,0 +1,496 @@
+/* ==========================================================================
+   Meziverse — the map
+   The minimap window (the small one on screen) and the full atlas window.
+   Tokens only: nothing here names a colour directly.
+   ========================================================================== */
+
+/* ---------- the minimap window ---------- */
+
+.mz-map {
+    position: absolute;
+    z-index: calc(var(--mz-z-pane) + 1);
+    display: flex;
+    flex-direction: column;
+    width: 236px;
+    max-width: calc(100vw - 16px);
+    border: 1px solid var(--mz-line-strong);
+    border-radius: var(--mz-r-lg);
+    background: var(--mz-surface-solid);
+    box-shadow: var(--mz-shadow-sm);
+    color: var(--mz-text);
+    font-family: var(--mz-font-ui);
+}
+
+.mz-map.is-compact {
+    width: auto;
+    border-radius: var(--mz-r-pill);
+}
+
+.mz-map.is-dragging {
+    cursor: grabbing;
+    user-select: none;
+}
+
+.mz-map-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px 4px 4px;
+    min-width: 0;
+    cursor: grab;
+}
+
+.mz-map-art {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border: 1px solid var(--mz-line);
+    border-radius: 50%;
+    background: var(--mz-surface-2);
+    color: var(--mz-accent);
+    cursor: pointer;
+}
+
+.mz-map-art .ico { width: 13px; height: 13px; }
+
+.mz-map-title {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+.mz-map-title b {
+    font-size: var(--mz-text-xs);
+    font-weight: 600;
+    letter-spacing: .02em;
+}
+
+.mz-map-title small {
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--mz-text-2xs);
+    color: var(--mz-text-dim);
+}
+
+.mz-map.is-compact .mz-map-title small { display: none; }
+.mz-map.is-compact .mz-map-head { padding: 3px 4px; }
+
+.mz-map-mini {
+    padding: 2px 6px 6px;
+}
+
+.mz-mini-svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: 118px;
+}
+
+.mz-mini-block {
+    fill: var(--mz-surface-2);
+    stroke: var(--mz-line);
+}
+
+.mz-mini-block.is-mobile {
+    stroke: var(--mz-accent-line);
+    stroke-dasharray: 3 3;
+}
+
+.mz-mini-label {
+    fill: var(--mz-text-dim);
+    font-family: var(--mz-font-ui);
+    font-size: 8.5px;
+    letter-spacing: .02em;
+}
+
+.mz-mini-dot {
+    fill: var(--mz-text-dim);
+    cursor: pointer;
+}
+
+.mz-mini-dot.is-now {
+    fill: var(--mz-accent);
+    stroke: var(--mz-accent-ink);
+    stroke-width: 1;
+    animation: mz-mini-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes mz-mini-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: .55; }
+}
+
+/* ---------- the full map window ---------- */
+
+/* the veil goes up behind the full map, exactly as for the other surfaces */
+.mz-frame.is-mapwin-open > .mz-veil {
+    display: block;
+}
+
+.mz-mapwin {
+    position: absolute;
+    z-index: var(--mz-z-sheet);
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    margin: max(12px, 4vh) auto;
+    width: min(920px, 92vw);
+    height: min(660px, 88vh);
+    border: 1px solid var(--mz-line-strong);
+    border-radius: var(--mz-r-xl);
+    background: var(--mz-surface-solid);
+    box-shadow: var(--mz-shadow);
+    color: var(--mz-text);
+    font-family: var(--mz-font-ui);
+    overflow: hidden;
+}
+
+.mz-mapwin-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px 10px 16px;
+    border-bottom: 1px solid var(--mz-line);
+}
+
+.mz-mapwin-head h2 {
+    margin: 0;
+    font-size: var(--mz-text-lg);
+    font-weight: 600;
+    letter-spacing: .01em;
+}
+
+.mz-mapwin-sum {
+    flex: 1;
+    min-width: 0;
+    font-size: var(--mz-text-xs);
+    color: var(--mz-text-dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mz-mapwin-tools {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.mz-mapwin-body {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    grid-template-rows: auto minmax(0, 1fr);
+}
+
+.mz-map-now {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--mz-line);
+    background: var(--mz-accent-wash);
+    font-size: var(--mz-text-sm);
+}
+
+.mz-map-now b {
+    font-weight: 600;
+    color: var(--mz-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mz-map-scroll {
+    min-height: 0;
+    overflow: auto;
+    padding: 12px 16px 16px;
+}
+
+.mz-map-empty {
+    margin: 24px 8px;
+    font-size: var(--mz-text-sm);
+    color: var(--mz-text-dim);
+    line-height: 1.6;
+    max-width: 46ch;
+}
+
+.mz-map-atlas {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* ---------- groups and chips ---------- */
+
+.mz-map-group {
+    border: 1px solid var(--mz-line);
+    border-radius: var(--mz-r-lg);
+    background: var(--mz-surface-2);
+    padding: 8px;
+}
+
+.mz-map-group-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+    cursor: pointer;
+}
+
+.mz-map-group-head b {
+    font-size: var(--mz-text-sm);
+    font-weight: 600;
+    letter-spacing: .01em;
+}
+
+.mz-map-group-head i {
+    font-style: normal;
+    font-size: var(--mz-text-2xs);
+    color: var(--mz-text-dim);
+}
+
+.mz-map-travels {
+    border-style: dashed;
+    border-color: var(--mz-accent-line);
+}
+
+.mz-map-kids {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.mz-map-kids .mz-map-group {
+    flex: 1 1 240px;
+    margin: 0;
+}
+
+.mz-map-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 260px;
+    padding: 3px 9px 3px 3px;
+    border: 1px solid var(--mz-line);
+    border-radius: var(--mz-r-pill);
+    background: var(--mz-surface);
+    color: var(--mz-text);
+    font-family: inherit;
+    font-size: var(--mz-text-xs);
+    cursor: pointer;
+}
+
+.mz-map-chip:hover { border-color: var(--mz-line-strong); }
+
+.mz-map-chip.is-transient {
+    color: var(--mz-text-dim);
+    border-style: dashed;
+}
+
+.mz-map-chip.is-mobile {
+    border-color: var(--mz-accent-line);
+}
+
+.mz-map-chip.is-sel {
+    border-color: var(--mz-accent);
+    background: var(--mz-accent-soft);
+}
+
+.mz-map-chip.is-now {
+    border-color: var(--mz-accent);
+    box-shadow: 0 0 0 1px var(--mz-accent-line);
+}
+
+.mz-map-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mz-map-thumb {
+    flex: none;
+    width: 22px;
+    height: 22px;
+    border-radius: var(--mz-r-pill);
+    object-fit: cover;
+}
+
+.mz-map-more {
+    flex: none;
+    font-style: normal;
+    font-size: var(--mz-text-2xs);
+    color: var(--mz-text-dim);
+}
+
+/* ---------- the node card ---------- */
+
+.mz-map-detail {
+    min-height: 0;
+    overflow: auto;
+    padding: 12px 14px 16px;
+    border-left: 1px solid var(--mz-line);
+    background: var(--mz-surface-2);
+    font-size: var(--mz-text-xs);
+    color: var(--mz-text-muted);
+}
+
+.mz-map-detail-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.mz-map-detail-head h3 {
+    margin: 0;
+    flex: 1;
+    min-width: 0;
+    font-size: var(--mz-text-md);
+    font-weight: 600;
+    color: var(--mz-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mz-map-tag {
+    flex: none;
+    padding: 1px 8px;
+    border: 1px solid var(--mz-line);
+    border-radius: var(--mz-r-pill);
+    font-size: var(--mz-text-2xs);
+    color: var(--mz-text-dim);
+}
+
+.mz-map-tag.is-mobile {
+    border-color: var(--mz-accent-line);
+    color: var(--mz-accent);
+}
+
+.mz-map-path {
+    margin: 2px 0 6px;
+    color: var(--mz-text-dim);
+}
+
+.mz-map-aliases {
+    margin: 2px 0 6px;
+    font-style: italic;
+}
+
+.mz-map-gallery {
+    display: flex;
+    gap: 6px;
+    margin: 8px 0;
+    overflow-x: auto;
+}
+
+.mz-map-shot {
+    flex: none;
+    width: 92px;
+    height: 58px;
+    border: 1px solid var(--mz-line);
+    border-radius: var(--mz-r-sm);
+    object-fit: cover;
+}
+
+.mz-map-flags {
+    margin: 6px 0;
+    padding-left: 16px;
+}
+
+.mz-map-flags li { color: var(--mz-warn); }
+
+.mz-map-detail h4 {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 12px 0 4px;
+    font-size: var(--mz-text-xs);
+    font-weight: 600;
+    color: var(--mz-text);
+}
+
+.mz-map-detail h4 i {
+    font-style: normal;
+    font-weight: 400;
+    color: var(--mz-text-dim);
+}
+
+.mz-map-visits {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.mz-map-visits li {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 3px 0;
+    border-bottom: 1px solid var(--mz-line);
+}
+
+.mz-map-visits li > :first-child {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mz-map-goto {
+    flex: none;
+    font-size: var(--mz-text-2xs);
+}
+
+.mz-map-route {
+    margin: 0;
+    line-height: 1.6;
+}
+
+/* ---------- small screens ---------- */
+
+@media (max-width: 760px) {
+    .mz-mapwin {
+        margin: 8px;
+        width: auto;
+        height: auto;
+        inset: 0;
+    }
+
+    .mz-mapwin-body {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .mz-map-detail {
+        border-left: 0;
+        border-top: 1px solid var(--mz-line);
+        max-height: 40vh;
+    }
+}
+
+/* the map keeps its promises under reduced motion */
+#mz-root[data-mz-motion="reduced"] .mz-mini-dot.is-now {
+    animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .mz-mini-dot.is-now {
+        animation: none;
+    }
+}

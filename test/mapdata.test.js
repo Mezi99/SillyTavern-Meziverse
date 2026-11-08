@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
     buildAtlas,
     extractObservations,
+    extractStampObservations,
     foldSegment,
     isTransientFold,
     splitAspect,
@@ -230,6 +231,35 @@ test('a name that only sounds generic is still a place', () => {
     assert.equal(isTransientFold('street'), true);
     assert.equal(isTransientFold('fifth street walk up'), false);
     assert.equal(isTransientFold('local cafe parking lot'), false);
+});
+
+test('every observation lands on its deepest node', () => {
+    const atlas = buildAtlas(obs(['USA', 'NYC'], ['USA', 'NYC', 'Docks']));
+
+    assert.equal(atlas.observations[0].nodeId, byFold(atlas, 'nyc')[0].id);
+    assert.equal(atlas.observations[1].nodeId, byFold(atlas, 'docks')[0].id);
+});
+
+test('stamp observations: a story without tags still maps its drawn places', () => {
+    const messages = [
+        { mes: 'One', extra: { meziverse: { bg: 'bg_1' } } },
+        { mes: 'Two', extra: { meziverse: { bg: 'bg_1' } } },
+        { mes: 'Three', extra: { meziverse: { bg: 'bg_2' } } },
+        { mes: 'Four' },
+    ];
+    const records = {
+        bg_1: { id: 'bg_1', place: 'The Docks' },
+        bg_2: { id: 'bg_2', place: 'Jammie’s house | Kitchen' },
+    };
+
+    const out = extractStampObservations(messages, records);
+    assert.equal(out.length, 3);
+    assert.deepEqual(out[0].chain, ['The Docks']);
+    assert.deepEqual(out[2].chain, ['Jammie’s house', 'Kitchen']);
+    assert.deepEqual(out[1].at, { msgIndex: 1, tagIndex: 0 });
+
+    const atlas = buildAtlas(out);
+    assert.ok(Object.values(atlas.nodes).some(node => node.name === 'Kitchen'));
 });
 
 test('similarity is flagged for the curator, and digits alone never flag', () => {

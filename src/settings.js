@@ -56,6 +56,18 @@ const DEFAULTS = {
     // The music player: the scene's soundtrack, a compact YouTube player in
     // the header. Off hides it whole and nothing plays.
     music: true,
+    // The map: the story's places as a live atlas - a minimap window on
+    // screen that opens the full map. Built from the scene tags; without
+    // tags, from the places the chat's backgrounds already name. Off hides
+    // the module whole.
+    map: true,
+    // The minimap window itself - the small one in the corner. Off leaves
+    // the compact map button, which still opens the full map.
+    mapMini: true,
+    // How deep the atlas shows places: 2, 3 or 4 levels, or 99 for all.
+    mapDepth: 4,
+    // The minimap window's remembered spot. Null parks it bottom-left.
+    mapPos: null,
     // Story requests: a `<music>` tag in a reply starts playback when the
     // reply lands. Off leaves playback to the player's own input.
     musicAuto: true,
@@ -196,6 +208,16 @@ export function speechFxOn() {
 /** Whether the music player exists at all - the master switch. */
 export function musicOn() {
     return settings().music !== false;
+}
+
+/** Whether the map exists at all - the master switch for the atlas windows. */
+export function mapOn() {
+    return settings().map !== false;
+}
+
+/** Whether the minimap window shows; off leaves the compact map button. */
+export function mapMiniOn() {
+    return settings().mapMini !== false;
 }
 
 /** Whether a `<music>` tag in a reply may start playback on arrival. */

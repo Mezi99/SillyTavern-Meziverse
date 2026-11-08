@@ -10,6 +10,7 @@ import { whenReady } from './src/st.js';
 import { mount, open, isOpen } from './src/overlay.js';
 import { initBackgrounds } from './src/bgchain.js';
 import { initMusic } from './src/music.js';
+import { initMap } from './src/map.js';
 import { addLauncher, addDrawerBlock } from './src/launcher.js';
 
 async function boot() {
@@ -20,6 +21,7 @@ async function boot() {
     // until it is opened nothing runs.
     initBackgrounds({ isOpen });
     initMusic({ isOpen });
+    initMap({ isOpen });
     addLauncher(open);
     addDrawerBlock(open);
 
