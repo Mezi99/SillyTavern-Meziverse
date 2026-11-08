@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
     BG_STORE_VERSION,
-    BG_HISTORY_TURNS,
+    BG_STORY_REPLIES,
     WATCHER_SCHEMA,
     aliasLocation,
     buildWatcherRequest,
@@ -13,6 +13,8 @@ import {
     decide,
     extractRecentPlaces,
     fallbackLocationPrompt,
+    formatLatestStory,
+    groupMessageByScene,
     isOurBackground,
     knownBackgroundsList,
     locationKey,
@@ -285,6 +287,23 @@ test('decide turns a resolved place into none, apply, or watch', () => {
 
 const msg = mes => ({ mes });
 
+test('groupMessageByScene groups narration under the scene it happens in', () => {
+    const groups = groupMessageByScene(
+        'Pier approach. <scene date="Tuesday, March 4 · 9:40 PM" location="The city | Docks | Pier 9" weather="Rain" /> Rain hammers the planks. <scene location="The Docks" /> Silence on the boards.',
+    );
+
+    assert.deepEqual(groups, [
+        { place: '', date: '', time: '', weather: '', text: 'Pier approach.' },
+        { place: 'The city | Docks | Pier 9', date: 'Tuesday, March 4', time: '9:40 PM', weather: 'Rain', text: 'Rain hammers the planks.' },
+        { place: 'The Docks', date: '', time: '', weather: '', text: 'Silence on the boards.' },
+    ]);
+});
+
+test('groupMessageByScene strips other tags out of the narration', () => {
+    const groups = groupMessageByScene('Walk on. <scene location="A" /> At the pier. <ledger>secret</ledger>');
+    assert.deepEqual(groups.map(group => group.text), ['Walk on.', 'At the pier.']);
+});
+
 test('extractRecentPlaces walks the latest replies backwards, oldest first', () => {
     const messages = [
         msg('<scene location="The Docks" /> ...'),
@@ -296,32 +315,42 @@ test('extractRecentPlaces walks the latest replies backwards, oldest first', () 
     assert.deepEqual(extractRecentPlaces(messages, { limit: 6 }), ['The Docks', 'Pier 9']);
 });
 
-test('buildWatcherRequest serves the store and the story, and knows force', async () => {
+test('formatLatestStory groups by scene when tagged and stays raw when not', () => {
+    const messages = [msg('Pre. <scene location="A" weather="Rain" /> Post.')];
+
+    assert.equal(formatLatestStory(messages, { tagged: true, count: 2 }), 'Pre.\nSCENE: A (Rain)\nPost.');
+    assert.equal(formatLatestStory(messages, { tagged: false, count: 2 }), 'Pre. <scene location="A" weather="Rain" /> Post.');
+    assert.equal(formatLatestStory([msg('one'), msg('two')], { tagged: false, count: 1 }), 'two', 'the window is the last count replies');
+
+    const polluted = [msg('<scene date="[Friday]" location="[Metro City | Pier 9]" weather="[Cool]" /> x')];
+    assert.equal(
+        formatLatestStory(polluted, { tagged: true, count: 1 }),
+        'SCENE: Metro City | Pier 9 (Friday, Cool)\nx',
+        'the note example\'s bracket echo never reaches the story blocks');
+});
+
+test('buildWatcherRequest serves the store and the story, and knows force', () => {
     const store = normalizeStore();
     const messages = [msg('<scene location="A" /> x')];
 
-    const empty = await buildWatcherRequest({ store, messages, tagged: true, count: 2 });
-    const question = empty.prompt[empty.prompt.length - 1].content;
-    assert.ok(question.includes('CURRENT BACKGROUND\nnone yet'));
-    assert.ok(question.includes('KNOWN BACKGROUNDS\nnone'));
-    assert.ok(question.includes('RECENT PLACES\nA'));
-    assert.ok(question.includes('LATEST STORY\n'));
-    assert.equal(empty.prompt[0].role, 'assistant', 'the story rides as chat turns');
-    assert.equal(empty.prompt[0].content, '<scene location="A" /> x', 'raw - tags and all');
+    const empty = buildWatcherRequest({ store, messages, tagged: true, count: 2 });
+    assert.ok(empty.prompt.includes('CURRENT BACKGROUND\nnone yet'));
+    assert.ok(empty.prompt.includes('KNOWN BACKGROUNDS\nnone'));
+    assert.ok(empty.prompt.includes('RECENT PLACES\nA'));
+    assert.ok(empty.prompt.includes('LATEST STORY\n'));
     assert.equal(empty.jsonSchema, WATCHER_SCHEMA);
     assert.equal(empty.systemPrompt, watcherSystemPrompt());
 
     storeRecord(store, { key: 'A', place: 'A', prompt: 'a pier at dusk', path: '/a.png' });
-    const full = await buildWatcherRequest({ store, messages, tagged: true, count: 2 });
-    const fullQuestion = full.prompt[full.prompt.length - 1].content;
-    assert.ok(fullQuestion.includes('CURRENT BACKGROUND\nA [Full/world/map location: A] - a pier at dusk'));
-    assert.ok(fullQuestion.includes('KNOWN BACKGROUNDS\n- bg_1: A [Full/world/map location: A] - a pier at dusk'));
+    const full = buildWatcherRequest({ store, messages, tagged: true, count: 2 });
+    assert.ok(full.prompt.includes('CURRENT BACKGROUND\nA [Full/world/map location: A] - a pier at dusk'));
+    assert.ok(full.prompt.includes('KNOWN BACKGROUNDS\n- bg_1: A [Full/world/map location: A] - a pier at dusk'));
 
     assert.ok(watcherSystemPrompt({ force: true }).includes('fresh image'), 'force switches matching off');
 });
 
 test('watcherSystemPrompt keeps the answer format while the core stays tunable', () => {
-    assert.ok(watcherSystemPrompt().includes('scene tags included'), 'the scene-tagged hand leans on the scene tags riding the turns');
+    assert.ok(watcherSystemPrompt().includes('grouped by scene blocks'), 'the scene-tagged hand leans on the scene structure');
     assert.ok(watcherSystemPrompt({ tagged: false }).includes('no scene markers'), 'the plain-prose hand gets the raw-prose core');
 
     const custom = watcherSystemPrompt({ core: 'Describe places like a haiku.' });
@@ -332,26 +361,22 @@ test('watcherSystemPrompt keeps the answer format while the core stays tunable',
     assert.ok(forced.includes('fresh image'), 'force switches matching off');
 });
 
-test('buildWatcherRequest uses the core and the hand it is given', async () => {
+test('buildWatcherRequest uses the core and the hand it is given', () => {
     const store = normalizeStore();
-    const request = await buildWatcherRequest({ store, messages: [msg('<scene location="A" /> x')], systemCore: 'My own rules.' });
+    const request = buildWatcherRequest({ store, messages: [msg('<scene location="A" /> x')], systemCore: 'My own rules.' });
     assert.ok(request.systemPrompt.startsWith('My own rules.'));
     assert.ok(request.systemPrompt.includes('"state":"same|known|new"'));
-    assert.equal(request.responseLength, undefined, 'no cap: providers that count the prompt against it starve the answer');
+    assert.equal(request.responseLength, undefined, 'no cap: providers that count the prompt against the budget starve the answer');
 });
 
-test('buildWatcherRequest sends one history turn before the reply to resolve', async () => {
+test('buildWatcherRequest reads only the last reply by default', () => {
     const store = normalizeStore();
     const messages = [msg('the pier at dawn'), msg('the warehouse at midnight')];
 
-    const request = await buildWatcherRequest({ store, messages, tagged: false });
-    assert.equal(BG_HISTORY_TURNS, 1);
-    assert.equal(request.prompt.length, 3, 'one history turn, the reply to resolve, and the question');
-    assert.equal(request.prompt[0].content, 'the pier at dawn');
-    assert.equal(request.prompt[1].content, 'the warehouse at midnight', 'the reply to resolve keeps its own assistant turn');
-    assert.equal(request.prompt[2].role, 'user');
-    assert.ok(request.prompt[2].content.includes('LATEST STORY'));
-    assert.ok(request.prompt[2].content.includes('the last assistant message above'));
+    const request = buildWatcherRequest({ store, messages, tagged: false });
+    assert.equal(BG_STORY_REPLIES, 1);
+    assert.ok(request.prompt.includes('LATEST STORY\nthe warehouse at midnight'));
+    assert.ok(!request.prompt.includes('the pier at dawn'), 'story context is hardcoded to the last reply');
 });
 
 test('planResolution runs the free outcomes at any pace and throttles the costly half', () => {
@@ -428,17 +453,16 @@ test('cleanPlaceText and placeShortName read the location chain', () => {
     assert.equal(placeShortName(''), '');
 });
 
-test('buildWatcherRequest labels the place and never truncates the description', async () => {
+test('buildWatcherRequest labels the place and never truncates the description', () => {
     const store = normalizeStore();
     const long = 'dim gritty bedroom at night, ' + 'word '.repeat(60) + 'the end of the description';
     storeRecord(store, { key: 'Metro City | Unit 4B - Bedroom', place: '[Metro City | Unit 4B - Bedroom]', prompt: long, path: '/bed.png' });
 
-    const request = await buildWatcherRequest({ store, messages: [msg('<scene location="Metro City | Unit 4B - Bedroom" /> x')], tagged: true });
-    const question = request.prompt[request.prompt.length - 1].content;
+    const request = buildWatcherRequest({ store, messages: [msg('<scene location="Metro City | Unit 4B - Bedroom" /> x')], tagged: true });
     const line = `- bg_1: Unit 4B - Bedroom [Full/world/map location: Metro City | Unit 4B - Bedroom] - ${long}`;
-    assert.ok(question.includes(line), 'the short name names the picture, the chain is context, the description arrives whole');
-    assert.ok(question.includes(`CURRENT BACKGROUND\nUnit 4B - Bedroom [Full/world/map location: Metro City | Unit 4B - Bedroom] - ${long}`));
-    assert.ok(!question.includes('...'), 'nothing is cut');
+    assert.ok(request.prompt.includes(line), 'the short name names the picture, the chain is context, the description arrives whole');
+    assert.ok(request.prompt.includes(`CURRENT BACKGROUND\nUnit 4B - Bedroom [Full/world/map location: Metro City | Unit 4B - Bedroom] - ${long}`));
+    assert.ok(!request.prompt.includes('...'), 'nothing is cut');
 });
 
 test('fallbackLocationPrompt describes the place plainly when the watcher fails', () => {
@@ -526,7 +550,7 @@ test('decide carries what the reply already has, by meaning', () => {
     assert.equal(decide(drift, 'Pier No9', { baseline: aliased }).action, 'none', 'the name the carried picture goes by is a skip too');
 });
 
-test("buildWatcherRequest asks about its own reply, not the chat's end", async () => {
+test("buildWatcherRequest asks about its own reply, not the chat's end", () => {
     const store = normalizeStore();
     const prior = storeRecord(store, { place: 'Pier 9', prompt: 'a pier at dusk', path: '/b/pier.png' });
     const messages = [
@@ -535,17 +559,11 @@ test("buildWatcherRequest asks about its own reply, not the chat's end", async (
         msg('still on the roof'),
     ];
 
-    const request = await buildWatcherRequest({ store, messages, at: 1, current: prior });
-    const question = request.prompt[request.prompt.length - 1].content;
-    assert.ok(question.includes('CURRENT BACKGROUND\nPier 9 [Full/world/map location: Pier 9] - a pier at dusk'), 'the reply carried its own baseline in');
-    assert.equal(
-        request.prompt[request.prompt.length - 2].content,
-        '<scene location="Rooftop" /> on the roof',
-        'the story ends at the target reply - raw, scene tag and all');
-    assert.ok(!request.prompt.some(turn => turn.content.includes('still on the roof')), 'later replies are not part of its story');
+    const request = buildWatcherRequest({ store, messages, at: 1, current: prior });
+    assert.ok(request.prompt.includes('CURRENT BACKGROUND\nPier 9 [Full/world/map location: Pier 9] - a pier at dusk'), 'the reply carried its own baseline in');
+    assert.ok(request.prompt.includes('SCENE: Rooftop'), 'the story ends at the target reply');
+    assert.ok(!request.prompt.includes('still on the roof'), 'later replies are not part of its story');
 
-    const plain = await buildWatcherRequest({ store, messages });
-    const plainQuestion = plain.prompt[plain.prompt.length - 1].content;
-    assert.ok(plainQuestion.includes('CURRENT BACKGROUND\nPier 9 [Full/world/map location: Pier 9] - a pier at dusk'), 'with no baseline given, the on-screen record stands in');
-    assert.equal(plain.prompt[plain.prompt.length - 2].content, 'still on the roof', 'with no target reply named, the latest AI reply is the one to resolve');
+    const plain = buildWatcherRequest({ store, messages });
+    assert.ok(plain.prompt.includes('CURRENT BACKGROUND\nPier 9 [Full/world/map location: Pier 9] - a pier at dusk'), 'with no baseline given, the on-screen record stands in');
 });

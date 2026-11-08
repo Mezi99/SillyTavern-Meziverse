@@ -108,8 +108,9 @@ const DEFAULTS = {
 };
 
 /**
- * Saved prompt cores that still equal an older default, paired with the
- * current one - see `settings()` for why they follow the default forward.
+ * Saved prompt cores that still equal a superseded default, paired with the
+ * current one - see `settings()` for why they follow the default (either
+ * way the default moves).
  */
 const PROMPT_DEFAULT_REFRESH = [
     ['musicDjPrompt', LEGACY_DEFAULT_DJ_PROMPT, DEFAULT_DJ_PROMPT],

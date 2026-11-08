@@ -22,8 +22,8 @@
  * applying and scheduling - happens in bgchain.js.
  */
 
-import { describeScenes, splitLocation } from './scene.js';
-import { splitStory } from './history.js';
+import { describeScene, describeScenes, splitLocation } from './scene.js';
+import { parseTags, stripNonSceneTags } from './tags.js';
 
 export const BG_STORE_VERSION = 1;
 
@@ -671,27 +671,11 @@ export const WATCHER_SCHEMA = Object.freeze({
  * parts meant to be tuned: the settings sheet edits copies of them, and the
  * answer format below is appended by code so parsing survives any edit.
  *
- * Both hands read the LATEST STORY as the chat's own recent turns - raw,
- * tags and all, only the user's prompt regexes applied (see history.js).
- * The scene-tagged hand leans on the scene tags riding inside those turns;
- * the plain-prose hand reads the prose alone, where the location may change
- * inside a single paragraph or hold for many messages.
- *
- * The LEGACY constants are the defaults as v2.8.0 shipped them, kept only so
- * a saved settings copy still holding one can follow the default forward
- * (see settings.js).
+ * The scene-tagged hand sees the story grouped by scene blocks and leans on
+ * that structure; the plain-prose hand gets raw text, where the location may
+ * change inside a single paragraph or hold for many messages.
  */
-export const DEFAULT_BG_PROMPT_ON = `You are a background-art assistant for a visual-novel style roleplay. You receive the CURRENT BACKGROUND (the place name and image description shown now), a list of KNOWN BACKGROUNDS, a RECENT PLACES timeline, and the LATEST STORY as the chat's recent turns exactly as they came - scene tags included, each naming the place, time and weather its narration happens in. The reply to resolve is the last assistant turn; the story is at its END.
-
-Every place arrives as "short name [Full/world/map location: ...]": a location chain like Metro City | Downtown District | Fifth Street Walk-Up | Unit 4B - Bedroom. The short name - the part after the last "|" - is the specific place to paint; the chain before it (region, city, district, street) is the world the place lives in: the short name decides what to paint, the chain decides how it looks - architecture, materials, vegetation, cultural details, era and climate follow the world named first. A suburb of Las Vegas, a street in Pyongyang and a village in a high-fantasy realm must never share the same buildings.
-
-VERIFY first: is the place at the end of the LATEST STORY the same place as the CURRENT BACKGROUND? Place names are free text written by another model: "Pier No9", "Pier 9" and "the ninth pier" may all be the same place. Judge by meaning, not by spelling. If it is the same place, answer state "same".
-
-If the place is genuinely different but clearly equals one of the KNOWN BACKGROUNDS, answer state "known" with that background's id.
-
-Otherwise answer state "new" and write an image prompt that describes ONLY the current place as an establishing shot for a visual-novel background. You write prompts for a text-to-image model: describe what a camera would see at that place - the space, architecture, objects, materials, weather, time of day, lighting, mood, and a clear vantage point. Rules: 40 to 90 words of comma-separated visual phrases; the place is the subject - no characters, no people, no silhouettes, no names, no actions, no emotions, no sounds; anchor lighting and sky on the scene tag's time of day and weather when stated; anchor the place's style on the location chain's world - buildings, materials, colors, vegetation and signage follow the region, and invented worlds take their visual identity from the names and the story's own words; the prompt is always a visual description - never a location chain, a place name, or any text you received verbatim; style and quality words are appended for you - never include them; never mention "background" or anything about prompts. Output only the description in "prompt".`;
-
-export const LEGACY_DEFAULT_BG_PROMPT_ON = `You are a background-art assistant for a visual-novel style roleplay. You receive the CURRENT BACKGROUND (the place name and image description shown now), a list of KNOWN BACKGROUNDS, a RECENT PLACES timeline, and the LATEST STORY grouped by scene blocks - each block's header names the place, time and weather its narration happens in. The LAST block is where the story is now.
+export const DEFAULT_BG_PROMPT_ON = `You are a background-art assistant for a visual-novel style roleplay. You receive the CURRENT BACKGROUND (the place name and image description shown now), a list of KNOWN BACKGROUNDS, a RECENT PLACES timeline, and the LATEST STORY grouped by scene blocks - each block's header names the place, time and weather its narration happens in. The LAST block is where the story is now.
 
 Every place arrives as "short name [Full/world/map location: ...]": a location chain like Metro City | Downtown District | Fifth Street Walk-Up | Unit 4B - Bedroom. The short name - the part after the last "|" - is the specific place to paint; the chain before it (region, city, district, street) is the world the place lives in: the short name decides what to paint, the chain decides how it looks - architecture, materials, vegetation, cultural details, era and climate follow the world named first. A suburb of Las Vegas, a street in Pyongyang and a village in a high-fantasy realm must never share the same buildings.
 
@@ -701,7 +685,7 @@ If the place is genuinely different but clearly equals one of the KNOWN BACKGROU
 
 Otherwise answer state "new" and write an image prompt that describes ONLY the current place as an establishing shot for a visual-novel background. You write prompts for a text-to-image model: describe what a camera would see at that place - the space, architecture, objects, materials, weather, time of day, lighting, mood, and a clear vantage point. Rules: 40 to 90 words of comma-separated visual phrases; the place is the subject - no characters, no people, no silhouettes, no names, no actions, no emotions, no sounds; anchor lighting and sky on the block's time of day and weather when stated; anchor the place's style on the location chain's world - buildings, materials, colors, vegetation and signage follow the region, and invented worlds take their visual identity from the names and the story's own words; the prompt is always a visual description - never a location chain, a place name, or any text you received verbatim; style and quality words are appended for you - never include them; never mention "background" or anything about prompts. Output only the description in "prompt".`;
 
-export const DEFAULT_BG_PROMPT_OFF = `You are a background-art assistant for a visual-novel style roleplay. You receive the CURRENT BACKGROUND (the place name and image description shown now), a list of KNOWN BACKGROUNDS, a RECENT PLACES timeline, and the LATEST STORY as the chat's recent turns exactly as they came - tags and all. There are no scene markers here: the location may change abruptly inside a paragraph or stay put for many messages. Read the whole story for where the characters are at its END.
+export const DEFAULT_BG_PROMPT_OFF = `You are a background-art assistant for a visual-novel style roleplay. You receive the CURRENT BACKGROUND (the place name and image description shown now), a list of KNOWN BACKGROUNDS, a RECENT PLACES timeline, and the LATEST STORY as plain story text. There are no scene markers here: the location may change abruptly inside a paragraph or stay put for many messages. Read the whole excerpt for where the characters are at its END.
 
 Every place arrives as "short name [Full/world/map location: ...]": a location chain like Metro City | Downtown District | Fifth Street Walk-Up | Unit 4B - Bedroom. The short name - the part after the last "|" - is the specific place to paint; the chain before it (region, city, district, street) is the world the place lives in: the short name decides what to paint, the chain decides how it looks - architecture, materials, vegetation, cultural details, era and climate follow the world named first. A suburb of Las Vegas, a street in Pyongyang and a village in a high-fantasy realm must never share the same buildings.
 
@@ -711,7 +695,25 @@ If the place is genuinely different but clearly equals one of the KNOWN BACKGROU
 
 Otherwise answer state "new" and write an image prompt that describes ONLY the current place as an establishing shot for a visual-novel background. You write prompts for a text-to-image model: describe what a camera would see at that place - the space, architecture, objects, materials, weather, time of day, lighting, mood, and a clear vantage point. Rules: 40 to 90 words of comma-separated visual phrases; the place is the subject - no characters, no people, no silhouettes, no names, no actions, no emotions, no sounds; anchor lighting and sky on the story's time of day and weather when stated; anchor the place's style on the location chain's world - buildings, materials, colors, vegetation and signage follow the region, and invented worlds take their visual identity from the names and the story's own words; the prompt is always a visual description - never a location chain, a place name, or any text you received verbatim; style and quality words are appended for you - never include them; never mention "background" or anything about prompts. Output only the description in "prompt".`;
 
-export const LEGACY_DEFAULT_BG_PROMPT_OFF = `You are a background-art assistant for a visual-novel style roleplay. You receive the CURRENT BACKGROUND (the place name and image description shown now), a list of KNOWN BACKGROUNDS, a RECENT PLACES timeline, and the LATEST STORY as plain story text. There are no scene markers here: the location may change abruptly inside a paragraph or stay put for many messages. Read the whole excerpt for where the characters are at its END.
+/**
+ * The prompt cores as the raw-story rewrite (v2.8.1) shipped them - kept
+ * only so a saved settings copy that followed that default forward can
+ * follow the default back to the scene-grouped design above (see
+ * settings.js). The watcher story is v2.8.0\u2019s by design: the same small
+ * context on every call - the last reply grouped by scene and stripped to
+ * environment - never a window that follows the pace (see Technical.md).
+ */
+export const LEGACY_DEFAULT_BG_PROMPT_ON = `You are a background-art assistant for a visual-novel style roleplay. You receive the CURRENT BACKGROUND (the place name and image description shown now), a list of KNOWN BACKGROUNDS, a RECENT PLACES timeline, and the LATEST STORY as the chat's recent turns exactly as they came - scene tags included, each naming the place, time and weather its narration happens in. The reply to resolve is the last assistant turn; the story is at its END.
+
+Every place arrives as "short name [Full/world/map location: ...]": a location chain like Metro City | Downtown District | Fifth Street Walk-Up | Unit 4B - Bedroom. The short name - the part after the last "|" - is the specific place to paint; the chain before it (region, city, district, street) is the world the place lives in: the short name decides what to paint, the chain decides how it looks - architecture, materials, vegetation, cultural details, era and climate follow the world named first. A suburb of Las Vegas, a street in Pyongyang and a village in a high-fantasy realm must never share the same buildings.
+
+VERIFY first: is the place at the end of the LATEST STORY the same place as the CURRENT BACKGROUND? Place names are free text written by another model: "Pier No9", "Pier 9" and "the ninth pier" may all be the same place. Judge by meaning, not by spelling. If it is the same place, answer state "same".
+
+If the place is genuinely different but clearly equals one of the KNOWN BACKGROUNDS, answer state "known" with that background's id.
+
+Otherwise answer state "new" and write an image prompt that describes ONLY the current place as an establishing shot for a visual-novel background. You write prompts for a text-to-image model: describe what a camera would see at that place - the space, architecture, objects, materials, weather, time of day, lighting, mood, and a clear vantage point. Rules: 40 to 90 words of comma-separated visual phrases; the place is the subject - no characters, no people, no silhouettes, no names, no actions, no emotions, no sounds; anchor lighting and sky on the scene tag's time of day and weather when stated; anchor the place's style on the location chain's world - buildings, materials, colors, vegetation and signage follow the region, and invented worlds take their visual identity from the names and the story's own words; the prompt is always a visual description - never a location chain, a place name, or any text you received verbatim; style and quality words are appended for you - never include them; never mention "background" or anything about prompts. Output only the description in "prompt".`;
+
+export const LEGACY_DEFAULT_BG_PROMPT_OFF = `You are a background-art assistant for a visual-novel style roleplay. You receive the CURRENT BACKGROUND (the place name and image description shown now), a list of KNOWN BACKGROUNDS, a RECENT PLACES timeline, and the LATEST STORY as the chat's recent turns exactly as they came - tags and all. There are no scene markers here: the location may change abruptly inside a paragraph or stay put for many messages. Read the whole story for where the characters are at its END.
 
 Every place arrives as "short name [Full/world/map location: ...]": a location chain like Metro City | Downtown District | Fifth Street Walk-Up | Unit 4B - Bedroom. The short name - the part after the last "|" - is the specific place to paint; the chain before it (region, city, district, street) is the world the place lives in: the short name decides what to paint, the chain decides how it looks - architecture, materials, vegetation, cultural details, era and climate follow the world named first. A suburb of Las Vegas, a street in Pyongyang and a village in a high-fantasy realm must never share the same buildings.
 
@@ -743,6 +745,56 @@ export function watcherSystemPrompt({ tagged = true, force = false, core = '' } 
 }
 
 /**
+ * Splits one message at its complete scene tags, so narration arrives grouped
+ * by the place it happens in. The tag's own place, clock and weather ride
+ * along with each group. Text before the first scene tag is its own group with
+ * no place - it belongs to wherever the story was before.
+ *
+ * The message is stripped first (see `stripNonSceneTags`), so what lands in
+ * the groups is the narration and the scene tags, nothing else.
+ *
+ * @param {string} mes
+ * @returns {Array<{place:string, date:string, time:string, weather:string, text:string}>}
+ */
+export function groupMessageByScene(mes) {
+    const clean = stripNonSceneTags(typeof mes === 'string' ? mes : '');
+    const tags = parseTags(clean).filter(tag => tag.name === 'scene' && tag.closed);
+
+    const groups = [];
+    let cursor = 0;
+    let current = null;
+
+    for (const tag of tags) {
+        const lead = clean.slice(cursor, tag.start).trim();
+        if (current) {
+            current.text = [current.text, lead].filter(Boolean).join('\n');
+        } else if (lead) {
+            groups.push({ place: '', date: '', time: '', weather: '', text: lead });
+        }
+
+        const scene = describeScene(tag);
+        current = {
+            place: scene.placeFull || '',
+            date: scene.date || '',
+            time: scene.time || '',
+            weather: scene.weather || '',
+            text: '',
+        };
+        groups.push(current);
+        cursor = tag.end;
+    }
+
+    const tail = clean.slice(cursor).trim();
+    if (current) {
+        current.text = [current.text, tail].filter(Boolean).join('\n');
+    } else if (tail) {
+        groups.push({ place: '', date: '', time: '', weather: '', text: tail });
+    }
+
+    return groups;
+}
+
+/**
  * The place-name timeline of the latest replies, oldest first: where the
  * story has been, so the watcher can feel a hop like "meanwhile, back at..."
  * without seeing those messages in full.
@@ -767,24 +819,66 @@ export function extractRecentPlaces(messages, { limit = 6, at, persona = '' } = 
 }
 
 /**
- * How many story turns ride before the reply being resolved: the image
- * prompts are ours to keep robust, not a user's choice - one turn is the
- * smallest picture of what the reply answers. (The finetuning knob: 2, for
- * slow-paced roleplays.)
+ * The story excerpt the watcher reads.
+ *
+ * Tagged: narration grouped by scene, the tag's place, clock and weather on
+ * each group's header line. The last group is the current place. Untagged
+ * prose has no tags to group by, so the text goes in raw - nothing stripped,
+ * because in untagged prose anything may carry the location.
+ *
+ * @param {Array<{mes:string}>} messages
+ * @param {{tagged?:boolean, count?:number, at?:number, persona?:string}} [options]
+ * @returns {string}
  */
-export const BG_HISTORY_TURNS = 1;
+export function formatLatestStory(messages, { tagged = true, count = BG_STORY_REPLIES, at, persona = '' } = {}) {
+    const list = Array.isArray(messages) ? messages : [];
+    const end = Number.isInteger(at) ? Math.min(at, list.length - 1) : list.length - 1;
+    const start = Math.max(0, end - Math.max(1, count) + 1);
+
+    const turns = [];
+    for (let i = start; i <= end; i += 1) {
+        const mes = typeof list[i]?.mes === 'string' ? list[i].mes : '';
+        if (!mes.trim()) continue;
+
+        if (!tagged) {
+            turns.push(mes.trim());
+            continue;
+        }
+
+        const blocks = [];
+        for (const group of groupMessageByScene(mes)) {
+            // Clean of the note example's bracket echo: raw "[...]" reads as a
+            // placeholder and invites the model to answer with it verbatim.
+            const when = [group.date && group.time ? `${group.date}, ${group.time}` : (group.date || group.time), group.weather]
+                .map(cleanPlaceText)
+                .filter(Boolean)
+                .join(', ');
+            const header = group.place ? `SCENE: ${cleanPlaceText(group.place)}${when ? ` (${when})` : ''}` : '';
+            blocks.push([header, group.text].filter(Boolean).join('\n'));
+        }
+        if (blocks.length) turns.push(blocks.join('\n'));
+    }
+
+    return turns.join('\n\n');
+}
 
 /**
- * The watcher's whole question: what this chat already has, where the story
- * has been, and the chat's own turns up to the reply being resolved - the
- * story arrives raw, tags and all, as chat turns shaped like the main chat
- * (see history.js). Everything is scoped to `at` - a run that lands late
- * still asks about its own reply, not the chat's end.
+ * How much story the watcher reads: the reply being resolved and nothing
+ * older - the image prompts are ours to keep robust, not a user's choice.
+ * (The finetuning knob: 2, for slow-paced roleplays.)
+ */
+export const BG_STORY_REPLIES = 1;
+
+/**
+ * The watcher's whole question: what the reply carried in, what this chat
+ * already has, where the story has been, and the story up to the reply being
+ * resolved. Everything is scoped to `at` - a run that lands late still asks
+ * about its own reply, not the chat's end.
  *
  * @param {{store:object, messages:Array, tagged?:boolean, count?:number, at?:number, persona?:string, force?:boolean, systemCore?:string, current?:object|null}} options
- * @returns {Promise<{systemPrompt:string, prompt:Array<{role:string, content:string}>, jsonSchema:object}>}
+ * @returns {{systemPrompt:string, prompt:string, jsonSchema:object}}
  */
-export async function buildWatcherRequest({ store, messages, tagged = true, count = BG_HISTORY_TURNS, at, persona = '', force = false, systemCore = '', current } = {}) {
+export function buildWatcherRequest({ store, messages, tagged = true, count = BG_STORY_REPLIES, at, persona = '', force = false, systemCore = '', current } = {}) {
     const blocks = [];
 
     // A place reads "short name [Full/world/map location: ...]" everywhere it
@@ -806,22 +900,15 @@ export async function buildWatcherRequest({ store, messages, tagged = true, coun
         : knownBackgroundsList(store, { limit: 6 }).map(entry => entry.place).reverse();
     blocks.push(`RECENT PLACES\n${places.length ? places.map(cleanPlaceText).join(' -> ') : 'unknown'}`);
 
-    // The LATEST STORY rides as the chat's own recent turns - raw, tags and
-    // all, only the user's prompt regexes applied - with the reply to resolve
-    // kept whole as the last assistant turn (see history.js).
-    const { history, last } = await splitStory(messages, { turns: count, at });
-    blocks.push(`LATEST STORY\nThe chat turns above, exactly as they came. The reply to resolve is the last assistant message above.${last ? '' : ' There is no reply yet - the story is just beginning.'}`);
+    blocks.push(`LATEST STORY\n${formatLatestStory(messages, { tagged, count, at, persona }) || 'empty'}`);
 
     return {
         systemPrompt: watcherSystemPrompt({ tagged, force, core: systemCore }),
-        prompt: [
-            ...history.map(turn => ({ role: turn.role, content: turn.text })),
-            ...(last ? [{ role: 'assistant', content: last.text }] : []),
-            { role: 'user', content: blocks.join('\n\n') },
-        ],
+        prompt: blocks.join('\n\n'),
         // No responseLength: on providers that count the prompt against the
-        // budget, a cap starves the answer to nothing (the music DJ taught
-        // us). The global response length is used instead.
+        // budget, a cap this request can afford starves the answer to
+        // nothing ("No message generated"). The global response length is
+        // used instead.
         jsonSchema: WATCHER_SCHEMA,
     };
 }

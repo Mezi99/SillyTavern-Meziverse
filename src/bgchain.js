@@ -445,7 +445,7 @@ async function runTarget({ index, swipeId, force, refresh, my, signal }) {
  * brings back a cached image, "new" draws one.
  */
 async function runWatcherChain({ store, messages, index, swipeId, place, scene, tagged, baseline, persona, force, my, signal }) {
-    const request = await buildWatcherRequest({
+    const request = buildWatcherRequest({
         store,
         messages,
         tagged,
