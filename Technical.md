@@ -1,6 +1,6 @@
 # Meziverse — how it works
 
-Technical notes for version 2.4.0. Written for whoever picks this up next — including future us.
+Technical notes for version 2.8.2. Written for whoever picks this up next — including future us.
 
 ## The one rule: Ride SillyTavern
 
@@ -182,6 +182,7 @@ While the scene is open, ST's `toastr` is intercepted — but its contract survi
 
 ## Conventions worth keeping
 
+- **The two watchers are two agents.** The background watcher (`backgrounds.js` / `bgchain.js`) and the Music DJ (`musicdj.js`) are different modules with different logic and are to be treated as such: each its own story format, prompt, pace, switch and call. Never unify their story reads or share their protocols — the background watcher is environment-only (the last reply, scene-grouped and tag-stripped, one fixed context whatever the pace), the DJ is mood-and-plot (raw chat turns). A fix for one must never reach into the other.
 - No bundler; plain ES modules at repo root. `manifest.json`: `js: index.js`, `css: style.css`.
 - All selectors/ids/classes prefixed `mz-` / `--mz-*` / `#mz-root`.
 - Tests: `npm test` (plain `node --test`) over `test/*.test.js`. Synthetic strings only — never a line of real story text from a live chat.

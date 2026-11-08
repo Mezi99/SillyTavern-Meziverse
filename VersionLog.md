@@ -1,5 +1,29 @@
 # Meziverse — version log
 
+## 2.8.2 — 2026-11-08
+
+Music comes to the scene: the story's own soundtrack plays in the corner — asked for by tag, or chosen by feel.
+
+### The music player
+- A YouTube player lives in the scene header as a **docked pill** — title, channel, transport, volume — undockable into a free-floating card on wide screens and dragged wherever it likes; a narrow window docks it again by itself. YouTube's own chrome is hidden: the widget is the control surface, and the embed runs YouTube's privacy-enhanced `youtube-nocookie.com`.
+- **`<music>` is the story's own request** — a link or video ID plays as written, a song name runs a search and plays the top fit. **Story requests** gates the tag, the player itself lives whenever music is on, and volume, mute, dock and the card's spot are remembered.
+- A blocked or gone video never ends the evening: it falls through to the next candidate with its own title and channel, quietly — only an exhausted list speaks, with a "Watch on YouTube" link beside it. A fresh pick never repeats the track playing or the five just heard.
+
+### Song search, on your own key
+- Searches run on the **user's own free YouTube Data API key**, in the browser — the referrer pinned, so a referrer-restricted key is the right lock. Shorts, memes and reactions are filtered out, long-form is favored, and candidates are verified embeddable before any frame loads.
+
+### The Music DJ
+- A watcher of its own — its own switch, pace, prompt and call — that reads the story after each reply and answers one playback intent (`play` / `volume` / `none`) with a mood and a search query. The story rides as **raw chat turns, tags and all**, cleaned only by the user's own SillyTavern prompt regexes: presets hide story cues in tags, and the DJ needs mood and plot.
+- **Pick style** chooses the reach: **Orchestra** — an instrumental score, never vocal songs — or **Songs** — one specific real song as "Artist - Title", the official or artist upload preferred. Both take the genre from the story itself: a Wild West tale, a sci-fi tale and a medieval one never sound alike. **Fresh pick** on the player asks again, with the order to choose differently; a `<music>` tag the story already cued is never overruled.
+
+### The background watcher is its own agent
+- The two watchers are **different modules with different logic**, and stay that way. The background watcher reads **environment only**: the last reply grouped by its scene tags with every other tag stripped, plus the current background, the library and the places timeline — the same fixed context on every call, whatever the trigger or the pace. The DJ reads mood and plot, raw. (A brief rewrite in the v2.8 line sent the background watcher raw turns too; v2.8.0's design is restored whole — only the answer-length cap is gone, since some providers count it against the prompt budget.)
+- Neither watcher requests structured output: some connections reject it outright (422), and both answers are read from the text.
+
+### Notes
+- The version rides beside the wordmark ("Meziverse v2.8.2"); `manifest.json` matches.
+- The synthetic suite stands at 213 tests.
+
 ## 2.7.0 — 2026-11-06
 
 The spoken word finds its shape: every line said aloud wears a bubble, and the settings learn to make room.
