@@ -19,10 +19,13 @@
  *   Shape 2 - stable tail, churning prefix:
  *     USA | New York City | En Route | Jin's Lotus Emira - Interior
  *     USA | New York City | Street | Jin's Lotus Emira - Interior
- *     ...the tail is a MOBILE place (the car); everything above it is the
- *     position it happened to be at. Containment would say the car lives
- *     inside "En Route" - the atlas instead holds one car node with a
- *     trajectory of positions.
+ *     ...the tail is a MOBILE place (the car). Route context above it is not
+ *     a place at all: the En Route rule (`en route`, or a legacy transient
+ *     spot above a known vehicle) places nothing at or above the keyword -
+ *     the prefix of a leg cannot be trusted - and the level after it is THE
+ *     vehicle. One mobile node per vehicle, keyed by name, with a trajectory
+ *     of parked positions; the journeys between places are legs (deriveLegs),
+ *     not containment.
  *
  * One rule shapes everything below: false splits are cosmetic, false merges
  * corrupt the map. Auto-merge happens only on fold-equality (spelling drift),
@@ -326,6 +329,13 @@ const VEHICLE = /\b(?:car|bus|train|ship|boat|plane|aircraft|taxi|van|truck|moto
  * positions) for Shape 2. Everything resembling-but-unproven lands in `flags`
  * for the curator - never merged here.
  *
+ * Every node also gets `key`, its folded path ("usa/new york city/choi
+ * house/kitchen"; mobiles "~jins lotus emira") - identity that survives a
+ * rebuild, so selection, the saved view and the curator's verdicts speak in
+ * keys, never in n1..nN. Each observation is annotated with `nodeId` and,
+ * when its chain was pure route context (no vehicle after the keyword),
+ * `transit: true`.
+ *
  * @param {Array<{chain:string[], at?:object, date?:string, time?:string, hour?:number|null, weather?:string, locationTag?:string, present?:string[]}>} observations
  * @param {{equivalences?: Array<[string, string]>}} [options]
  *   `equivalences` are known-same name pairs ("NYC" = "New York City") -
@@ -349,9 +359,34 @@ export function buildAtlas(observations, { equivalences = [] } = {}) {
     }
 
     const flags = { same: [], mobilePending: [], ambiguous: [] };
+
+    /* The En Route rule: route context is not a place. A chain with a route
+       keyword places nothing at or above it - a flight changes country
+       mid-leg, so the prefix cannot be trusted - and the level right after
+       the keyword is THE vehicle: one mobile node per folded vehicle name,
+       shared by every trip and every parked stop. `en route` is the keyword
+       by contract; a legacy transient spot counts only above a known
+       vehicle, so "Main Street | Building 5" stays a place. The churn
+       analysis remains the evidence for old chats without the keyword. */
     const analysis = analyseChurn(obs);
-    const mobileFolds = analysis.mobileFolds;
     flags.mobilePending.push(...analysis.pending);
+
+    const vehicleFolds = new Set(analysis.mobileFolds);
+    for (const entry of obs) {
+        for (let i = 0; i < entry.parts.length - 1; i += 1) {
+            if (entry.parts[i].fold === 'en route') vehicleFolds.add(entry.parts[i + 1].fold);
+        }
+    }
+    for (const entry of obs) {
+        const keyword = enRouteKeyword(entry.parts, vehicleFolds);
+        if (keyword < 0) continue;
+        const vehicle = entry.parts[keyword + 1] || null;
+        if (vehicle) vehicleFolds.add(vehicle.fold);
+        entry.parts = entry.parts.slice(keyword + 1);
+        if (!entry.parts.length) entry.transit = true;
+    }
+
+    const mobileFolds = vehicleFolds;
 
     const nodes = {};
     const order = [];
@@ -497,6 +532,28 @@ export function buildAtlas(observations, { equivalences = [] } = {}) {
         delete node.nameCounts;
     }
 
+    /* Stable keys: the folded path ("usa/new york city/choi house/kitchen"),
+       mobiles by name alone ("~jins lotus emira"). Identity that survives a
+       rebuild - selection, the saved view and the curator's verdicts all
+       speak in keys, never in n1..nN. */
+    const takenKeys = new Set();
+    for (const id of order) {
+        const node = nodes[id];
+        let key;
+        if (node.kind === 'mobile') {
+            key = `~${node.fold}`;
+        } else {
+            const path = [];
+            for (let at = node; at; at = at.parentId ? nodes[at.parentId] : null) path.unshift(at.fold);
+            key = path.join('/');
+        }
+        const base = key;
+        let fork = 2;
+        while (takenKeys.has(key)) key = `${base}#${fork++}`;
+        takenKeys.add(key);
+        node.key = key;
+    }
+
     flagSimilar(nodes, order, flags);
 
     const roots = order.filter(id => !nodes[id].parentId);
@@ -528,6 +585,20 @@ function processObservation(entry) {
         locationTag: entry.locationTag || '',
         present: Array.isArray(entry.present) ? entry.present : [],
     };
+}
+
+/**
+ * The index of a chain's route keyword, or -1 when it has none: `en route`
+ * by contract, or a legacy transient spot sitting right above a known
+ * vehicle (the old tags churned the position instead of naming the keyword).
+ */
+function enRouteKeyword(parts, vehicleFolds) {
+    for (let i = 0; i < parts.length; i += 1) {
+        if (parts[i].fold === 'en route') return i;
+        const next = parts[i + 1];
+        if (next && isTransientFold(parts[i].fold) && (vehicleFolds.has(next.fold) || next.aspect)) return i;
+    }
+    return -1;
 }
 
 /**

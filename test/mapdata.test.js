@@ -119,7 +119,7 @@ test('shape 1: a fixed container with varying spots builds one containment tree'
     assert.equal(Object.values(atlas.nodes).filter(node => node.kind === 'mobile').length, 0);
 });
 
-test('shape 2: a moving place becomes one mobile node with a trajectory of positions', () => {
+test('shape 2: one mobile node per vehicle, trips as legs, parked stops as spots of their place', () => {
     const atlas = buildAtlas(obs(
         ['USA', 'New York City', 'En Route', 'Jin\u2019s Lotus Emira - Interior'],
         ['USA', 'New York City', 'Street', 'Jin\u2019s Lotus Emira - Interior'],
@@ -131,17 +131,74 @@ test('shape 2: a moving place becomes one mobile node with a trajectory of posit
     assert.equal(car.length, 1);
     assert.equal(car[0].kind, 'mobile');
     assert.equal(car[0].parentId, null);
+    assert.equal(car[0].key, '~jins lotus emira');
     assert.equal(car[0].name, 'Jin\u2019s Lotus Emira');
     assert.equal(car[0].visits.length, 4);
     assert.equal(car[0].trajectory.length, 4);
-    assert.deepEqual(
-        car[0].trajectory.map(stop => atlas.nodes[stop.positionId].name),
-        ['En Route', 'Street', 'Local Cafe Parking Lot', 'Downtown Streets']);
 
-    assert.equal(byFold(atlas, 'en route')[0].kind, 'transient');
-    assert.equal(byFold(atlas, 'street')[0].kind, 'transient');
-    assert.equal(byFold(atlas, 'downtown streets')[0].kind, 'transient');
-    assert.equal(byFold(atlas, 'local cafe parking lot')[0].kind, 'spot');
+    // route context leaves no nodes behind; only the parked stop anchors the car
+    assert.deepEqual(foldsOf(atlas).sort(), [
+        'jins lotus emira',
+        'local cafe parking lot',
+        'new york city',
+        'usa',
+    ]);
+    const lot = byFold(atlas, 'local cafe parking lot')[0];
+    assert.equal(lot.kind, 'spot');
+    assert.deepEqual(
+        car[0].trajectory.map(stop => (stop.positionId ? atlas.nodes[stop.positionId].name : null)),
+        [null, null, 'Local Cafe Parking Lot', null]);
+});
+
+test('en route marks a leg, not a place: the chain creates no node above the vehicle', () => {
+    const atlas = buildAtlas(obs(['USA', 'New York City', 'En Route', 'Jin\u2019s Lotus Emira']));
+
+    assert.deepEqual(foldsOf(atlas), ['jins lotus emira']);
+    const car = byFold(atlas, 'jins lotus emira')[0];
+    assert.equal(car.kind, 'mobile');
+    assert.equal(car.key, '~jins lotus emira');
+    assert.equal(atlas.observations[0].nodeId, car.id);
+});
+
+test('two trips in one vehicle share one node, and a walk is no place at all', () => {
+    const atlas = buildAtlas(obs(
+        ['Japan', 'Kyoto', 'En Route', 'Night Ferry'],
+        ['Japan', 'Kyoto', 'En Route'],
+        ['Japan', 'Osaka', 'En Route', 'Night Ferry'],
+    ));
+
+    assert.deepEqual(foldsOf(atlas), ['night ferry']);
+    const ferry = byFold(atlas, 'night ferry')[0];
+    assert.equal(ferry.kind, 'mobile');
+    assert.deepEqual(ferry.visits, [0, 2]);
+
+    // the walk between places is pure transit: no node, but not forgotten
+    assert.equal(atlas.observations[1].transit, true);
+    assert.equal(atlas.observations[1].nodeId, null);
+});
+
+test('a parked vehicle is a spot of its place until a trip makes it mobile', () => {
+    const atlas = buildAtlas(obs(['USA', 'NYC', 'Local Cafe Parking Lot', 'Jin\u2019s Lotus Emira']));
+
+    const car = byFold(atlas, 'jins lotus emira')[0];
+    assert.equal(car.kind, 'spot');
+    assert.equal(atlas.nodes[car.parentId].fold, 'local cafe parking lot');
+    assert.equal(car.key, 'usa/nyc/local cafe parking lot/jins lotus emira');
+});
+
+test('stable keys: same-named rooms in different buildings get different keys', () => {
+    const atlas = buildAtlas(obs(
+        ['USA', 'New York City', 'St. Vincent\u2019s High School', 'Locker Room'],
+        ['USA', 'New York City', 'Jammie\u2019s house', 'Locker Room'],
+    ));
+
+    const rooms = byFold(atlas, 'locker room');
+    assert.equal(rooms.length, 2);
+    const keys = rooms.map(room => room.key).sort();
+    assert.notEqual(keys[0], keys[1]);
+    assert.ok(keys.every(key => key.startsWith('usa/new york city/') && key.endsWith('/locker room')));
+    assert.ok(keys.some(key => key.includes('st vincents high school')));
+    assert.ok(keys.some(key => key.includes('jammies house')));
 });
 
 test('an aspect is the same place, and its interior/exterior flavour is remembered', () => {
@@ -207,6 +264,11 @@ test('interleaving other places never splits a mobile place', () => {
     assert.equal(car[0].kind, 'mobile');
     assert.equal(car[0].trajectory.length, 3);
     assert.equal(byFold(atlas, 'kitchen').length, 1);
+
+    // route context is not a place
+    assert.equal(byFold(atlas, 'en route').length, 0);
+    assert.equal(byFold(atlas, 'street').length, 0);
+    assert.equal(byFold(atlas, 'road').length, 0);
 });
 
 test('equivalences fold two spellings onto one place', () => {
