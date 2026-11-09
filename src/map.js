@@ -1,30 +1,37 @@
 /**
- * The map on screen: the minimap window and the full atlas window.
+ * The map on screen: the minimap window and the full atlas window, both
+ * drawing the same chart.
  *
- * The atlas itself is mapdata.js (pure); this file is only its stage - like
- * the music player, the widget floats in the scene, drags by its head, and
- * carries no logic beyond rendering. Everything is derived on refresh and
- * thrown away: nothing is stored but the window's spot and the settings.
- *
- * The minimap is the small window in the corner (game-minimap style): a
- * quiet render of the atlas at the chosen depth with the story's current
- * place lit. Clicking it opens the full map - the whole journey as nested
- * place groups, a node card with its visits and its pictures, and the
- * "travels" strip for the places that move. With no scene tags the atlas
- * falls back to the places the chat's backgrounds already name.
+ * The atlas is mapdata.js (pure); this file is its stage and its renderer.
+ * The chart is generated from the atlas - territories as soft land, places as
+ * picture pins, journeys as dotted legs with a mode glyph - and drawn as one
+ * SVG string per surface. The minimap is a crop of that chart around the
+ * story's place; the full window pans and zooms the same world and pairs it
+ * with a text index and a place card. Nothing is stored but the window's
+ * spot and the settings; selection speaks in stable keys, so a rebuild never
+ * forgets or swaps a place.
  */
 
-import { activeStamp, buildAtlas, extractObservations, extractStampObservations } from './mapdata.js';
+import {
+    PIN_R,
+    activeStamp,
+    buildAtlas,
+    deriveLegs,
+    extractObservations,
+    extractStampObservations,
+    hashFold,
+    layoutAtlas,
+    travelMode,
+} from './mapdata.js';
 import { bgStore, chatMessages, currentChatId, on, personaName } from './st.js';
 import { mapMiniOn, mapOn, saveSettings, settings } from './settings.js';
 
 const LOG = '[Meziverse map]';
 
 const NARROW = 760;
-const MINI_VW = 212;
-const MINI_DOTS_MAX = 12;
-const MINI_BLOCKS_MAX = 5;
 const EDGE = 10;
+const MINI_W = 224;
+const MINI_H = 150;
 
 let uiIsOpen = () => false;
 let frameEl = null;
@@ -32,16 +39,34 @@ let gotoTurn = null;
 let widget = null;
 let win = null;
 let els = {};
-let atlas = null;
-let selected = null;
 let drag = null;
 let queued = false;
+
+/* Derived state: the atlas and its legs are cached by a chat signature, the
+   layout by (atlas, depth). Everything is thrown away and rebuilt - cheap,
+   and never stale. */
+let atlas = null;
+let derived = null;
+let layout = null;
+let layoutDepth = null;
+let lastSignature = null;
+let lastChatId = null;
+let selectedKey = null;
+let trails = true;
+let flagsShown = true;
+let view = { tx: 0, ty: 0, s: 1, placed: false };
+let lastFocus = null;
 
 const svg = name => `<svg class="ico" aria-hidden="true"><use href="#mz-i-${name}"/></svg>`;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const esc = value => String(value ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+const trunc = (value, max) => {
+    const text = String(value ?? '');
+    return text.length > max ? `${text.slice(0, max - 1).trimEnd()}\u2026` : text;
+};
+const f1 = value => Math.round(value * 10) / 10;
 
-/** The depth the atlas shows: 2, 3, 4 levels, or 99 for everything. */
+/** The depth the chart shows: 2, 3 or 4 levels, or 99 for everything. */
 function depthValue() {
     const depth = Number(settings().mapDepth);
     return [2, 3, 4, 99].includes(depth) ? depth : 4;
@@ -51,36 +76,60 @@ function depthLabel() {
     return depthValue() === 99 ? 'All' : String(depthValue());
 }
 
+/* ---------- the widget and the window shells ---------- */
+
 const WIDGET_HTML = `
 <div class="mz-map-head" data-mz-map-head>
-    <button class="mz-map-art" type="button" title="Open the map" aria-label="Open the map" data-mz-map="open">${svg('map')}</button>
-    <button class="mz-map-title" type="button" data-mz-map="open">
-        <b data-mz-map="title">Map</b>
-        <small data-mz-map="sub">No places yet</small>
+    <button class="mz-map-art" type="button" title="Open the map" aria-label="Open the map" data-mz-map-open>${svg('map')}</button>
+    <button class="mz-map-title" type="button" data-mz-map-open>
+        <b data-mz-map-title>Map</b>
+        <small data-mz-map-sub></small>
     </button>
-    <button class="mz-ibtn" type="button" title="Minimap on/off" aria-label="Minimap on/off" data-mz-action="map-mini">${svg('collapse')}</button>
+    <button class="mz-ibtn mz-map-collapse" type="button" title="Minimap on/off" aria-label="Minimap on/off" data-mz-action="map-mini">${svg('collapse')}</button>
 </div>
-<div class="mz-map-mini" data-mz-map-mini hidden></div>`;
+<div class="mz-map-mini" data-mz-map-mini>
+    <div data-mz-map-minisvg style="position:absolute;inset:0"></div>
+    <span class="mz-map-mini-n" aria-hidden="true">N</span>
+    <button class="mz-map-mini-open" type="button" title="Open the map" aria-label="Open the map" data-mz-map-open>${svg('expand')}</button>
+</div>`;
 
 const WIN_HTML = `
 <header class="mz-mapwin-head">
+    <span class="mz-mapwin-mark">${svg('map')}</span>
     <h2>Map</h2>
-    <span class="mz-mapwin-sum" data-mz-map="summary"></span>
+    <span class="mz-mapwin-sum" data-mz-map-sum></span>
     <div class="mz-mapwin-tools">
-        <div class="mz-step" role="group" aria-label="Map depth">
-            <button type="button" data-mz-step="map-depth" data-dir="-1" aria-label="Show fewer levels">\u2212</button>
-            <span data-mz-map="depth">All</span>
-            <button type="button" data-mz-step="map-depth" data-dir="1" aria-label="Show more levels">+</button>
+        <label class="mz-mapwin-search">${svg('search')}<input type="text" data-mz-map-find placeholder="Find a place" aria-label="Find a place"></label>
+        <span class="mz-mapwin-lab">Detail</span>
+        <div class="mz-step" role="group" aria-label="Map detail">
+            <button type="button" data-mz-map-depth="-1" aria-label="Show fewer levels">\u2212</button>
+            <span data-mz-map-depthv>All</span>
+            <button type="button" data-mz-map-depth="1" aria-label="Show more levels">+</button>
         </div>
-        <button class="mz-ibtn" type="button" title="Close map" aria-label="Close map" data-mz-action="map-close">${svg('close')}</button>
+        <button class="mz-ibtn" type="button" title="Close map" aria-label="Close map" data-mz-map-close>${svg('close')}</button>
     </div>
 </header>
-<div class="mz-mapwin-body">
-    <div class="mz-map-now" data-mz-map="now" hidden></div>
-    <div class="mz-map-scroll">
-        <div class="mz-map-atlas" data-mz-map="atlas"></div>
+<div class="mz-mapwin-body" data-mz-map-body>
+    <nav class="mz-map-index" data-mz-map-index aria-label="Places"></nav>
+    <div class="mz-map-stage" data-mz-map-stage>
+        <div data-mz-map-chart style="position:absolute;inset:0"></div>
+        <div class="mz-map-cart"><b data-mz-map-ctitle></b><small data-mz-map-csub></small></div>
+        <div class="mz-map-tools">
+            <div class="mz-map-seg">
+                <button type="button" aria-pressed="true" data-mz-map-layer="trails">${svg('m-route')}Journeys</button>
+                <button type="button" aria-pressed="true" data-mz-map-layer="flags">Flags</button>
+            </div>
+            <div class="mz-map-seg is-round">
+                <button type="button" title="Zoom out" aria-label="Zoom out" data-mz-map-zoom="-1">\u2212</button>
+                <button type="button" title="Zoom in" aria-label="Zoom in" data-mz-map-zoom="1">+</button>
+                <button type="button" title="Fit everything" aria-label="Fit everything" data-mz-map-fit>${svg('expand')}</button>
+                <button type="button" title="Where the story is" aria-label="Go to where the story is" data-mz-map-now>${svg('m-target')}</button>
+            </div>
+        </div>
+        <div class="mz-map-key" data-mz-map-key></div>
+        <svg class="mz-map-compass" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="20" fill="none" stroke="currentColor" stroke-opacity=".35"/><path d="M24 6l4.2 18L24 42l-4.2-18z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M24 6l4.2 18H19.8z" fill="currentColor"/><text x="24" y="4.6" text-anchor="middle" font-size="7" font-weight="700" fill="currentColor" font-family="Inter,sans-serif">N</text></svg>
     </div>
-    <aside class="mz-map-detail" data-mz-map="detail" hidden></aside>
+    <aside class="mz-map-detail" data-mz-map-detail hidden></aside>
 </div>`;
 
 /* ---------- lifecycle ---------- */
@@ -152,13 +201,20 @@ export function mountMap({ frame, goto = null } = {}) {
     els = {
         head: widget.querySelector('[data-mz-map-head]'),
         mini: widget.querySelector('[data-mz-map-mini]'),
-        title: widget.querySelector('[data-mz-map="title"]'),
-        sub: widget.querySelector('[data-mz-map="sub"]'),
-        summary: win.querySelector('[data-mz-map="summary"]'),
-        depth: win.querySelector('[data-mz-map="depth"]'),
-        now: win.querySelector('[data-mz-map="now"]'),
-        atlas: win.querySelector('[data-mz-map="atlas"]'),
-        detail: win.querySelector('[data-mz-map="detail"]'),
+        miniSvg: widget.querySelector('[data-mz-map-minisvg]'),
+        title: widget.querySelector('[data-mz-map-title]'),
+        sub: widget.querySelector('[data-mz-map-sub]'),
+        summary: win.querySelector('[data-mz-map-sum]'),
+        find: win.querySelector('[data-mz-map-find]'),
+        depthv: win.querySelector('[data-mz-map-depthv]'),
+        body: win.querySelector('[data-mz-map-body]'),
+        index: win.querySelector('[data-mz-map-index]'),
+        stage: win.querySelector('[data-mz-map-stage]'),
+        chart: win.querySelector('[data-mz-map-chart]'),
+        cartTitle: win.querySelector('[data-mz-map-ctitle]'),
+        cartSub: win.querySelector('[data-mz-map-csub]'),
+        key: win.querySelector('[data-mz-map-key]'),
+        detail: win.querySelector('[data-mz-map-detail]'),
     };
 
     wireWidget();
@@ -179,7 +235,7 @@ export function mapUiClosed() {
 
 /** Re-reads the settings the map shows - called when a switch flips. */
 export function refreshMap() {
-    rebuild();
+    ensure();
     render();
 }
 
@@ -188,69 +244,118 @@ export function isMapWinOpen() {
     return !!win && !win.hidden;
 }
 
-/** Opens the full map, optionally at one node. */
-export function openMapWin(nodeId = null) {
+/**
+ * Opens the full map, optionally at one place.
+ *
+ * @param {string|null} [nodeKey] the place's stable key
+ */
+export function openMapWin(nodeKey = null) {
     if (!win || !mapOn() || !uiIsOpen()) return;
-    if (nodeId && atlas?.nodes[nodeId]) selected = nodeId;
+    ensure();
+    if (nodeKey && findByKey(nodeKey)) selectedKey = nodeKey;
 
+    lastFocus = document.activeElement;
     win.hidden = false;
     win.setAttribute('aria-hidden', 'false');
     frameEl?.classList.add('is-mapwin-open');
+    view.placed = false;
     renderWin();
+    if (selectedKey) {
+        const item = anchorOf(selectedKey);
+        if (item) {
+            centerOn(item.ax, item.ay, Math.max(view.s, 1.3));
+            applyTransform();
+        }
+    }
+    els.find?.focus();
 }
 
-/** Closes the full map window. */
+/** Closes the full map window and returns focus where it came from. */
 export function closeMapWin() {
     if (!win || win.hidden) return;
     win.hidden = true;
     win.setAttribute('aria-hidden', 'true');
     frameEl?.classList.remove('is-mapwin-open');
+    if (lastFocus && typeof lastFocus.focus === 'function') lastFocus.focus();
+    lastFocus = null;
 }
 
-/* ---------- the atlas in memory ---------- */
+/* ---------- the derived state ---------- */
 
-function rebuild() {
-    const previous = selected && atlas?.nodes[selected];
-    const fold = previous?.fold ?? null;
-
+function chatSignature() {
     const messages = chatMessages();
-    let obs = extractObservations(messages, { persona: personaName() });
-    // No tags in the story: the drawn backgrounds still name their places.
-    if (!obs.length) obs = extractStampObservations(messages, bgStore().records);
-    atlas = obs.length ? buildAtlas(obs) : null;
+    let signature = `${currentChatId() || ''}|${messages.length}`;
+    for (const message of messages) {
+        const swipes = Array.isArray(message.swipes) ? message.swipes.length : 0;
+        const text = typeof message.mes === 'string' ? message.mes : '';
+        signature += `|${swipes}:${Number(message.swipe_id ?? 0)}:${hashFold(text)}`;
+    }
+    return signature;
+}
 
-    if (fold && atlas) {
-        const hit = Object.values(atlas.nodes).find(node => node.fold === fold);
-        selected = hit ? hit.id : null;
-    } else {
-        selected = null;
+function ensure() {
+    const chatId = currentChatId();
+    if (chatId !== lastChatId) {
+        lastChatId = chatId;
+        lastSignature = null;
+        selectedKey = null;
+        view = { tx: 0, ty: 0, s: 1, placed: false };
     }
 
-    if (!atlas) console.debug(`${LOG} no places to map`);
+    const signature = chatSignature();
+    if (signature !== lastSignature || !atlas) {
+        lastSignature = signature;
+
+        const messages = chatMessages();
+        let obs = extractObservations(messages, { persona: personaName() });
+        // No tags in the story: the drawn backgrounds still name their places.
+        if (!obs.length) obs = extractStampObservations(messages, bgStore().records);
+        atlas = obs.length ? buildAtlas(obs) : null;
+        derived = atlas ? deriveLegs(atlas) : null;
+        layout = null;
+        layoutDepth = null;
+
+        if (selectedKey && !findByKey(selectedKey)) selectedKey = null;
+        if (!atlas) console.debug(`${LOG} no places to map`);
+    }
+
+    const depth = depthValue();
+    if (atlas && (layoutDepth !== depth || !layout)) {
+        layoutDepth = depth;
+        layout = layoutAtlas(atlas, { depth });
+    }
 }
 
-/** The node the story is at now: the last observation's own place. */
-function currentNodeId() {
-    const obs = atlas?.observations;
-    return obs?.length ? obs[obs.length - 1].nodeId || null : null;
+function findByKey(key) {
+    return atlas ? Object.values(atlas.nodes).find(node => node.key === key) || null : null;
 }
 
-function nodePath(node) {
+function anchorOf(key) {
+    const node = findByKey(key);
+    return node && layout ? layout.anchor(node.id) : null;
+}
+
+/** The node the story is at now, if it is at one. */
+function nowNode() {
+    return derived && derived.nowId ? atlas.nodes[derived.nowId] || null : null;
+}
+
+function pathOf(node) {
     const names = [];
-    for (let current = node; current; current = current.parentId ? atlas.nodes[current.parentId] : null) {
-        names.unshift(current.name);
+    for (let at = node; at; at = at.parentId ? atlas.nodes[at.parentId] : null) {
+        if (at.kind !== 'transient') names.unshift(at.name);
     }
-    return names.join(' \u203a ');
+    return names;
 }
 
-/** The ancestor ids of a node, outermost first. */
-function ancestorIds(node) {
-    const ids = [];
-    for (let current = node; current?.parentId;) {
-        current = atlas.nodes[current.parentId];
-        ids.unshift(current.id);
-    }
-    return ids;
+/** The cartouche's story name: the chat, presented as a title. */
+function storyName() {
+    const id = String(currentChatId() || '');
+    if (!id) return 'No chat open';
+    return id
+        .replace(/\.[^.]+$/, '')
+        .replace(/[-_]+/g, ' ')
+        .trim() || 'Map';
 }
 
 /* ---------- pictures from the background store ---------- */
@@ -263,206 +368,290 @@ function recordFor(obsIndex) {
     return id ? bgStore().records?.[id] || null : null;
 }
 
-/** The pictures drawn at a place - its own visits', or the whole subtree's. */
-function nodeImages(node, deep = true) {
-    const out = [];
-    const seen = new Set();
-    const collect = current => {
-        for (const index of current.visits) {
-            const record = recordFor(index);
-            if (record && !seen.has(record.id)) {
-                seen.add(record.id);
-                out.push(record);
-            }
-        }
-        if (deep) current.children.forEach(id => collect(atlas.nodes[id]));
+/** The place's latest drawn picture, or '' (the map glyph stands in). */
+function thumbOf(node) {
+    for (let i = node.visits.length - 1; i >= 0; i -= 1) {
+        const record = recordFor(node.visits[i]);
+        if (record?.url) return record.url;
+    }
+    return '';
+}
+
+function isOutdoor(node) {
+    const own = atlas.observations.find(obs => obs.nodeId === node.id && obs.locationTag);
+    const kinded = own || atlas.observations.find(obs => {
+        const found = atlas.nodes[obs.nodeId];
+        return found && found.parentId === node.id && obs.locationTag;
+    });
+    return !!kinded && kinded.locationTag === 'Outdoor';
+}
+
+/* ---------- the chart renderer (SVG string, no DOM) ---------- */
+
+function randomFrom(seed) {
+    let s = seed >>> 0 || 1;
+    return () => {
+        s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+        return s / 4294967296;
     };
-    collect(node);
+}
+
+/** A soft land outline: 18 name-seeded points, smoothed closed. */
+function blob(cx, cy, r, seed, amp) {
+    const rand = randomFrom(seed);
+    const phase = [rand() * 6, rand() * 6, rand() * 6];
+    const count = 18;
+    const pts = [];
+    for (let i = 0; i < count; i += 1) {
+        const t = i / count * 6.2832;
+        const k = 1 + amp * (Math.sin(2 * t + phase[0]) * 0.55 + Math.sin(3 * t + phase[1]) * 0.3 + Math.sin(5 * t + phase[2]) * 0.2);
+        pts.push([cx + Math.cos(t) * r * k, cy + Math.sin(t) * r * k * 0.9]);
+    }
+    let d = `M${f1(pts[0][0])} ${f1(pts[0][1])}`;
+    for (let i = 0; i < count; i += 1) {
+        const p0 = pts[(i - 1 + count) % count];
+        const p1 = pts[i];
+        const p2 = pts[(i + 1) % count];
+        const p3 = pts[(i + 2) % count];
+        d += `C${f1(p1[0] + (p2[0] - p0[0]) / 6)} ${f1(p1[1] + (p2[1] - p0[1]) / 6)} ${f1(p2[0] - (p3[0] - p1[0]) / 6)} ${f1(p2[1] - (p3[1] - p1[1]) / 6)} ${f1(p2[0])} ${f1(p2[1])}`;
+    }
+    return `${d}Z`;
+}
+
+const icon = (name, x, y, size) => `<use href="#mz-i-${name}" x="${f1(x - size / 2)}" y="${f1(y - size / 2)}" width="${size}" height="${size}"/>`;
+
+function descend(node) {
+    const out = [];
+    const walk = parent => parent.children.forEach(id => {
+        out.push(atlas.nodes[id]);
+        walk(atlas.nodes[id]);
+    });
+    walk(node);
     return out;
 }
 
-/* ---------- the minimap ---------- */
+function renderChart(mode) {
+    const mini = mode === 'mini';
+    const nodes = atlas.nodes;
+    const selNode = selectedKey ? findByKey(selectedKey) : null;
+    const sel = selNode ? selNode.id : null;
+
+    /* which pins carry a flag of their own (or below them) */
+    const flagged = new Set();
+    const sameFlags = flagsShown ? atlas.flags.same.filter(([a, b]) => layout.items[a] || layout.items[b]) : [];
+    if (flagsShown) {
+        sameFlags.forEach(([a, b]) => {
+            flagged.add(a);
+            flagged.add(b);
+        });
+        Object.values(nodes).forEach(node => {
+            if (atlas.flags.ambiguous.includes(node.fold) || atlas.flags.mobilePending.includes(node.fold)) flagged.add(node.id);
+        });
+    }
+
+    const nowItem = derived.nowId ? layout.anchor(derived.nowId) : null;
+    const parts = [];
+
+    /* ground and the contour rings that make land look like land */
+    const containers = layout.order.filter(item => !item.pin);
+    const rings = [];
+    containers.filter(item => item.n.level === 0).forEach(item => {
+        for (let k = 3; k >= 1; k -= 1) {
+            rings.push(`<path class="mzc-ring r${k}" d="${blob(item.ax, item.ay, item.r + k * 15, hashFold(item.n.fold) + k, 0.11)}"/>`);
+        }
+    });
+    parts.push(`<g class="mzc-rings">${rings.join('')}</g>`);
+
+    /* territories: region, city, plot - biggest first so smaller sit on top */
+    const terr = [];
+    containers.slice().sort((a, b) => b.r - a.r).forEach(item => {
+        const level = item.n.level;
+        const cls = level === 0 ? 'region' : level === 1 ? 'city' : 'plot';
+        const amp = level === 0 ? 0.12 : level === 1 ? 0.09 : 0.07;
+        terr.push(`<path class="mzc-terr mzc-${cls}${sel === item.n.id ? ' is-sel' : ''}" data-node="${esc(item.n.key)}" d="${blob(item.ax, item.ay, item.r, hashFold(item.n.fold), amp)}"/>`);
+    });
+    parts.push(`<g class="mzc-lands">${terr.join('')}</g>`);
+
+    /* territory names: regions along an arc, like an atlas plate */
+    const names = [];
+    containers.forEach(item => {
+        const level = item.n.level;
+        if (level === 0) {
+            const ra = item.r * 0.74;
+            const arc = `mzc-arc-${item.n.id}`;
+            names.push(`<path id="${arc}" d="M${f1(item.ax - ra)} ${f1(item.ay + 6)} A${f1(ra)} ${f1(ra)} 0 0 1 ${f1(item.ax + ra)} ${f1(item.ay + 6)}" fill="none"/><text class="mzc-name mzc-name-region"><textPath href="#${arc}" startOffset="50%" text-anchor="middle">${esc(item.n.name.toUpperCase())}</textPath></text>`);
+        } else if (level === 1) {
+            names.push(`<text class="mzc-name mzc-name-city" x="${f1(item.ax)}" y="${f1(item.ay - item.r * 0.72)}" text-anchor="middle">${esc(item.n.name.toUpperCase())}</text>`);
+        } else {
+            names.push(`<text class="mzc-name mzc-name-plot" x="${f1(item.ax)}" y="${f1(item.ay - item.r + 15)}" text-anchor="middle">${esc(trunc(item.n.name, 22))}</text>`);
+        }
+    });
+    parts.push(`<g class="mzc-names">${names.join('')}</g>`);
+
+    /* journeys: dotted legs, thicker the more travelled, the latest flowing */
+    const legSvg = [];
+    const modeSvg = [];
+    const recent = derived.legs.slice().sort((a, b) => b.order - a.order);
+    const lastKey = recent[0] && recent[0].key;
+    const shown = new Set(mini ? recent.slice(0, 4).map(leg => leg.key) : derived.legs.map(leg => leg.key));
+    const seen = new Map();
+    derived.legs.forEach(leg => {
+        if (!trails || !shown.has(leg.key)) return;
+        const from = layout.anchor(leg.dir[0]);
+        const to = layout.anchor(leg.dir[1]);
+        if (!from || !to || from === to) return;
+
+        const pairKey = [from.n.id, to.n.id].sort().join('|');
+        const nth = seen.get(pairKey) || 0;
+        seen.set(pairKey, nth + 1);
+
+        const dx = to.ax - from.ax;
+        const dy = to.ay - from.ay;
+        const len = Math.hypot(dx, dy) || 1;
+        const bow = (nth % 2 ? -1 : 1) * (0.16 + nth * 0.08) * len * (hashFold(pairKey) % 2 ? 1 : -1);
+        const mx = (from.ax + to.ax) / 2 - dy / len * bow;
+        const my = (from.ay + to.ay) / 2 + dx / len * bow;
+        const width = Math.min(3.4, 1.4 + leg.count * 0.45);
+        const isLast = leg.key === lastKey;
+
+        legSvg.push(`<path class="mzc-leg${isLast ? ' is-last' : ''}${sel && (leg.a === sel || leg.b === sel) ? ' is-sel' : ''}" d="M${f1(from.ax)} ${f1(from.ay)}Q${f1(mx)} ${f1(my)} ${f1(to.ax)} ${f1(to.ay)}" style="stroke-width:${f1(width)}px"/>`);
+
+        if (leg.mode && (!mini || isLast)) {
+            const px = 0.25 * from.ax + 0.5 * mx + 0.25 * to.ax;
+            const py = 0.25 * from.ay + 0.5 * my + 0.25 * to.ay;
+            const size = mini ? 18 : 17;
+            modeSvg.push(`<g class="mzc-mode${isLast ? ' is-last' : ''}" transform="translate(${f1(px)} ${f1(py)})"><title>${esc(leg.mode.name)} \u00b7 ${leg.count}\u00d7</title><circle r="${mini ? 13 : 12}"/>${icon(`m-${leg.mode.glyph}`, 0, 0, size)}</g>`);
+        }
+    });
+    parts.push(`<g class="mzc-legs">${legSvg.join('')}</g>`);
+
+    /* possible duplicates: a dotted tie, display only */
+    if (flagsShown && !mini) {
+        const ties = sameFlags.map(([a, b]) => {
+            const p = layout.anchor(a);
+            const q = layout.anchor(b);
+            if (!p || !q || p === q) return '';
+            return `<g class="mzc-same"><path d="M${f1(p.ax)} ${f1(p.ay)}L${f1(q.ax)} ${f1(q.ay)}"/><g transform="translate(${f1((p.ax + q.ax) / 2)} ${f1((p.ay + q.ay) / 2)})"><circle r="7"/><text y="3.2" text-anchor="middle">?</text></g></g>`;
+        });
+        parts.push(`<g class="mzc-ties">${ties.join('')}</g>`);
+    }
+
+    /* pins: each place is a small picture on the chart */
+    const pins = [];
+    const clipR = new Set();
+    const recentIds = new Set();
+    recent.slice(0, 3).forEach(leg => {
+        recentIds.add(leg.dir[0]);
+        recentIds.add(leg.dir[1]);
+    });
+
+    layout.order.filter(item => item.pin).forEach(item => {
+        const node = item.n;
+        const r = node.level >= 2 || (node.level === 1 && node.kind === 'spot') ? PIN_R : PIN_R + 2;
+        const isNow = nowItem === item;
+        const isSel = sel === node.id;
+        const total = atlas.observations.length;
+        const age = total ? (total - 1 - node.lastSeen) / total : 0;
+        const img = thumbOf(node);
+        const clip = `mzc-c${r}`;
+        clipR.add(r);
+
+        const flag = flagged.has(node.id) || (node.children.length && descend(node).some(child => flagged.has(child.id)));
+        const people = isNow && derived.nowId ? Object.keys(derived.present[derived.nowId] || {}).slice(0, 3) : [];
+        const parked = Object.values(nodes).find(vehicle => vehicle.kind === 'mobile'
+            && vehicle.trajectory.length
+            && layout.anchor(vehicle.trajectory[vehicle.trajectory.length - 1].positionId || '') === item);
+        const label = mini ? (isNow || recentIds.has(node.id)) : true;
+        const hiddenKids = node.children.filter(id => nodes[id].kind !== 'mobile' && nodes[id].kind !== 'transient').length;
+
+        pins.push(`<g class="mzc-pin lv${Math.min(node.level ?? 3, 3)}${isNow ? ' is-now' : ''}${isSel ? ' is-sel' : ''}${flag ? ' is-flag' : ''}${mini && !label ? ' is-quiet' : ''}" data-node="${esc(node.key)}" transform="translate(${f1(item.ax)} ${f1(item.ay)})" style="--age:${f1(Math.max(0, Math.min(1, age)))}" tabindex="${mini ? -1 : 0}" role="button" aria-label="${esc(node.name)}">
+        ${isNow ? `<circle class="mzc-ping" r="${r + 4}"/><circle class="mzc-ping p2" r="${r + 4}"/>` : ''}
+        <circle class="mzc-pin-disc" r="${r}"/>
+        ${img ? `<image href="${esc(img)}" x="${-r}" y="${-r}" width="${2 * r}" height="${2 * r}" clip-path="url(#${clip})" preserveAspectRatio="xMidYMid slice"/>` : icon('map', 0, 0, r * 0.9)}
+        <circle class="mzc-pin-ring" r="${r}"/>
+        ${hiddenKids && !mini ? `<g class="mzc-count" transform="translate(${f1(r * 0.78)} ${f1(r * 0.78)})"><circle r="7.5"/><text y="3" text-anchor="middle">${hiddenKids}</text></g>` : ''}
+        ${flag && !mini ? `<g class="mzc-flagdot" transform="translate(${f1(-r * 0.78)} ${f1(-r * 0.78)})"><circle r="6.5"/><text y="3.2" text-anchor="middle">!</text></g>` : ''}
+        ${parked && !mini ? `<g class="mzc-parked" transform="translate(${f1(r * 0.8)} ${f1(-r * 0.8)})"><circle r="8"/>${icon(`m-${travelMode(parked.name).glyph}`, 0, 0, 10)}</g>` : ''}
+        ${people.length ? `<g class="mzc-people">${people.map((name, k) => `<g transform="translate(${f1(-(people.length - 1) * 7 + k * 14)} ${-r - 11})"><circle r="7"/><text y="3" text-anchor="middle">${esc(name[0])}</text></g>`).join('')}</g>` : ''}
+        ${label ? `<text class="mzc-pin-label" y="${r + 14}" text-anchor="middle">${esc(trunc(node.name, mini ? 16 : 20))}</text>` : ''}
+        <title>${esc(node.name)}</title></g>`);
+    });
+    parts.push(`<g class="mzc-pins">${pins.join('')}</g><g class="mzc-modes">${modeSvg.join('')}</g>`);
+
+    /* an unfinished journey: the story is still on the road */
+    if (derived.inTransit && derived.fromId) {
+        const from = layout.anchor(derived.fromId);
+        if (from) {
+            const angle = Math.atan2(from.ay - (layout.bounds.y0 + layout.bounds.y1) / 2, from.ax - (layout.bounds.x0 + layout.bounds.x1) / 2);
+            const length = 70;
+            const ex = from.ax + Math.cos(angle) * length;
+            const ey = from.ay + Math.sin(angle) * length;
+            const mode = derived.transitMode || travelMode('');
+            parts.push(`<g class="mzc-open"><path class="mzc-leg is-last" d="M${f1(from.ax)} ${f1(from.ay)}L${f1(ex)} ${f1(ey)}"/><g class="mzc-mode is-last" transform="translate(${f1(ex)} ${f1(ey)})"><circle r="13"/>${icon(`m-${mode.glyph}`, 0, 0, 18)}</g></g>`);
+        }
+    }
+
+    const defs = `<defs>${[...clipR].map(r => `<clipPath id="mzc-c${r}"><circle r="${r}"/></clipPath>`).join('')}</defs>`;
+    return { defs, body: parts.join('') };
+}
+
+/* ---------- the two crops of one chart ---------- */
+
+function fullSvg(width, height) {
+    const out = renderChart('full');
+    const tier = view.s < 0.5 ? 0 : view.s < 1.1 ? 1 : 2;
+    return `<svg class="mzc" data-style="contour" data-zoom="${tier}" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="Map of the story's places">${out.defs}<g class="mzc-world" style="transform-origin:0 0;transform:translate(${f1(view.tx)}px,${f1(view.ty)}px) scale(${f1(view.s)})"><rect class="mzc-ground" x="-6000" y="-6000" width="12000" height="12000"/>${out.body}</g></svg>`;
+}
 
 function miniSvg() {
-    if (!atlas) return '';
+    const ratio = MINI_W / MINI_H;
+    const out = renderChart('mini');
+    const now = derived.nowId ? layout.anchor(derived.nowId) : null;
+    let box = layout.bounds;
 
-    const depth = depthValue();
-    const roots = atlas.roots.map(id => atlas.nodes[id]);
-    const blocks = roots.map(node => ({
-        label: node.name,
-        mobile: node.kind === 'mobile',
-        nodes: chipNodes(node, depth).slice(0, MINI_DOTS_MAX),
-    })).slice(0, MINI_BLOCKS_MAX);
-
-    const now = currentNodeId();
-    const parts = [];
-    let x = 4;
-    let y = 4;
-    let rowH = 0;
-
-    for (const block of blocks) {
-        const cols = Math.min(4, Math.max(1, block.nodes.length));
-        const rows = Math.ceil(block.nodes.length / 4) || 1;
-        const w = 14 + cols * 15;
-        const h = 24 + rows * 15;
-        if (x + w > MINI_VW && x > 4) {
-            x = 4;
-            y += rowH + 6;
-            rowH = 0;
+    if (now) {
+        let around = now;
+        for (let at = atlas.nodes[now.n.id]; at; at = at.parentId ? atlas.nodes[at.parentId] : null) {
+            const item = layout.items[at.id];
+            if (item && !item.pin) {
+                around = item;
+                break;
+            }
         }
-
-        parts.push(`<rect class="mz-mini-block${block.mobile ? ' is-mobile' : ''}" x="${x}" y="${y}" width="${w}" height="${h}" rx="6"/>`);
-        parts.push(`<text class="mz-mini-label" x="${x + 7}" y="${y + 14}">${esc(truncate(block.label, 18))}</text>`);
-        block.nodes.forEach((node, i) => {
-            const cx = x + 12 + (i % 4) * 15;
-            const cy = y + 24 + Math.floor(i / 4) * 15 + 4;
-            parts.push(`<circle class="mz-mini-dot${node.id === now ? ' is-now' : ''}" data-node="${node.id}" cx="${cx}" cy="${cy}" r="${node.id === now ? 4.6 : 3.1}"><title>${esc(node.name)}</title></circle>`);
-        });
-
-        x += w + 6;
-        rowH = Math.max(rowH, h);
+        const k = 1.9;
+        box = {
+            x0: around.ax - around.r * k,
+            x1: around.ax + around.r * k,
+            y0: around.ay - around.r * k,
+            y1: around.ay + around.r * k,
+        };
+        const prev = derived.fromId && derived.fromId !== derived.nowId ? layout.anchor(derived.fromId) : null;
+        if (prev && Math.hypot(prev.ax - now.ax, prev.ay - now.ay) < (box.x1 - box.x0) * 1.1) {
+            box = {
+                x0: Math.min(box.x0, prev.ax - 50),
+                x1: Math.max(box.x1, prev.ax + 50),
+                y0: Math.min(box.y0, prev.ay - 50),
+                y1: Math.max(box.y1, prev.ay + 50),
+            };
+        }
     }
 
-    const height = y + rowH + 4;
-    return `<svg class="mz-mini-svg" viewBox="0 0 ${MINI_VW} ${Math.max(height, 28)}" preserveAspectRatio="xMinYMin meet" role="img" aria-label="Map of visited places">${parts.join('')}</svg>`;
+    let width = Math.max(box.x1 - box.x0, 230);
+    let height = Math.max(box.y1 - box.y0, 230 / ratio);
+    if (width / height > ratio) height = width / ratio;
+    else width = height * ratio;
+
+    let cx = (box.x0 + box.x1) / 2;
+    let cy = (box.y0 + box.y1) / 2;
+    if (now) {
+        cx = clamp(cx, now.ax - width * 0.3, now.ax + width * 0.3);
+        cy = clamp(cy, now.ay - height * 0.3, now.ay + height * 0.3);
+    }
+
+    return `<svg class="mzc" data-style="contour" data-zoom="2" viewBox="${f1(cx - width / 2)} ${f1(cy - height / 2)} ${f1(width)} ${f1(height)}" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Map around the story's current place">${out.defs}<rect class="mzc-ground" x="-6000" y="-6000" width="12000" height="12000"/>${out.body}</svg>`;
 }
 
-/** The nodes one block shows as dots: the chips at this depth, leaves first. */
-function chipNodes(node, depth) {
-    const expandable = node.children.length
-        && (depth === 99 || (Number.isFinite(node.level) ? node.level < depth - 1 : true));
-    if (!expandable) return [node];
-
-    const out = [];
-    node.children.forEach(id => out.push(...chipNodes(atlas.nodes[id], depth)));
-    return out;
-}
-
-function truncate(value, max) {
-    const text = String(value ?? '');
-    return text.length > max ? `${text.slice(0, max - 1).trimEnd()}\u2026` : text;
-}
-
-/* ---------- the full map ---------- */
-
-function renderWin() {
-    if (!win || win.hidden) return;
-
-    els.depth.textContent = depthLabel();
-
-    if (!atlas) {
-        els.summary.textContent = currentChatId() ? '' : 'No chat open';
-        els.now.hidden = true;
-        els.atlas.innerHTML = '<p class="mz-map-empty">No places yet. The map draws itself from the story\u2019s scene tags \u2014 or, without tags, from the backgrounds the chat has drawn.</p>';
-        els.detail.hidden = true;
-        return;
-    }
-
-    const nowId = currentNodeId();
-    els.summary.textContent = `${atlas.order.length} places \u00b7 ${atlas.observations.length} scenes`;
-    els.now.hidden = !nowId;
-    if (nowId) {
-        els.now.innerHTML = `<span class="mz-label">Now</span><b>${esc(nodePath(atlas.nodes[nowId]))}</b>`;
-    }
-
-    const chunks = [];
-    const roots = atlas.roots.map(id => atlas.nodes[id]);
-    const travels = roots.filter(node => node.kind === 'mobile');
-    const regions = roots.filter(node => node.kind !== 'mobile');
-
-    if (travels.length) {
-        chunks.push(`<section class="mz-map-group mz-map-travels"><header class="mz-map-group-head"><b>Travels</b><i>${travels.length}</i></header><div class="mz-map-kids">${travels.map(node => renderNode(node, depthValue())).join('')}</div></section>`);
-    }
-    for (const node of regions) chunks.push(renderNode(node, depthValue()));
-
-    els.atlas.innerHTML = chunks.join('');
-    renderDetail();
-}
-
-function renderNode(node, depth) {
-    const children = node.children.map(id => atlas.nodes[id]);
-    const expandable = children.length
-        && node.kind !== 'transient'
-        && (depth === 99 || (Number.isFinite(node.level) ? node.level < depth - 1 : true));
-
-    if (expandable) {
-        return `<section class="mz-map-group" data-mz-node="${node.id}"><header class="mz-map-group-head"><b>${esc(node.name)}</b><i>${children.length}</i></header><div class="mz-map-kids">${children.map(child => renderNode(child, depth)).join('')}</div></section>`;
-    }
-    return chip(node, children.length);
-}
-
-function chip(node, hidden = 0) {
-    const now = node.id === currentNodeId();
-    const classes = ['mz-map-chip', `is-${node.kind}`, now ? 'is-now' : '', selected === node.id ? 'is-sel' : '']
-        .filter(Boolean).join(' ');
-    const images = nodeImages(node, false);
-    const thumb = images[0]?.url ? `<img class="mz-map-thumb" src="${esc(images[0].url)}" alt="" loading="lazy">` : '';
-
-    return `<button class="${classes}" type="button" data-mz-node="${node.id}">${thumb}<span class="mz-map-name">${esc(node.name)}</span>${hidden ? `<i class="mz-map-more">+${hidden}</i>` : ''}</button>`;
-}
-
-function renderDetail() {
-    const node = selected && atlas?.nodes[selected];
-    if (!node) {
-        els.detail.hidden = true;
-        return;
-    }
-    els.detail.hidden = false;
-
-    const pieces = [];
-    pieces.push(`<header class="mz-map-detail-head"><h3>${esc(node.name)}</h3><span class="mz-map-tag is-${node.kind}">${kindLabel(node)}</span></header>`);
-
-    const path = nodePath(node);
-    if (path && path !== node.name) pieces.push(`<p class="mz-map-path">${esc(path)}</p>`);
-    if (node.aliases.length) pieces.push(`<p class="mz-map-aliases">Also written: ${esc(node.aliases.join(', '))}</p>`);
-    if (node.aspects.length) pieces.push(`<p class="mz-map-aliases">Seen as: ${esc(node.aspects.join(', '))}</p>`);
-
-    const images = nodeImages(node);
-    if (images.length) {
-        pieces.push(`<div class="mz-map-gallery">${images.map(record => `<img class="mz-map-shot" src="${esc(record.url)}" alt="${esc(record.place)}" title="${esc(record.prompt || record.place)}" loading="lazy">`).join('')}</div>`);
-    }
-
-    const flags = detailFlags(node);
-    if (flags.length) {
-        pieces.push(`<ul class="mz-map-flags">${flags.map(text => `<li>${esc(text)}</li>`).join('')}</ul>`);
-    }
-
-    const rows = node.visits.map(index => {
-        const obs = atlas.observations[index];
-        const when = [obs.date, obs.time].filter(Boolean).join(' \u00b7 ') || 'undated';
-        const bits = [when];
-        if (obs.weather) bits.push(obs.weather);
-        if (obs.present?.length) bits.push(obs.present.join(', '));
-        return `<li>${esc(bits.join(' \u00b7 '))}<button class="mz-btn-ghost mz-map-goto" type="button" data-mz-goto="${obs.at.msgIndex}">Turn ${obs.at.msgIndex + 1}</button></li>`;
-    });
-    pieces.push(`<h4>Visits <i>${node.visits.length}</i></h4><ul class="mz-map-visits">${rows.join('')}</ul>`);
-
-    if (node.trajectory?.length) {
-        const stops = node.trajectory.map(stop => stop.positionId ? atlas.nodes[stop.positionId].name : '\u2014');
-        pieces.push(`<h4>Route</h4><p class="mz-map-route">${esc(stops.join(' \u2192 '))}</p>`);
-    }
-
-    els.detail.innerHTML = pieces.join('');
-}
-
-function kindLabel(node) {
-    if (node.kind === 'mobile') return 'moves';
-    if (node.kind === 'transient') return 'on the way';
-    return node.kind;
-}
-
-function detailFlags(node) {
-    const out = [];
-    for (const [a, b] of atlas.flags.same) {
-        const other = a === node.id ? b : b === node.id ? a : null;
-        if (other && atlas.nodes[other]) out.push(`May be the same as \u201c${atlas.nodes[other].name}\u201d.`);
-    }
-    if (atlas.flags.ambiguous.includes(node.fold)) out.push('This name appears in more than one place.');
-    if (atlas.flags.mobilePending.includes(node.fold)) out.push('May be a moving place.');
-    return out;
-}
-
-/* ---------- render (the widget) ---------- */
+/* ---------- render ---------- */
 
 function render() {
     if (!widget || !win) return;
@@ -474,18 +663,337 @@ function render() {
         return;
     }
 
+    ensure();
+    renderWidget();
+    if (!win.hidden) renderWin();
+}
+
+function renderWidget() {
+    const now = nowNode();
+    const inTransit = derived && derived.inTransit;
+
+    els.title.textContent = inTransit
+        ? (derived.transitMode && derived.transitMode.glyph !== 'route' ? 'On the road' : 'En route')
+        : (now ? now.name : 'Map');
+
+    if (inTransit) {
+        const from = derived.fromId ? atlas.nodes[derived.fromId] : null;
+        const mode = derived.transitMode || travelMode('');
+        els.sub.textContent = `${mode.label}${from ? ` \u00b7 from ${from.name}` : ''}`;
+    } else if (now) {
+        els.sub.textContent = pathOf(now).slice(0, -1).reverse().join(' \u00b7 ');
+    } else {
+        els.sub.textContent = currentChatId() ? 'No places yet' : 'No chat open';
+    }
+
     const compact = !mapMiniOn() || window.innerWidth < NARROW;
     widget.classList.toggle('is-compact', compact);
     els.mini.hidden = compact;
-
-    els.sub.textContent = atlas
-        ? `${atlas.order.length} places \u00b7 ${atlas.observations.length} scenes`
-        : 'No places yet';
-
-    if (!compact) els.mini.innerHTML = miniSvg();
+    if (!compact && atlas) els.miniSvg.innerHTML = miniSvg();
+    if (!compact && !atlas) els.miniSvg.innerHTML = '';
 
     positionWidget();
-    renderWin();
+}
+
+function renderWin() {
+    if (!win || win.hidden) return;
+
+    els.depthv.textContent = depthLabel();
+
+    if (!atlas) {
+        els.summary.textContent = currentChatId() ? '' : 'No chat open';
+        els.cartTitle.textContent = currentChatId() ? 'Map' : 'No chat open';
+        els.cartSub.textContent = '';
+        els.key.innerHTML = '';
+        els.index.innerHTML = '';
+        els.chart.innerHTML = '';
+        els.detail.hidden = true;
+        els.body.classList.remove('has-card');
+        return;
+    }
+
+    const places = Object.values(atlas.nodes).filter(node => node.kind !== 'mobile' && node.kind !== 'transient').length;
+    els.summary.textContent = `${places} places \u00b7 ${atlas.observations.length} scenes \u00b7 ${derived.legs.length} journeys`;
+    els.cartTitle.textContent = storyName();
+    els.cartSub.textContent = `${places} places \u00b7 ${atlas.observations.length} scenes`;
+
+    const hasFlags = atlas.flags.same.length || atlas.flags.ambiguous.length || atlas.flags.mobilePending.length;
+    els.key.innerHTML = `<div><i class="k-now"></i>Where the story is</div><div><i class="k-pin"></i>A place, as last drawn</div><div><i></i>A journey, with how it went</div>${flagsShown && hasFlags ? '<div><i class="k-flag"></i>Needs a look</div>' : ''}`;
+
+    renderIndex();
+    renderDetail();
+    drawChart();
+}
+
+function renderIndex() {
+    const query = (els.find?.value || '').trim().toLowerCase();
+    const rows = [];
+
+    const walk = (node, depth) => {
+        if (node.kind === 'mobile' || node.kind === 'transient') return;
+        const match = !query
+            || node.name.toLowerCase().includes(query)
+            || pathOf(node).join(' ').toLowerCase().includes(query);
+        const kids = node.children.map(id => atlas.nodes[id]);
+        if (match || kids.some(kid => kid.name.toLowerCase().includes(query))) {
+            rows.push(`<button class="mz-map-row d${Math.min(depth, 3)}${selectedKey === node.key ? ' is-sel' : ''}${derived.nowId === node.id ? ' is-now' : ''}" type="button" data-mz-map-pick="${esc(node.key)}"><span>${esc(node.name)}</span></button>`);
+        }
+        kids.forEach(kid => walk(kid, depth + 1));
+    };
+    atlas.roots.forEach(id => walk(atlas.nodes[id], 0));
+
+    const vehicles = Object.values(atlas.nodes).filter(node => node.kind === 'mobile');
+    els.index.innerHTML = `<h4>Places</h4>${rows.join('')}${vehicles.length ? `<h4>Vehicles</h4>${vehicles.map(node => `<button class="mz-map-row d0${selectedKey === node.key ? ' is-sel' : ''}" type="button" data-mz-map-pick="${esc(node.key)}">${svg(`m-${travelMode(node.name).glyph}`)}<span>${esc(node.name)}</span></button>`).join('')}` : ''}`;
+}
+
+function seenHtml(node) {
+    const total = atlas.observations.length;
+    const ticks = node.visits.map((visit, k) => `<rect class="${k === node.visits.length - 1 ? 'is-last' : ''}" x="${(visit / Math.max(1, total - 1) * 96 + 1).toFixed(1)}%" y="5" width="2.6" height="12" rx="1.3"/>`).join('');
+    const first = atlas.observations[node.visits[0]];
+    const last = atlas.observations[node.visits[node.visits.length - 1]];
+    return `<div class="mz-map-sect"><h4>Seen <i>${node.visits.length} scenes</i></h4><svg class="mz-map-seen" aria-hidden="true"><line x1="0" x2="100%" y1="11" y2="11"/>${ticks}</svg><div class="mz-map-span"><span>${esc(first?.date || '')}</span><span>${esc(last?.date || '')}</span></div></div>`;
+}
+
+function whoHtml(nodeId) {
+    const counts = derived.present[nodeId] || {};
+    const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    if (!top.length) return '';
+    return `<div class="mz-map-sect"><h4>Who has been here</h4><div class="mz-map-who">${top.map(([name, count]) => `<span><b>${esc(name[0])}</b>${esc(name)}<i>${count}</i></span>`).join('')}</div></div>`;
+}
+
+function legsHtml(node) {
+    const mine = derived.legs
+        .filter(leg => leg.a === node.id || leg.b === node.id)
+        .sort((a, b) => b.order - a.order);
+    if (!mine.length) return '';
+    const rows = mine.map(leg => {
+        const other = atlas.nodes[leg.a === node.id ? leg.b : leg.a];
+        const dir = leg.dir[0] === node.id ? '\u2192' : '\u2190';
+        const mode = leg.mode || travelMode('');
+        return `<li>${svg(`m-${mode.glyph}`)}<span>${dir} ${esc(other.name)}</span><em>${esc(mode.label)}${leg.count > 1 ? ` \u00b7 ${leg.count}\u00d7` : ''}</em></li>`;
+    });
+    return `<div class="mz-map-sect"><h4>Journeys <i>${mine.length}</i></h4><ul class="mz-map-legs">${rows.join('')}</ul></div>`;
+}
+
+function flagsFor(node) {
+    const out = [];
+    for (const [a, b] of atlas.flags.same) {
+        const other = a === node.id ? b : b === node.id ? a : null;
+        if (other) out.push(`May be the same as \u201c${atlas.nodes[other].name}\u201d.`);
+    }
+    if (atlas.flags.ambiguous.includes(node.fold)) out.push('This name appears in more than one place.');
+    if (atlas.flags.mobilePending.includes(node.fold)) out.push('May be a moving place.');
+    return out;
+}
+
+function renderDetail() {
+    const node = selectedKey ? findByKey(selectedKey) : null;
+    els.body.classList.toggle('has-card', !!node);
+    els.detail.hidden = !node;
+    if (!node) return;
+
+    const mobile = node.kind === 'mobile';
+    const path = pathOf(node);
+    const chips = [`<span class="mz-map-chip${mobile ? ' is-accent' : ''}">${mobile ? svg(`m-${travelMode(node.name).glyph}`) : ''}${mobile ? 'moves' : node.kind}</span>`];
+    if (!mobile) chips.push(`<span class="mz-map-chip">${isOutdoor(node) ? 'Outdoor' : 'Indoor'}</span>`);
+    if (derived.nowId === node.id) chips.push('<span class="mz-map-chip is-accent">Now</span>');
+
+    const flags = flagsShown ? flagsFor(node) : [];
+    const thumb = thumbOf(node);
+    const visits = node.visits.slice(-5).reverse().map(index => {
+        const obs = atlas.observations[index];
+        const when = [obs.date, obs.time].filter(Boolean).join(' \u00b7 ');
+        const bits = [when || 'undated'];
+        if (obs.present?.length) bits.push(obs.present.join(', '));
+        return `<li><span>${esc(bits.join(' \u00b7 '))}</span><button class="mz-btn-ghost mz-map-goto" type="button" data-mz-map-goto="${obs.at?.msgIndex ?? ''}">Turn ${(obs.at?.msgIndex ?? -1) + 1}</button></li>`;
+    }).join('');
+
+    els.detail.innerHTML = `
+        ${thumb ? `<div class="mz-map-hero"><img alt="" src="${esc(thumb)}"></div>` : ''}
+        <div class="mz-map-card">
+            <div><h3>${esc(node.name)}</h3><p class="mz-map-crumb">${esc(path.slice(0, -1).join(' \u203a ') || 'Top level')}</p></div>
+            <div class="mz-map-chips">${chips.join('')}</div>
+            ${flags.length ? `<ul class="mz-map-flags">${flags.map(text => `<li>${esc(text)}</li>`).join('')}</ul>` : ''}
+            ${seenHtml(node)}
+            ${whoHtml(node.id)}
+            ${legsHtml(node)}
+            <div class="mz-map-sect"><h4>Recent visits <i>${node.visits.length}</i></h4><ul class="mz-map-visits">${visits}</ul></div>
+        </div>`;
+}
+
+/* ---------- the chart on screen: pan and zoom ---------- */
+
+function drawChart() {
+    if (win.hidden || !atlas) return;
+    const width = els.stage.clientWidth;
+    const height = els.stage.clientHeight;
+    if (!view.placed) {
+        fit();
+        view.placed = true;
+    }
+    els.chart.innerHTML = fullSvg(width, height);
+    bindChart();
+}
+
+function applyTransform() {
+    const chart = els.chart.querySelector('.mzc');
+    if (!chart) return;
+    const world = chart.querySelector('.mzc-world');
+    if (world) world.style.transform = `translate(${f1(view.tx)}px,${f1(view.ty)}px) scale(${f1(view.s)})`;
+    chart.dataset.zoom = view.s < 0.5 ? 0 : view.s < 1.1 ? 1 : 2;
+}
+
+function fit() {
+    const width = els.stage.clientWidth;
+    const height = els.stage.clientHeight;
+    const bounds = layout.bounds;
+    const spanX = bounds.x1 - bounds.x0;
+    const spanY = bounds.y1 - bounds.y0;
+    const margin = 70;
+    view.s = Math.min(1.25, Math.min((width - margin * 2) / spanX, (height - margin * 2) / spanY));
+    view.tx = width / 2 - (bounds.x0 + spanX / 2) * view.s;
+    view.ty = height / 2 - (bounds.y0 + spanY / 2) * view.s + 16;
+}
+
+function centerOn(x, y, scale) {
+    const width = els.stage.clientWidth;
+    const height = els.stage.clientHeight;
+    view.s = scale;
+    view.tx = width / 2 - x * view.s;
+    view.ty = height / 2 - y * view.s;
+}
+
+function zoomBy(direction) {
+    const width = els.stage.clientWidth / 2;
+    const height = els.stage.clientHeight / 2;
+    const next = clamp(view.s * (direction > 0 ? 1.35 : 1 / 1.35), 0.35, 3.2);
+    view.tx = width - (width - view.tx) * (next / view.s);
+    view.ty = height - (height - view.ty) * (next / view.s);
+    view.s = next;
+    applyTransform();
+}
+
+let pan = null;
+
+function bindChart() {
+    const chart = els.chart.querySelector('.mzc');
+    if (!chart) return;
+
+    chart.addEventListener('pointerdown', event => {
+        if (event.button > 0) return;
+        pan = { x: event.clientX, y: event.clientY, tx: view.tx, ty: view.ty, moved: false };
+        chart.setPointerCapture(event.pointerId);
+    });
+    chart.addEventListener('pointermove', event => {
+        if (!pan) return;
+        const dx = event.clientX - pan.x;
+        const dy = event.clientY - pan.y;
+        if (!pan.moved && Math.hypot(dx, dy) < 4) return;
+        pan.moved = true;
+        chart.classList.add('is-panning');
+        view.tx = pan.tx + dx;
+        view.ty = pan.ty + dy;
+        applyTransform();
+    });
+    const endPan = event => {
+        if (!pan) return;
+        const moved = pan.moved;
+        pan = null;
+        chart.classList.remove('is-panning');
+        if (!moved) {
+            const hit = event.target.closest && event.target.closest('[data-node]');
+            select(hit ? hit.dataset.node : null, false);
+        }
+    };
+    chart.addEventListener('pointerup', endPan);
+    chart.addEventListener('pointercancel', () => {
+        pan = null;
+        chart.classList.remove('is-panning');
+    });
+    chart.addEventListener('wheel', event => {
+        event.preventDefault();
+        const rect = chart.getBoundingClientRect();
+        const px = event.clientX - rect.left;
+        const py = event.clientY - rect.top;
+        const factor = Math.exp(-event.deltaY * 0.0016);
+        const next = clamp(view.s * factor, 0.35, 3.2);
+        view.tx = px - (px - view.tx) * (next / view.s);
+        view.ty = py - (py - view.ty) * (next / view.s);
+        view.s = next;
+        applyTransform();
+    }, { passive: false });
+
+    chart.querySelectorAll('.mzc-pin').forEach(pin => {
+        pin.addEventListener('keydown', event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                select(pin.dataset.node, true);
+            }
+        });
+    });
+}
+
+function select(key, panThere) {
+    selectedKey = key && findByKey(key) ? key : null;
+    if (panThere && selectedKey) {
+        const item = anchorOf(selectedKey);
+        if (item) centerOn(item.ax, item.ay, Math.max(view.s, item.pin ? 1.4 : 0.9));
+    }
+    renderIndex();
+    renderDetail();
+    drawChart();
+    requestAnimationFrame(applyTransform);
+}
+
+/* ---------- wiring ---------- */
+
+function wireWidget() {
+    widget.addEventListener('click', event => {
+        if (drag && drag.moved) return;
+        if (event.target.closest('[data-mz-map-open]')) openMapWin();
+    });
+    wireDrag();
+}
+
+/* The minimap window drags by any part that is not a control. */
+function wireDrag() {
+    widget.addEventListener('pointerdown', event => {
+        if (event.button > 0 || event.target.closest('button, input, a')) return;
+        const rect = widget.getBoundingClientRect();
+        const frameRect = frameEl.getBoundingClientRect();
+        drag = {
+            dx: event.clientX - rect.left,
+            dy: event.clientY - rect.top,
+            x0: event.clientX,
+            y0: event.clientY,
+            moved: false,
+            fx: frameRect.left,
+            fy: frameRect.top,
+        };
+        widget.setPointerCapture(event.pointerId);
+    });
+    widget.addEventListener('pointermove', event => {
+        if (!drag) return;
+        if (!drag.moved && Math.hypot(event.clientX - drag.x0, event.clientY - drag.y0) < 4) return;
+        drag.moved = true;
+        widget.classList.add('is-dragging');
+        const x = clamp(event.clientX - drag.fx - drag.dx, EDGE, frameEl.clientWidth - widget.offsetWidth - EDGE);
+        const y = clamp(event.clientY - drag.fy - drag.dy, EDGE, frameEl.clientHeight - widget.offsetHeight - EDGE);
+        widget.style.left = `${x}px`;
+        widget.style.top = `${y}px`;
+    });
+    const endDrag = () => {
+        if (!drag) return;
+        widget.classList.remove('is-dragging');
+        settings().mapPos = {
+            x: parseFloat(widget.style.left) || 0,
+            y: parseFloat(widget.style.top) || 0,
+        };
+        saveSettings();
+        setTimeout(() => { drag = null; }, 0);
+    };
+    widget.addEventListener('pointerup', endDrag);
+    widget.addEventListener('pointercancel', endDrag);
 }
 
 /** The window's spot: the saved one, else the bottom-left corner. */
@@ -504,77 +1012,57 @@ function positionWidget() {
     widget.style.top = `${y}px`;
 }
 
-/* ---------- wiring ---------- */
-
-function wireWidget() {
-    widget.addEventListener('click', event => {
-        const dot = event.target.closest('[data-node]');
-        if (dot) {
-            openMapWin(dot.dataset.node);
-            return;
-        }
-
-        const target = event.target.closest('[data-mz-map]');
-        if (!target) return;
-
-        if (target.dataset.mzMap === 'open') openMapWin();
-    });
-
-    wireDrag();
-}
-
-/* The window is dragged by its head - never by its buttons. */
-function wireDrag() {
-    els.head.addEventListener('pointerdown', event => {
-        if (event.target.closest('button, input, a')) return;
-        const rect = widget.getBoundingClientRect();
-        drag = { dx: event.clientX - rect.left, dy: event.clientY - rect.top };
-        els.head.setPointerCapture(event.pointerId);
-        widget.classList.add('is-dragging');
-    });
-
-    els.head.addEventListener('pointermove', event => {
-        if (!drag) return;
-        const x = clamp(event.clientX - drag.dx, EDGE, window.innerWidth - widget.offsetWidth - EDGE);
-        const y = clamp(event.clientY - drag.dy, EDGE, window.innerHeight - widget.offsetHeight - EDGE);
-        widget.style.left = `${x}px`;
-        widget.style.top = `${y}px`;
-    });
-
-    const endDrag = () => {
-        if (!drag) return;
-        drag = null;
-        widget.classList.remove('is-dragging');
-        settings().mapPos = {
-            x: parseFloat(widget.style.left) || 0,
-            y: parseFloat(widget.style.top) || 0,
-        };
-        saveSettings();
-    };
-
-    els.head.addEventListener('pointerup', endDrag);
-    els.head.addEventListener('pointercancel', endDrag);
-}
-
 function wireWin() {
     win.addEventListener('click', event => {
-        const goto = event.target.closest('[data-mz-goto]');
-        if (goto) {
-            const index = Number(goto.dataset.mzGoto);
-            if (Number.isInteger(index)) {
-                closeMapWin();
-                gotoTurn?.(index);
+        const button = event.target.closest('button');
+        if (!button) return;
+
+        if (button.hasAttribute('data-mz-map-close')) {
+            closeMapWin();
+        } else if (button.hasAttribute('data-mz-map-pick') || button.dataset.mzMapPick !== undefined) {
+            select(button.dataset.mzMapPick, true);
+        } else if (button.dataset.mzMapDepth) {
+            const order = [2, 3, 4, 99];
+            const at = order.indexOf(depthValue());
+            settings().mapDepth = order[clamp(at + Number(button.dataset.mzMapDepth), 0, 3)];
+            saveSettings();
+            ensure();
+            view.placed = false;
+            renderWin();
+        } else if (button.dataset.mzMapLayer) {
+            if (button.dataset.mzMapLayer === 'trails') trails = !trails;
+            else flagsShown = !flagsShown;
+            button.setAttribute('aria-pressed', String(button.dataset.mzMapLayer === 'trails' ? trails : flagsShown));
+            renderWin();
+        } else if (button.dataset.mzMapZoom) {
+            zoomBy(Number(button.dataset.mzMapZoom));
+        } else if (button.hasAttribute('data-mz-map-fit')) {
+            fit();
+            applyTransform();
+        } else if (button.hasAttribute('data-mz-map-now')) {
+            const item = derived?.nowId ? layout.anchor(derived.nowId) : null;
+            if (item) {
+                centerOn(item.ax, item.ay, Math.max(view.s, 1.3));
+                applyTransform();
             }
-            return;
         }
+    });
 
-        const target = event.target.closest('[data-mz-node]');
-        if (!target) return;
+    win.addEventListener('click', event => {
+        const goto = event.target.closest('[data-mz-map-goto]');
+        if (!goto) return;
+        const index = Number(goto.dataset.mzMapGoto);
+        if (Number.isInteger(index) && index >= 0) {
+            closeMapWin();
+            gotoTurn?.(index);
+        }
+    });
 
-        selected = target.dataset.mzNode;
-        // The atlas stays put: only the highlight and the card move.
-        win.querySelectorAll('.mz-map-chip.is-sel').forEach(el => el.classList.remove('is-sel'));
-        target.classList.add('is-sel');
-        renderDetail();
+    els.find?.addEventListener('input', renderIndex);
+    els.find?.addEventListener('keydown', event => {
+        if (event.key === 'Enter') {
+            const first = els.index.querySelector('[data-mz-map-pick]');
+            if (first) select(first.dataset.mzMapPick, true);
+        }
     });
 }

@@ -875,11 +875,11 @@ export function deriveLegs(atlas) {
 
 /* ---------- layout: where things sit on the chart ---------- */
 
-const PIN_R = 17;
+export const PIN_R = 17;
 const PLACE_PAD = { plot: 26, city: 44, region: 64 };
 
 /** FNV-1a over the folded name: the seed behind every slot and shape. */
-function hashFold(fold) {
+export function hashFold(fold) {
     let h = 2166136261;
     for (const c of String(fold)) {
         h ^= c.charCodeAt(0);
