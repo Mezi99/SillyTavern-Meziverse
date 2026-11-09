@@ -872,3 +872,152 @@ export function deriveLegs(atlas) {
         present,
     };
 }
+
+/* ---------- layout: where things sit on the chart ---------- */
+
+const PIN_R = 17;
+const PLACE_PAD = { plot: 26, city: 44, region: 64 };
+
+/** FNV-1a over the folded name: the seed behind every slot and shape. */
+function hashFold(fold) {
+    let h = 2166136261;
+    for (const c of String(fold)) {
+        h ^= c.charCodeAt(0);
+        h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+}
+
+/** A tiny deterministic generator - the same seed draws the same chart. */
+function randomFrom(seed) {
+    let s = seed >>> 0 || 1;
+    return () => {
+        s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+        return s / 4294967296;
+    };
+}
+
+/**
+ * Places items around the origin in the order given - story order, never
+ * size order. Append-only is what makes the layout grow without moving: an
+ * item's slot is computed from its seed and the items that came before it,
+ * so a newcomer can only claim a free slot. The ring search starts at a
+ * radius independent of the item's own size, too: a plate that grows (a
+ * house gains a room) keeps its slot unless the growth truly collides.
+ * The ring step is squashed to 0.82 so clusters read wider than tall.
+ *
+ * @returns {number} the radius enclosing the placed cluster
+ */
+function pack(items, gap, seed) {
+    const rand = randomFrom(seed);
+    const placed = [];
+
+    items.forEach((item, i) => {
+        if (!i) {
+            item.x = 0;
+            item.y = 0;
+            placed.push(item);
+            return;
+        }
+
+        const cx = placed.reduce((sum, p) => sum + p.x, 0) / placed.length;
+        const cy = placed.reduce((sum, p) => sum + p.y, 0) / placed.length;
+        const start = rand() * 6.2832;
+
+        for (let rho = 0; rho < 4000; rho += 5) {
+            let best = null;
+            let bestDistance = 1e9;
+            for (let step = 0; step < 28; step += 1) {
+                const angle = start + step * 6.2832 / 28;
+                const x = Math.cos(angle) * rho;
+                const y = Math.sin(angle) * rho * 0.82;
+                if (placed.every(p => Math.hypot(p.x - x, p.y - y) >= p.r + item.r + gap)) {
+                    const distance = Math.hypot(x - cx, y - cy);
+                    if (distance < bestDistance) {
+                        bestDistance = distance;
+                        best = { x, y };
+                    }
+                }
+            }
+            if (best) {
+                item.x = best.x;
+                item.y = best.y;
+                placed.push(item);
+                return;
+            }
+        }
+    });
+
+    return placed.length
+        ? Math.max(...placed.map(p => Math.hypot(p.x, p.y) + p.r))
+        : 0;
+}
+
+/**
+ * A stable placement for every visible node: the data has no coordinates, so
+ * the chart generates them - deterministically, seeded by the folded name, so
+ * a rebuild reproduces the same chart and growing the story never moves the
+ * places that are already on it.
+ *
+ * Visible nodes are everything except mobiles and transient route context. A
+ * node is a PIN when it has no visible children or the depth collapsed it;
+ * otherwise a TERRITORY: its children packed inside it, its own radius the
+ * enclosing one plus a pad (plot 26, city 44, region 64), regions ringed
+ * further apart. `anchor(id)` is the nearest pin at or above a node - every
+ * journey edge draws to it, so collapsing the depth never loses a leg.
+ *
+ * @param {object} atlas the `buildAtlas` result
+ * @param {{depth?: number}} [options] 2, 3 or 4 levels, or 99 for everything
+ * @returns {{items:Record<string,object>, order:object[], roots:object[], bounds:{x0:number,x1:number,y0:number,y1:number}, anchor:(id:string)=>object|null}}
+ */
+export function layoutAtlas(atlas, { depth = 4 } = {}) {
+    const nodes = atlas?.nodes || {};
+    const kidsOf = node => (node.children || [])
+        .map(id => nodes[id])
+        .filter(child => child && child.kind !== 'mobile' && child.kind !== 'transient');
+
+    const expands = node => kidsOf(node).length > 0
+        && (depth === 99 || (Number.isFinite(node.level) ? node.level < depth - 1 : true));
+
+    const lay = node => {
+        if (!expands(node)) return { n: node, r: PIN_R, pin: true, kids: [] };
+        const subs = kidsOf(node).map(lay);
+        const inner = pack(subs, node.level >= 2 ? 10 : 22, hashFold(node.fold));
+        const pad = node.level === 0 ? PLACE_PAD.region : node.level === 1 ? PLACE_PAD.city : PLACE_PAD.plot;
+        return { n: node, r: Math.max(inner + pad, PIN_R + pad), pin: false, kids: subs };
+    };
+
+    const roots = (atlas?.roots || [])
+        .map(id => nodes[id])
+        .filter(node => node && node.kind !== 'mobile' && node.kind !== 'transient')
+        .map(lay);
+    pack(roots, 90, 7);
+
+    const out = { items: {}, order: [], roots, bounds: null };
+    const walk = (item, ox, oy) => {
+        item.ax = ox + item.x;
+        item.ay = oy + item.y;
+        out.items[item.n.id] = item;
+        out.order.push(item);
+        item.kids.forEach(child => walk(child, item.ax, item.ay));
+    };
+    roots.forEach(root => walk(root, 0, 0));
+
+    const all = out.order;
+    out.bounds = all.length ? {
+        x0: Math.min(...all.map(i => i.ax - i.r)),
+        x1: Math.max(...all.map(i => i.ax + i.r)),
+        y0: Math.min(...all.map(i => i.ay - i.r)),
+        y1: Math.max(...all.map(i => i.ay + i.r)),
+    } : { x0: 0, x1: 0, y0: 0, y1: 0 };
+
+    out.anchor = id => {
+        for (let at = nodes[id]; at; at = at.parentId ? nodes[at.parentId] : null) {
+            const item = out.items[at.id];
+            if (item && item.pin) return item;
+        }
+        return out.items[id] || null;
+    };
+
+    return out;
+}

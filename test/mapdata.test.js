@@ -8,6 +8,7 @@ import {
     extractStampObservations,
     foldSegment,
     isTransientFold,
+    layoutAtlas,
     splitAspect,
     splitMapChain,
     travelMode,
@@ -522,6 +523,90 @@ test('travelMode reads the vehicle, and the unknown rides the generic route', ()
     assert.equal(travelMode('Sky Chariot').glyph, 'plane');
     assert.equal(travelMode('The Nightjar').glyph, 'route');
     assert.equal(travelMode('').label, 'on the way');
+});
+
+const coordsOf = layout => layout.order.map(item => [item.n.key, item.ax, item.ay]);
+
+test('layout: the same story draws the same chart, rebuild after rebuild', () => {
+    const make = () => buildAtlas(obs(
+        ['USA', 'New York City', 'Local Cafe'],
+        ['USA', 'New York City', 'Pier 9'],
+        ['USA', 'Brooklyn', 'Docks'],
+    ));
+    assert.deepEqual(coordsOf(layoutAtlas(make(), { depth: 4 })), coordsOf(layoutAtlas(make(), { depth: 4 })));
+});
+
+test('layout: a new place claims a free slot and moves nobody', () => {
+    const before = buildAtlas(obs(
+        ['USA', 'New York City', 'Local Cafe'],
+        ['USA', 'New York City', 'Pier 9'],
+    ));
+    const after = buildAtlas(obs(
+        ['USA', 'New York City', 'Local Cafe'],
+        ['USA', 'New York City', 'Pier 9'],
+        ['USA', 'New York City', 'Harbor'],
+    ));
+    const a = layoutAtlas(before, { depth: 4 });
+    const b = layoutAtlas(after, { depth: 4 });
+
+    for (const id of before.order) {
+        assert.equal(b.items[id].ax, a.items[id].ax);
+        assert.equal(b.items[id].ay, a.items[id].ay);
+    }
+    assert.ok(Object.values(after.nodes).some(node => node.fold === 'harbor'));
+});
+
+test('layout: a whole new territory appends and leaves the old world alone', () => {
+    const before = buildAtlas(obs(
+        ['Japan', 'Kyoto', 'Temple'],
+        ['Japan', 'Osaka', 'Castle'],
+    ));
+    const after = buildAtlas(obs(
+        ['Japan', 'Kyoto', 'Temple'],
+        ['Japan', 'Osaka', 'Castle'],
+        ['USA', 'New York City', 'Docks'],
+    ));
+    const a = layoutAtlas(before, { depth: 4 });
+    const b = layoutAtlas(after, { depth: 4 });
+
+    for (const id of before.order) {
+        assert.equal(b.items[id].ax, a.items[id].ax);
+        assert.equal(b.items[id].ay, a.items[id].ay);
+    }
+});
+
+test('layout: revisiting a place moves nothing at all', () => {
+    const chains = [
+        ['USA', 'New York City', 'Local Cafe'],
+        ['USA', 'New York City', 'Pier 9'],
+    ];
+    const a = layoutAtlas(buildAtlas(obs(...chains)), { depth: 4 });
+    const b = layoutAtlas(buildAtlas(obs(...chains, ['USA', 'New York City', 'Local Cafe'])), { depth: 4 });
+    assert.deepEqual(coordsOf(a), coordsOf(b));
+});
+
+test('layout: depth collapses children into the parent pin, and the anchor follows', () => {
+    const atlas = buildAtlas(obs(
+        ['USA', 'New York City', 'Jammie\u2019s house', 'Kitchen'],
+        ['USA', 'New York City', 'Jammie\u2019s house', 'Living Room'],
+    ));
+    const find = fold => Object.values(atlas.nodes).find(node => node.fold === fold);
+    const house = find('jammies house');
+    const kitchen = find('kitchen');
+    const city = find('new york city');
+
+    const wide = layoutAtlas(atlas, { depth: 99 });
+    assert.equal(wide.items[kitchen.id].pin, true);
+
+    const shallow = layoutAtlas(atlas, { depth: 3 });
+    assert.equal(shallow.items[city.id].pin, false);
+    assert.equal(shallow.items[house.id].pin, true);
+    assert.equal(shallow.items[kitchen.id], undefined);
+    assert.equal(shallow.anchor(kitchen.id).n.id, house.id);
+
+    // a collapsed node draws to its nearest pin; a plate with no pin above it
+    // anchors to itself
+    assert.equal(shallow.anchor(city.id).n.id, city.id);
 });
 
 test('similarity is flagged for the curator, and digits alone never flag', () => {
