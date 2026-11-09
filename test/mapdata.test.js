@@ -262,6 +262,88 @@ test('stamp observations: a story without tags still maps its drawn places', () 
     assert.ok(Object.values(atlas.nodes).some(node => node.name === 'Kitchen'));
 });
 
+/* Synthetic scene tags only: never real story text. */
+const tag = place => '<scene date="Day 1, Tuesday" time="9:00 AM" '
+    + `location="${place}" locationTag="Indoor" present="" />`;
+
+test('only the selected swipe variant becomes a scene; the others are branch material', () => {
+    const hotel = 'The concierge takes their bags.\n'
+        + `${tag('USA | New York City | Hotel | Lobby')}\n`;
+    const docks = 'The ferry pulls away.\n'
+        + `${tag('USA | New York City | Docks | Pier 9')}\n`;
+    const message = { mes: hotel, swipes: [hotel, docks], swipe_id: 0 };
+
+    let out = extractObservations([message]);
+    assert.equal(out.length, 1);
+    assert.deepEqual(out[0].chain, ['USA', 'New York City', 'Hotel', 'Lobby']);
+
+    // the user continues from the other path
+    message.swipe_id = 1;
+    message.mes = docks;
+    out = extractObservations([message]);
+    assert.equal(out.length, 1);
+    assert.deepEqual(out[0].chain, ['USA', 'New York City', 'Docks', 'Pier 9']);
+});
+
+test('the variant list is the truth: a lagging mes mirror never maps the wrong swipe', () => {
+    const hotel = tag('USA | New York City | Hotel | Lobby');
+    const trip = `${tag('USA | New York City | En Route | Jin')}\n`
+        + `${tag('USA | New York City | Docks | Pier 9')}\n`;
+    // mes still mirrors the first variant; the selection has already moved on
+    const message = { mes: hotel, swipes: [hotel, trip], swipe_id: 1 };
+
+    const out = extractObservations([message]);
+    assert.equal(out.length, 2);
+    assert.deepEqual(out[0].chain, ['USA', 'New York City', 'En Route', 'Jin']);
+    assert.deepEqual(out[1].chain, ['USA', 'New York City', 'Docks', 'Pier 9']);
+});
+
+test('a message without a usable variant falls back to mes', () => {
+    const text = tag('USA | New York City | Hotel | Lobby');
+    assert.equal(extractObservations([{ mes: text }])[0].chain[2], 'Hotel');
+    assert.equal(extractObservations([{ mes: text, swipes: [text], swipe_id: 7 }])[0].chain[2], 'Hotel');
+    assert.equal(extractObservations([{ mes: text, swipes: [text], swipe_id: -1 }])[0].chain[2], 'Hotel');
+});
+
+test('stamp observations follow the selected variant, never a sibling variant', () => {
+    const records = {
+        bg_hotel: { id: 'bg_hotel', place: 'Hotel | Lobby' },
+        bg_docks: { id: 'bg_docks', place: 'Docks | Pier 9' },
+    };
+    // the mirror is stale: it names the last-stamped variant, not the selected one
+    const message = {
+        mes: 'One',
+        swipes: ['One', 'Two'],
+        swipe_id: 0,
+        swipe_info: [
+            { extra: { meziverse: { bg: 'bg_hotel' } } },
+            { extra: { meziverse: { bg: 'bg_docks' } } },
+        ],
+        extra: { meziverse: { bg: 'bg_docks' } },
+    };
+
+    let out = extractStampObservations([message], records);
+    assert.equal(out.length, 1);
+    assert.deepEqual(out[0].chain, ['Hotel', 'Lobby']);
+
+    message.swipe_id = 1;
+    out = extractStampObservations([message], records);
+    assert.deepEqual(out[0].chain, ['Docks', 'Pier 9']);
+});
+
+test('an unstamped selected variant maps no place at all', () => {
+    const records = { bg_hotel: { id: 'bg_hotel', place: 'Hotel | Lobby' } };
+    const message = {
+        mes: 'Two',
+        swipes: ['One', 'Two'],
+        swipe_id: 1,
+        swipe_info: [{ extra: { meziverse: { bg: 'bg_hotel' } } }, {}],
+        extra: { meziverse: { bg: 'bg_hotel' } },
+    };
+
+    assert.equal(extractStampObservations([message], records).length, 0);
+});
+
 test('similarity is flagged for the curator, and digits alone never flag', () => {
     const atlas = buildAtlas(obs(
         ['The Docks'],

@@ -14,8 +14,7 @@
  * falls back to the places the chat's backgrounds already name.
  */
 
-import { buildAtlas, extractObservations, extractStampObservations } from './mapdata.js';
-import { stampOf } from './backgrounds.js';
+import { activeStamp, buildAtlas, extractObservations, extractStampObservations } from './mapdata.js';
 import { bgStore, chatMessages, currentChatId, on, personaName } from './st.js';
 import { mapMiniOn, mapOn, saveSettings, settings } from './settings.js';
 
@@ -260,7 +259,7 @@ function ancestorIds(node) {
 function recordFor(obsIndex) {
     const obs = atlas.observations[obsIndex];
     const message = chatMessages()[obs?.at?.msgIndex ?? -1];
-    const id = message ? stampOf(message) : null;
+    const id = message ? activeStamp(message) : null;
     return id ? bgStore().records?.[id] || null : null;
 }
 

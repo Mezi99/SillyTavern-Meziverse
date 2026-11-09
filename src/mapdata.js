@@ -32,7 +32,6 @@
  * curator - never a merge.
  */
 
-import { stampOf } from './backgrounds.js';
 import { describeScenes } from './scene.js';
 
 /* ---------- chain splitting ---------- */
@@ -126,11 +125,90 @@ export function foldSegment(name) {
         .trim();
 }
 
+/* ---------- the selected swipe variant ---------- */
+
+/**
+ * The variant of one message the user chose to continue from: the index in
+ * `swipes`, or 0 for a message without swipes. Everything the map derives
+ * comes from that variant alone - the unselected ones are branch material
+ * for later, never part of the story that happened.
+ *
+ * @param {object} message
+ * @returns {number}
+ */
+export function activeSwipeId(message) {
+    const id = Math.trunc(Number(message?.swipe_id ?? 0));
+    return Number.isFinite(id) && id > 0 ? id : 0;
+}
+
+/**
+ * The selected variant's text: `swipes[swipe_id]` where that variant exists,
+ * else `mes` - the message without swipes, or the mirror that is momentarily
+ * ahead of its array while a reply streams.
+ *
+ * @param {object} message
+ * @returns {string}
+ */
+export function activeSwipeText(message) {
+    if (!message || typeof message !== 'object') return '';
+    const variant = Array.isArray(message.swipes) ? message.swipes[activeSwipeId(message)] : null;
+    if (typeof variant === 'string' && variant.length) return variant;
+    return typeof message.mes === 'string' ? message.mes : '';
+}
+
+/**
+ * The stamp the selected variant carries - its own `swipe_info` slot first.
+ * The message-level mirror follows whichever variant was stamped last, so
+ * after shuffling it can name a variant that is no longer selected; it is
+ * only evidence when no variant carries a stamp of its own. An unstamped
+ * selected variant has no place at all: inheriting a sibling's stamp would
+ * put a discarded branch on the map.
+ *
+ * @param {object} message
+ * @returns {string|null} the background record id
+ */
+export function activeStamp(message) {
+    if (!message || typeof message !== 'object') return null;
+
+    const own = message.swipe_info?.[activeSwipeId(message)]?.extra?.meziverse?.bg;
+    if (typeof own === 'string' && own.trim()) return own.trim();
+
+    const slots = Array.isArray(message.swipe_info) ? message.swipe_info : [];
+    const anyVariant = slots.some(slot => {
+        const id = slot?.extra?.meziverse?.bg;
+        return typeof id === 'string' && id.trim();
+    });
+    if (anyVariant) return null;
+
+    const mirrored = message.extra?.meziverse?.bg;
+    return typeof mirrored === 'string' && mirrored.trim() ? mirrored.trim() : null;
+}
+
+/* The message whose text the map reads: the selected variant's, patched onto
+   a shim when the `mes` mirror lags behind it. One shim per message keeps the
+   identity caches in tags.js and scene.js hitting. */
+const sourceCache = new WeakMap();
+
+function sourceOf(message) {
+    const text = activeSwipeText(message);
+    const mirrored = typeof message?.mes === 'string' ? message.mes : '';
+    if (text === mirrored) return message;
+
+    let shim = sourceCache.get(message);
+    if (!shim || shim.mes !== text) {
+        shim = { ...message, mes: text };
+        sourceCache.set(message, shim);
+    }
+    return shim;
+}
+
 /* ---------- observations ---------- */
 
 /**
  * Every usable scene tag of the chat as one map observation, in story order -
- * mid-reply hops included, since a reply may carry several scene tags.
+ * mid-reply hops included, since a reply may carry several scene tags. Only
+ * each message's SELECTED swipe variant is read: an unselected swipe is a
+ * branch the story did not take, and must never become a scene or a place.
  *
  * @param {object[]} messages SillyTavern's chat array
  * @param {{persona?: string}} [options]
@@ -141,7 +219,7 @@ export function extractObservations(messages, { persona = '' } = {}) {
     const out = [];
 
     list.forEach((message, msgIndex) => {
-        describeScenes(message, { persona }).forEach(({ scene }, tagIndex) => {
+        describeScenes(sourceOf(message), { persona }).forEach(({ scene }, tagIndex) => {
             const placeFull = typeof scene.placeFull === 'string' ? scene.placeFull : '';
             const chain = splitMapChain(placeFull);
             if (!chain.length) return;
@@ -168,7 +246,10 @@ export function extractObservations(messages, { persona = '' } = {}) {
  * background record already names its place (the watcher wrote the name), so
  * the chat's drawn pictures become a simple map of visited places - the
  * Frame spec's original promise. One observation per stamped reply; a reply
- * without a stamp inherits nothing and simply has no place of its own.
+ * without a stamp inherits nothing and simply has no place of its own. The
+ * stamp is the SELECTED swipe variant's own (`activeStamp`): each variant
+ * carries the picture drawn for it, and only the variant the user continued
+ * from may name a place.
  *
  * @param {Array<{extra?:object}>} messages SillyTavern's chat array
  * @param {Record<string, {place?:string}>} records the bg store's records
@@ -179,7 +260,7 @@ export function extractStampObservations(messages, records = {}) {
     const out = [];
 
     list.forEach((message, msgIndex) => {
-        const id = stampOf(message);
+        const id = activeStamp(message);
         const record = id ? records?.[id] : null;
         const place = record && typeof record.place === 'string' ? record.place.trim() : '';
         const chain = splitMapChain(place);
