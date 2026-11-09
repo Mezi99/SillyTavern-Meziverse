@@ -317,7 +317,7 @@ export function isTransientFold(fold) {
 
 /* Things that move: one more piece of evidence that a churning tail is a
    mobile place and not two same-named rooms. */
-const VEHICLE = /\b(?:car|bus|train|ship|boat|plane|aircraft|taxi|van|truck|motorcycle|bike|rv|camper|wagon|carriage|subway|ferry|yacht|jet|limo|limousine|vessel|helicopter|tram|trolley|suv)\b/;
+const VEHICLE = /\b(?:car|bus|train|ship|boat|plane|aircraft|taxi|van|truck|motorcycle|bike|scooter|rv|camper|wagon|carriage|subway|ferry|yacht|jet|limo|limousine|vessel|helicopter|tram|trolley|suv|horse|steed|mount|cart|caravan|sled|rickshaw|palanquin|chariot|starship|spaceship|shuttle|rocket|pod|orbiter|freighter|lander|skiff|canoe|barge|galleon|raft|submarine|dirigible|balloon|glider|hovercar|speeder)\b/;
 
 /* ---------- the atlas ---------- */
 
@@ -514,12 +514,14 @@ export function buildAtlas(observations, { equivalences = [] } = {}) {
     });
 
     /* Kinds: mobile and transient as detected, leaves as spots, containers by
-       level - the tag contract's own Region | Area | Place | Spot reading. */
+       level - the tag contract's own Region | Area | Place | Spot reading. A
+       generic-looking name only reads as route context when it is a leaf: a
+       transient-folded name WITH children ("Main Street | Building 5") is a
+       real container whose name merely sounds like one. */
     for (const id of order) {
         const node = nodes[id];
         if (node.kind === 'mobile') continue;
-        if (isTransientFold(node.fold)) node.kind = 'transient';
-        else if (!node.children.length) node.kind = 'spot';
+        if (!node.children.length) node.kind = isTransientFold(node.fold) ? 'transient' : 'spot';
         else node.kind = node.level === 0 ? 'region' : node.level === 1 ? 'city' : 'site';
     }
 
@@ -725,4 +727,148 @@ function flagSimilar(nodes, order, flags) {
             if (jaccard >= 0.6 || contained) flags.same.push([a.id, b.id]);
         }
     }
+}
+
+/* ---------- legs: the story's movement ---------- */
+
+/* How a journey went: the vehicle's name says. Broad-first so a "starship"
+   never classifies as a ship; the curator may set a mode later. */
+const MODES = [
+    [/\b(starship|spaceship|space\s?ship|shuttle|rocket|pod|orbiter|freighter|lander|hovercar|speeder)\b/i, 'rocket', 'by ship'],
+    [/\b(plane|jet|flight|aircraft|helicopter|airship|sky|dirigible|balloon|glider|wyvern|dragon|griffin|hawk)\b/i, 'plane', 'by air'],
+    [/\b(boat|ferry|yacht|vessel|skiff|canoe|barge|galleon|raft|submarine|ship)\b/i, 'boat', 'by water'],
+    [/\b(train|subway|tram|metro|rail|trolley|monorail)\b/i, 'rail', 'by rail'],
+    [/\b(horse|steed|mount|carriage|wagon|cart|caravan|sled|rickshaw|palanquin|chariot)\b/i, 'cart', 'by cart'],
+    [/\b(car|taxi|cab|van|truck|bus|suv|limo|jeep|motorcycle|bike|scooter|emira)\b/i, 'car', 'by road'],
+];
+
+/**
+ * How one named vehicle travels - or the generic route glyph for a walk or
+ * a name nothing recognises ("the Nightjar" is a ship until the curator says).
+ *
+ * @param {string} name the vehicle's name
+ * @returns {{glyph:string, label:string, name:string}}
+ */
+export function travelMode(name) {
+    const text = String(name ?? '');
+    for (const [pattern, glyph, label] of MODES) {
+        if (pattern.test(text)) return { glyph, label, name: text };
+    }
+    return { glyph: 'route', label: 'on the way', name: text };
+}
+
+/**
+ * The story's movement, read off the atlas in story order: the legs between
+ * places and where the story is now.
+ *
+ * Each observation's LOCATION is: the place a parked vehicle sits at (its
+ * trajectory position), pure transit for route context (a chain that was all
+ * keyword, or a leaf that still reads as route context), and the node itself
+ * otherwise. A located scene somewhere new closes a leg from the last one,
+ * carrying the mode seen while in transit (or none: a cut or a teleport).
+ * Trips between the same two places pile onto one leg. A move between two
+ * spots of one place is not a journey and leaves no leg.
+ *
+ * @param {object} atlas the `buildAtlas` result
+ * @returns {{legs:object[], nowId:string|null, inTransit:boolean, transitMode:object|null, fromId:string|null, present:Record<string, Record<string, number>>}}
+ *   each leg is `{a, b, key, count, at[], lastObs, order, dir:[from,to], mode:{glyph,label,name}|null, local}`;
+ *   `a`/`b` are the first trip's direction, `dir` the latest
+ */
+export function deriveLegs(atlas) {
+    const nodes = atlas?.nodes || {};
+    const obs = Array.isArray(atlas?.observations) ? atlas.observations : [];
+
+    /* Where each scene happens. */
+    const loc = obs.map(entry => {
+        if (entry.transit) return { transit: true, mode: travelMode('') };
+
+        const node = nodes[entry.nodeId];
+        if (!node) return {};
+
+        if (node.kind === 'mobile') {
+            const stop = (node.trajectory || []).find(item => item.obs === entry.obsIndex);
+            const position = stop && stop.positionId ? nodes[stop.positionId] : null;
+            const mode = travelMode(node.name);
+            if (position && position.kind !== 'transient') return { id: position.id, vehicle: node.id, mode, parked: true };
+            return { transit: true, vehicle: node.id, mode };
+        }
+
+        for (let at = node; at; at = at.parentId ? nodes[at.parentId] : null) {
+            if (at.kind === 'transient') {
+                return { transit: true, mode: at === node ? travelMode('') : travelMode(node.name) };
+            }
+        }
+        return { id: node.id };
+    });
+
+    /* Walking the story in order: a located scene somewhere new closes a leg. */
+    const legs = [];
+    const legByKey = new Map();
+    let last = null;
+    let pending = null;
+
+    loc.forEach((where, i) => {
+        if (where.transit) {
+            pending = pending || where.mode;
+            if (where.mode && where.mode.glyph !== 'route') pending = where.mode;
+            return;
+        }
+        if (!where.id) return;
+
+        if (last && last.id !== where.id) {
+            const key = [last.id, where.id].sort().join('|');
+            let leg = legByKey.get(key);
+            if (!leg) {
+                leg = {
+                    a: last.id,
+                    b: where.id,
+                    key,
+                    count: 0,
+                    at: [],
+                    lastObs: i,
+                    order: i,
+                    dir: [last.id, where.id],
+                    mode: null,
+                    local: false,
+                };
+                legByKey.set(key, leg);
+                legs.push(leg);
+            }
+            leg.count += 1;
+            leg.at.push(i);
+            leg.dir = [last.id, where.id];
+            leg.lastObs = i;
+            leg.order = i;
+            if (pending) leg.mode = pending;
+        }
+        last = { id: where.id, i };
+        pending = null;
+    });
+
+    /* A move between two spots of one place is not a journey. */
+    for (let i = legs.length - 1; i >= 0; i -= 1) {
+        const leg = legs[i];
+        const parentA = nodes[leg.a]?.parentId;
+        const parentB = nodes[leg.b]?.parentId;
+        leg.local = !!parentA && parentA === parentB && nodes[parentA]?.level >= 2;
+        if (leg.local) legs.splice(i, 1);
+    }
+
+    /* The story's now: the last scene's place - or the road it is on. */
+    const tail = loc[loc.length - 1] || {};
+    const present = {};
+    loc.forEach((where, i) => {
+        if (!where.id) return;
+        const bucket = present[where.id] || (present[where.id] = {});
+        for (const name of obs[i].present || []) bucket[name] = (bucket[name] || 0) + 1;
+    });
+
+    return {
+        legs,
+        nowId: tail.id || (last && last.id) || null,
+        inTransit: !!tail.transit,
+        transitMode: tail.transit ? pending || tail.mode : null,
+        fromId: (last && last.id) || null,
+        present,
+    };
 }

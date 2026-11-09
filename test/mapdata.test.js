@@ -3,12 +3,14 @@ import assert from 'node:assert/strict';
 
 import {
     buildAtlas,
+    deriveLegs,
     extractObservations,
     extractStampObservations,
     foldSegment,
     isTransientFold,
     splitAspect,
     splitMapChain,
+    travelMode,
 } from '../src/mapdata.js';
 
 const obs = (...chains) => chains.map((chain, i) => ({
@@ -404,6 +406,122 @@ test('an unstamped selected variant maps no place at all', () => {
     };
 
     assert.equal(extractStampObservations([message], records).length, 0);
+});
+
+test('legs: a trip by vehicle closes one leg carrying its mode', () => {
+    const atlas = buildAtlas(obs(
+        ['USA', 'New York City', 'Local Cafe'],
+        ['USA', 'New York City', 'En Route', 'Jin\u2019s Lotus Emira'],
+        ['USA', 'New York City', 'Pier 9'],
+    ));
+    const d = deriveLegs(atlas);
+
+    assert.equal(d.legs.length, 1);
+    const leg = d.legs[0];
+    assert.equal(leg.count, 1);
+    assert.deepEqual(leg.at, [2]);
+    assert.deepEqual(
+        [atlas.nodes[leg.dir[0]].name, atlas.nodes[leg.dir[1]].name],
+        ['Local Cafe', 'Pier 9']);
+    assert.equal(leg.mode.glyph, 'car');
+    assert.equal(leg.mode.label, 'by road');
+    assert.equal(d.nowId, atlas.nodes[leg.dir[1]].id);
+    assert.equal(d.inTransit, false);
+});
+
+test('legs: a flight changing country mid-leg is still one leg', () => {
+    const atlas = buildAtlas(obs(
+        ['Japan', 'Kyoto', 'Temple'],
+        ['Japan', 'En Route', 'Sky Chariot'],
+        ['USA', 'New York City', 'Hotel'],
+    ));
+    const d = deriveLegs(atlas);
+
+    assert.equal(d.legs.length, 1);
+    const leg = d.legs[0];
+    assert.deepEqual(
+        [atlas.nodes[leg.dir[0]].name, atlas.nodes[leg.dir[1]].name],
+        ['Temple', 'Hotel']);
+    assert.equal(leg.mode.glyph, 'plane');
+});
+
+test('legs: a teleport with no vehicle gives a leg with no mode', () => {
+    const atlas = buildAtlas(obs(['Local Cafe'], ['Docks']));
+    const d = deriveLegs(atlas);
+
+    assert.equal(d.legs.length, 1);
+    assert.equal(d.legs[0].mode, null);
+});
+
+test('legs: a story ending in transit draws an open stub from the last place', () => {
+    const atlas = buildAtlas(obs(
+        ['Local Cafe'],
+        ['En Route', 'Night Ferry'],
+        ['En Route'],
+    ));
+    const d = deriveLegs(atlas);
+
+    assert.equal(d.inTransit, true);
+    assert.equal(d.legs.length, 0);
+    assert.equal(atlas.nodes[d.fromId].name, 'Local Cafe');
+    assert.equal(d.transitMode.glyph, 'boat');
+});
+
+test('legs: repeated trips raise the count, never new legs', () => {
+    const atlas = buildAtlas(obs(
+        ['Port', 'Pier 9'],
+        ['En Route', 'Night Ferry'],
+        ['Port', 'Harbor'],
+        ['En Route', 'Night Ferry'],
+        ['Port', 'Pier 9'],
+    ));
+    const d = deriveLegs(atlas);
+
+    assert.equal(d.legs.length, 1);
+    const leg = d.legs[0];
+    assert.equal(leg.count, 2);
+    assert.deepEqual(leg.at, [2, 4]);
+    assert.deepEqual(
+        [atlas.nodes[leg.dir[0]].name, atlas.nodes[leg.dir[1]].name],
+        ['Harbor', 'Pier 9']);
+});
+
+test('legs: a move between two spots of one place is not a journey', () => {
+    const atlas = buildAtlas(obs(
+        ['USA', 'NYC', 'Jammie\u2019s house', 'Living Room'],
+        ['USA', 'NYC', 'Jammie\u2019s house', 'Kitchen'],
+    ));
+    const d = deriveLegs(atlas);
+
+    assert.equal(d.legs.length, 0);
+});
+
+test('legs: who was where rides the located scenes', () => {
+    const entry = (chain, present) => ({
+        chain,
+        at: { msgIndex: 0, tagIndex: 0 },
+        present,
+        date: '',
+        time: '',
+        hour: null,
+        weather: '',
+        locationTag: '',
+    });
+    const atlas = buildAtlas([entry(['Local Cafe'], ['Jin', 'Mara']), entry(['Docks'], ['Jin'])]);
+    const d = deriveLegs(atlas);
+
+    const cafe = Object.values(atlas.nodes).find(node => node.fold === 'local cafe').id;
+    const docks = Object.values(atlas.nodes).find(node => node.fold === 'docks').id;
+    assert.deepEqual(d.present[cafe], { Jin: 1, Mara: 1 });
+    assert.deepEqual(d.present[docks], { Jin: 1 });
+});
+
+test('travelMode reads the vehicle, and the unknown rides the generic route', () => {
+    assert.equal(travelMode('Jin\u2019s Lotus Emira').glyph, 'car');
+    assert.equal(travelMode('Night Ferry').glyph, 'boat');
+    assert.equal(travelMode('Sky Chariot').glyph, 'plane');
+    assert.equal(travelMode('The Nightjar').glyph, 'route');
+    assert.equal(travelMode('').label, 'on the way');
 });
 
 test('similarity is flagged for the curator, and digits alone never flag', () => {
