@@ -399,6 +399,24 @@ export function toCssBgUrl(imagePath) {
 }
 
 /**
+ * A record's picture as a bare src for `<img>` and SVG `<image>`. The record
+ * stores `url` in the CSS `url(...)` form the scene's mirror consumes (or a
+ * raw url a watcher wrote), and an image element wants neither wrapper - so
+ * the wrapper comes off here, once. Falls back to `path`, the file the
+ * wrapper was made from.
+ *
+ * @param {object} record
+ * @returns {string} the image src, or '' when the record carries none
+ */
+export function recordSrc(record) {
+    const value = typeof record?.url === 'string' ? record.url.trim() : '';
+    const wrapped = /^url\((.*)\)$/is.exec(value);
+    const inner = wrapped ? wrapped[1].trim().replace(/^["']|["']$/g, '') : value;
+    if (inner) return inner;
+    return typeof record?.path === 'string' ? record.path.trim() : '';
+}
+
+/**
  * A place string as the watcher should see it. The bracket characters a
  * model's echo of the note's example leaves behind are stripped: they read as
  * placeholders and confuse more than they clarify.

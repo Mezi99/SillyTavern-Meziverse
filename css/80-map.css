@@ -25,6 +25,8 @@
 .mzc { display: block; width: 100%; height: 100%; touch-action: none; user-select: none; -webkit-user-select: none; font-family: var(--mz-font-ui); }
 .mzc-ground { fill: var(--mzc-ground); }
 .mzc-vignette { pointer-events: none; }
+/* a pin's picture is not a draggable image - it is the pin's face */
+.mzc image { pointer-events: none; -webkit-user-drag: none; user-drag: none; }
 
 .mzc-ring { fill: none; stroke: var(--mzc-ring); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .mzc-ring.r2 { opacity: .65; }
@@ -123,7 +125,6 @@
 .mz-map-title small { overflow: hidden; font-size: var(--mz-text-2xs); color: var(--mz-text-dim); text-overflow: ellipsis; white-space: nowrap; }
 .mz-map.is-compact .mz-map-title small { display: none; }
 .mz-map.is-compact .mz-map-title b { max-width: 150px; }
-.mz-map.is-compact .mz-map-collapse { display: none; }
 .mz-map-collapse { width: 24px; height: 24px; flex: none; }
 
 /* the minimap is a crop of the same chart, centred where the story is */

@@ -23,6 +23,7 @@ import {
     layoutAtlas,
     travelMode,
 } from './mapdata.js';
+import { recordSrc } from './backgrounds.js';
 import { bgStore, chatMessages, currentChatId, on, personaName } from './st.js';
 import { mapMiniOn, mapOn, saveSettings, settings } from './settings.js';
 
@@ -203,6 +204,7 @@ export function mountMap({ frame, goto = null } = {}) {
         mini: widget.querySelector('[data-mz-map-mini]'),
         miniSvg: widget.querySelector('[data-mz-map-minisvg]'),
         title: widget.querySelector('[data-mz-map-title]'),
+        collapse: widget.querySelector('.mz-map-collapse'),
         sub: widget.querySelector('[data-mz-map-sub]'),
         summary: win.querySelector('[data-mz-map-sum]'),
         find: win.querySelector('[data-mz-map-find]'),
@@ -368,11 +370,20 @@ function recordFor(obsIndex) {
     return id ? bgStore().records?.[id] || null : null;
 }
 
-/** The place's latest drawn picture, or '' (the map glyph stands in). */
+/**
+ * The place's latest drawn picture, or '' (the map glyph stands in). Only
+ * scenes that ENDED at this place speak for its picture - a scene merely
+ * passing through (the region above, the container around) drew the dot at
+ * the end of the chain, not the chain's earlier links. That is also the
+ * details rule: images belong to last locations in the chain, never to a
+ * region or territory.
+ */
 function thumbOf(node) {
     for (let i = node.visits.length - 1; i >= 0; i -= 1) {
-        const record = recordFor(node.visits[i]);
-        if (record?.url) return record.url;
+        const obsIndex = node.visits[i];
+        if (atlas.observations[obsIndex]?.nodeId !== node.id) continue;
+        const src = recordSrc(recordFor(obsIndex));
+        if (src) return src;
     }
     return '';
 }
@@ -567,7 +578,7 @@ function renderChart(mode) {
         pins.push(`<g class="mzc-pin lv${Math.min(node.level ?? 3, 3)}${isNow ? ' is-now' : ''}${isSel ? ' is-sel' : ''}${flag ? ' is-flag' : ''}${mini && !label ? ' is-quiet' : ''}" data-node="${esc(node.key)}" transform="translate(${f1(item.ax)} ${f1(item.ay)})" style="--age:${f1(Math.max(0, Math.min(1, age)))}" tabindex="${mini ? -1 : 0}" role="button" aria-label="${esc(node.name)}">
         ${isNow ? `<circle class="mzc-ping" r="${r + 4}"/><circle class="mzc-ping p2" r="${r + 4}"/>` : ''}
         <circle class="mzc-pin-disc" r="${r}"/>
-        ${img ? `<image href="${esc(img)}" x="${-r}" y="${-r}" width="${2 * r}" height="${2 * r}" clip-path="url(#${clip})" preserveAspectRatio="xMidYMid slice"/>` : icon('map', 0, 0, r * 0.9)}
+        ${img ? `<image href="${esc(img)}" x="${-r}" y="${-r}" width="${2 * r}" height="${2 * r}" clip-path="url(#${clip})" preserveAspectRatio="xMidYMid slice" draggable="false"/>` : icon('map', 0, 0, r * 0.9)}
         <circle class="mzc-pin-ring" r="${r}"/>
         ${hiddenKids && !mini ? `<g class="mzc-count" transform="translate(${f1(r * 0.78)} ${f1(r * 0.78)})"><circle r="7.5"/><text y="3" text-anchor="middle">${hiddenKids}</text></g>` : ''}
         ${flag && !mini ? `<g class="mzc-flagdot" transform="translate(${f1(-r * 0.78)} ${f1(-r * 0.78)})"><circle r="6.5"/><text y="3.2" text-anchor="middle">!</text></g>` : ''}
@@ -686,11 +697,22 @@ function renderWidget() {
         els.sub.textContent = currentChatId() ? 'No places yet' : 'No chat open';
     }
 
-    const compact = !mapMiniOn() || window.innerWidth < NARROW;
+    const narrow = window.innerWidth < NARROW;
+    const compact = !mapMiniOn() || narrow;
     widget.classList.toggle('is-compact', compact);
     els.mini.hidden = compact;
     if (!compact && atlas) els.miniSvg.innerHTML = miniSvg();
     if (!compact && !atlas) els.miniSvg.innerHTML = '';
+
+    /* The pill's way back to the minimap: the toggle stays on it - hidden
+       only where the minimap cannot show at all - and names what it does. */
+    if (els.collapse) {
+        els.collapse.hidden = narrow;
+        els.collapse.innerHTML = svg(mapMiniOn() ? 'collapse' : 'expand');
+        const say = mapMiniOn() ? 'Hide minimap' : 'Show minimap';
+        els.collapse.title = say;
+        els.collapse.setAttribute('aria-label', say);
+    }
 
     positionWidget();
 }
@@ -955,10 +977,15 @@ function wireWidget() {
     wireDrag();
 }
 
-/* The minimap window drags by any part that is not a control. */
+/* The minimap window drags by ANY spot on it - the 4px threshold separates
+   a drag from a click, and the widget's click handler drops clicks after
+   one. What used to eat the pointer was the NATIVE image drag: a pin's
+   picture is draggable like any image, and grabbing one cancelled the
+   pointer mid-press. A dragstart here is never a drag there. */
 function wireDrag() {
+    widget.addEventListener('dragstart', event => event.preventDefault());
     widget.addEventListener('pointerdown', event => {
-        if (event.button > 0 || event.target.closest('button, input, a')) return;
+        if (event.button > 0) return;
         const rect = widget.getBoundingClientRect();
         const frameRect = frameEl.getBoundingClientRect();
         drag = {
@@ -998,7 +1025,7 @@ function wireDrag() {
 
 /** The window's spot: the saved one, else the bottom-left corner. */
 function positionWidget() {
-    if (!widget || widget.hidden) return;
+    if (!widget || widget.hidden || drag) return;
 
     const frameW = frameEl?.clientWidth || window.innerWidth;
     const frameH = frameEl?.clientHeight || window.innerHeight;

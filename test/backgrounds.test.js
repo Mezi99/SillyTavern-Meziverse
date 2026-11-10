@@ -25,6 +25,7 @@ import {
     placeShortName,
     planResolution,
     recoverCurrentKey,
+    recordSrc,
     resolveRecordId,
     resolveStampId,
     restorePlan,
@@ -220,6 +221,23 @@ test('toCssBgUrl wraps paths the way SillyTavern reads them', () => {
     assert.equal(toCssBgUrl('/images/docks.png'), 'url("/images/docks.png")');
     assert.equal(toCssBgUrl('/images/my pier.png'), 'url("/images/my%20pier.png")');
     assert.equal(toCssBgUrl(''), '');
+});
+
+test('recordSrc peels the css wrapper off for an image element', () => {
+    assert.equal(recordSrc({ url: 'url("/images/docks.png")', path: '/images/docks.png' }), '/images/docks.png');
+    assert.equal(recordSrc({ url: "url('/images/my%20pier.png')" }), '/images/my%20pier.png');
+    assert.equal(recordSrc({ url: 'url(/images/docks.png)' }), '/images/docks.png');
+    assert.equal(recordSrc({ url: 'url("data:image/png;base64,AAAA")' }), 'data:image/png;base64,AAAA');
+
+    // a watcher's raw url needs no unwrapping
+    assert.equal(recordSrc({ url: '/images/docks.png' }), '/images/docks.png');
+    assert.equal(recordSrc({ url: 'https://host/p.png' }), 'https://host/p.png');
+
+    // no url at all: the file the wrapper would have been made from
+    assert.equal(recordSrc({ path: '/images/my pier.png' }), '/images/my pier.png');
+    assert.equal(recordSrc({ url: 'url("")', path: '/images/docks.png' }), '/images/docks.png');
+    assert.equal(recordSrc({}), '');
+    assert.equal(recordSrc(null), '');
 });
 
 test('sceneUrl trusts authored urls and nothing else', () => {
