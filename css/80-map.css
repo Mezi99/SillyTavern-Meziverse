@@ -228,17 +228,17 @@
 /* ---------- the place card ---------- */
 
 .mz-map-detail { min-height: 0; overflow: auto; border-left: 1px solid var(--mz-line); background: var(--mz-surface-2); font-size: var(--mz-text-xs); color: var(--mz-text-muted); }
-.mz-map-hero { position: relative; aspect-ratio: 16 / 9; overflow: hidden; border-bottom: 1px solid var(--mz-line); background: var(--mz-surface); }
+.mz-map-hero { position: relative; aspect-ratio: 2 / 1; overflow: hidden; border-bottom: 1px solid var(--mz-line); background: var(--mz-surface); }
 .mz-map-hero img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .mz-map-hero::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 45%, color-mix(in srgb, var(--mz-surface-2) 92%, transparent)); }
-.mz-map-card { display: grid; gap: 11px; padding: 12px 14px 16px; }
+.mz-map-card { display: grid; gap: 9px; padding: 10px 12px 12px; }
 .mz-map-card h3 { margin: 0; font-size: var(--mz-text-md); font-weight: 600; color: var(--mz-text); line-height: 1.25; }
 .mz-map-crumb { margin: 3px 0 0; color: var(--mz-text-dim); }
 .mz-map-chips { display: flex; flex-wrap: wrap; gap: 5px; }
 .mz-map-chip { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; border: 1px solid var(--mz-line); border-radius: var(--mz-r-pill); font-size: var(--mz-text-2xs); color: var(--mz-text-muted); }
 .mz-map-chip .ico { width: 11px; height: 11px; }
 .mz-map-chip.is-accent { border-color: var(--mz-accent-line); background: var(--mz-accent-wash); color: var(--mz-accent); }
-.mz-map-sect { display: grid; gap: 6px; }
+.mz-map-sect { display: grid; gap: 5px; }
 .mz-map-sect > h4 { display: flex; align-items: baseline; gap: 6px; margin: 0; font-size: var(--mz-text-2xs); font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--mz-text-dim); }
 .mz-map-sect > h4 i { font-style: normal; letter-spacing: 0; font-weight: 400; }
 .mz-map-seen { display: block; width: 100%; height: 22px; }
@@ -259,9 +259,10 @@
 .mz-map-flags li { display: flex; gap: 8px; padding: 7px 9px; border: 1px solid color-mix(in srgb, var(--mz-warn) 30%, transparent); border-radius: var(--mz-r-sm); background: color-mix(in srgb, var(--mz-warn) 8%, transparent); color: color-mix(in srgb, var(--mz-warn) 55%, var(--mz-text)); line-height: 1.4; }
 .mz-map-flags li::before { content: "!"; flex: none; display: grid; place-items: center; width: 14px; height: 14px; margin-top: 1px; border-radius: 50%; background: var(--mz-warn); color: var(--mz-accent-ink); font-size: 9px; font-weight: 700; }
 .mz-map-visits { margin: 0; padding: 0; list-style: none; }
-.mz-map-visits li { display: flex; align-items: baseline; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--mz-line); }
+.mz-map-visits li { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; border-bottom: 1px solid var(--mz-line); }
 .mz-map-visits li > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mz-map-goto { flex: none; font-size: var(--mz-text-2xs); }
+.mz-map-more { justify-self: start; font-size: var(--mz-text-2xs); color: var(--mz-text-dim); }
 .mz-map-empty { padding: 28px 22px; font-size: var(--mz-text-sm); line-height: 1.6; color: var(--mz-text-dim); }
 
 /* ---------- small screens: chart first, index and card as sheets ---------- */

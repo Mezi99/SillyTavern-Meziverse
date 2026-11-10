@@ -56,6 +56,7 @@ let layoutDepth = null;
 let lastSignature = null;
 let lastChatId = null;
 let selectedKey = null;
+let visitsExpanded = false;
 let trails = true;
 let flagsShown = true;
 let view = { tx: 0, ty: 0, s: 1, placed: false };
@@ -832,33 +833,50 @@ function renderIndex() {
     els.index.innerHTML = `<h4>Places</h4>${rows.join('')}${vehicles.length ? `<h4>Vehicles</h4>${vehicles.map(node => `<div class="mz-map-row d0${selectedKey === node.key ? ' is-sel' : ''}"><span class="mz-map-twist"></span><button class="mz-map-pick" type="button" data-mz-map-pick="${esc(node.key)}">${svg(`m-${travelMode(node.name).glyph}`)}<span>${esc(node.name)}</span></button></div>`).join('')}` : ''}`;
 }
 
+/* The Seen block: when the place sat on the story's timeline, and the visits
+   themselves as one-line rows with their Turn buttons. One section, not two -
+   they told the same fact twice, and the rail should not need to scroll. */
 function seenHtml(node) {
     const total = atlas.observations.length;
     const ticks = node.visits.map((visit, k) => `<rect class="${k === node.visits.length - 1 ? 'is-last' : ''}" x="${(visit / Math.max(1, total - 1) * 96 + 1).toFixed(1)}%" y="5" width="2.6" height="12" rx="1.3"/>`).join('');
     const first = atlas.observations[node.visits[0]];
     const last = atlas.observations[node.visits[node.visits.length - 1]];
-    return `<div class="mz-map-sect"><h4>Seen <i>${node.visits.length} scenes</i></h4><svg class="mz-map-seen" aria-hidden="true"><line x1="0" x2="100%" y1="11" y2="11"/>${ticks}</svg><div class="mz-map-span"><span>${esc(first?.date || '')}</span><span>${esc(last?.date || '')}</span></div></div>`;
+
+    const shown = (visitsExpanded ? node.visits.slice().reverse() : node.visits.slice(-3).reverse());
+    const rows = shown.map(index => {
+        const obs = atlas.observations[index];
+        const when = [obs.date, obs.time].filter(Boolean).join(' \u00b7 ');
+        const bits = [when || 'undated'];
+        if (obs.present?.length) bits.push(obs.present.join(', '));
+        return `<li><span>${esc(bits.join(' \u00b7 '))}</span><button class="mz-btn-ghost mz-map-goto" type="button" data-mz-map-goto="${obs.at?.msgIndex ?? ''}">Turn ${(obs.at?.msgIndex ?? -1) + 1}</button></li>`;
+    }).join('');
+
+    const more = node.visits.length > 3
+        ? `<button class="mz-btn-ghost mz-map-more" type="button" data-mz-map-more>${visitsExpanded ? 'Show less' : `Show all ${node.visits.length}`}</button>`
+        : '';
+
+    return `<div class="mz-map-sect"><h4>Seen <i>${node.visits.length} scenes</i></h4><svg class="mz-map-seen" aria-hidden="true"><line x1="0" x2="100%" y1="11" y2="11"/>${ticks}</svg><div class="mz-map-span"><span>${esc(first?.date || '')}</span><span>${esc(last?.date || '')}</span></div><ul class="mz-map-visits">${rows}</ul>${more}</div>`;
 }
 
 function whoHtml(nodeId) {
     const counts = derived.present[nodeId] || {};
-    const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 4);
     if (!top.length) return '';
     return `<div class="mz-map-sect"><h4>Who has been here</h4><div class="mz-map-who">${top.map(([name, count]) => `<span><b>${esc(name[0])}</b>${esc(name)}<i>${count}</i></span>`).join('')}</div></div>`;
 }
 
 function legsHtml(node) {
-    const mine = derived.legs
+    const all = derived.legs
         .filter(leg => leg.a === node.id || leg.b === node.id)
         .sort((a, b) => b.order - a.order);
-    if (!mine.length) return '';
-    const rows = mine.map(leg => {
+    if (!all.length) return '';
+    const rows = all.slice(0, 4).map(leg => {
         const other = atlas.nodes[leg.a === node.id ? leg.b : leg.a];
         const dir = leg.dir[0] === node.id ? '\u2192' : '\u2190';
         const mode = leg.mode || travelMode('');
         return `<li>${svg(`m-${mode.glyph}`)}<span>${dir} ${esc(other.name)}</span><em>${esc(mode.label)}${leg.count > 1 ? ` \u00b7 ${leg.count}\u00d7` : ''}</em></li>`;
     });
-    return `<div class="mz-map-sect"><h4>Journeys <i>${mine.length}</i></h4><ul class="mz-map-legs">${rows.join('')}</ul></div>`;
+    return `<div class="mz-map-sect"><h4>Journeys <i>${all.length}</i></h4><ul class="mz-map-legs">${rows.join('')}</ul></div>`;
 }
 
 function flagsFor(node) {
@@ -886,13 +904,6 @@ function renderDetail() {
 
     const flags = flagsShown ? flagsFor(node) : [];
     const thumb = thumbOf(node);
-    const visits = node.visits.slice(-5).reverse().map(index => {
-        const obs = atlas.observations[index];
-        const when = [obs.date, obs.time].filter(Boolean).join(' \u00b7 ');
-        const bits = [when || 'undated'];
-        if (obs.present?.length) bits.push(obs.present.join(', '));
-        return `<li><span>${esc(bits.join(' \u00b7 '))}</span><button class="mz-btn-ghost mz-map-goto" type="button" data-mz-map-goto="${obs.at?.msgIndex ?? ''}">Turn ${(obs.at?.msgIndex ?? -1) + 1}</button></li>`;
-    }).join('');
 
     els.detail.innerHTML = `
         ${thumb ? `<div class="mz-map-hero"><img alt="" src="${esc(thumb)}"></div>` : ''}
@@ -903,7 +914,6 @@ function renderDetail() {
             ${seenHtml(node)}
             ${whoHtml(node.id)}
             ${legsHtml(node)}
-            <div class="mz-map-sect"><h4>Recent visits <i>${node.visits.length}</i></h4><ul class="mz-map-visits">${visits}</ul></div>
         </div>`;
 }
 
@@ -1021,6 +1031,7 @@ function bindChart() {
 
 function select(key, panThere) {
     selectedKey = key && findByKey(key) ? key : null;
+    visitsExpanded = false;
     if (panThere && selectedKey) {
         const item = anchorOf(selectedKey);
         if (item) centerOn(item.ax, item.ay, Math.max(view.s, item.pin ? 1.4 : 0.9));
@@ -1298,6 +1309,9 @@ function wireWin() {
         } else if (button.dataset.mzMapTwist !== undefined) {
             twistState.set(button.dataset.mzMapTwist, button.getAttribute('aria-expanded') !== 'true');
             renderIndex();
+        } else if (button.hasAttribute('data-mz-map-more')) {
+            visitsExpanded = !visitsExpanded;
+            renderDetail();
         } else if (button.hasAttribute('data-mz-map-pick') || button.dataset.mzMapPick !== undefined) {
             select(button.dataset.mzMapPick, true);
         } else if (button.dataset.mzMapDepth) {
