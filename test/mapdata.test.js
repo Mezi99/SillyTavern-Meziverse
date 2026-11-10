@@ -409,6 +409,50 @@ test('an unstamped selected variant maps no place at all', () => {
     assert.equal(extractStampObservations([message], records).length, 0);
 });
 
+test('a response stops at its last scene tag - only that one owns the picture', () => {
+    const message = {
+        mes: `${tag('USA | New York City | House | Kitchen')}\n`
+            + `${tag('USA | New York City | House | Hallway')}\n`
+            + `${tag('USA | New York City | House | Bedroom')}`,
+    };
+    const out = extractObservations([{ mes: tag('Docks') }, message]);
+
+    assert.deepEqual(out.map(entry => entry.last), [true, false, false, true]);
+    assert.deepEqual(
+        out.map(entry => entry.chain[entry.chain.length - 1]),
+        ['Docks', 'Kitchen', 'Hallway', 'Bedroom']);
+});
+
+test('stops: a place counts only the responses that ended there, never the ones passing through', () => {
+    const trip = `${tag('USA | New York City | House | Kitchen')}\n`
+        + `${tag('USA | New York City | House | Hallway')}\n`
+        + `${tag('USA | New York City | House | Bedroom')}`;
+    const atlas = buildAtlas(extractObservations([
+        { mes: tag('USA | New York City | House | Kitchen') },
+        { mes: trip },
+    ]));
+    const find = fold => Object.values(atlas.nodes).find(node => node.fold === fold);
+
+    assert.equal(find('kitchen').stops, 1);
+    assert.equal(find('hallway').stops, 0);
+    assert.equal(find('bedroom').stops, 1);
+});
+
+test('a passed place promotes the moment a response ends there', () => {
+    const trip = `${tag('USA | New York City | House | Kitchen')}\n`
+        + `${tag('USA | New York City | House | Hallway')}\n`
+        + `${tag('USA | New York City | House | Bedroom')}`;
+    const atlas = buildAtlas(extractObservations([
+        { mes: trip },
+        { mes: tag('USA | New York City | House | Hallway') },
+    ]));
+    const find = fold => Object.values(atlas.nodes).find(node => node.fold === fold);
+
+    assert.equal(find('hallway').stops, 1);
+    assert.equal(find('kitchen').stops, 0);
+    assert.equal(find('bedroom').stops, 1);
+});
+
 test('legs: a trip by vehicle closes one leg carrying its mode', () => {
     const atlas = buildAtlas(obs(
         ['USA', 'New York City', 'Local Cafe'],

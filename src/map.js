@@ -377,9 +377,17 @@ function storyName() {
 
 /* ---------- pictures from the background store ---------- */
 
-/** The background record one observation's reply carries, or null. */
+/**
+ * The background record one observation's reply carries, or null. A reply
+ * holds ONE picture pointer: the bg watcher counts only its LAST scene tag
+ * (where narration stopped, waiting for the user) and draws for that place
+ * alone - so only the scene the reply stopped at may claim the pointer. A
+ * mid-reply scene shares the response but never its picture: that is how
+ * the bedroom's painting used to leak onto the kitchen it passed through.
+ */
 function recordFor(obsIndex) {
     const obs = atlas.observations[obsIndex];
+    if (!obs?.last) return null;
     const message = chatMessages()[obs?.at?.msgIndex ?? -1];
     const id = message ? activeStamp(message) : null;
     return id ? bgStore().records?.[id] || null : null;
@@ -389,9 +397,10 @@ function recordFor(obsIndex) {
  * The place's latest drawn picture, or '' (the map glyph stands in). Only
  * scenes that ENDED at this place speak for its picture - a scene merely
  * passing through (the region above, the container around) drew the dot at
- * the end of the chain, not the chain's earlier links. That is also the
- * details rule: images belong to last locations in the chain, never to a
- * region or territory.
+ * the end of the chain, not the chain's earlier links - and only the scene
+ * its response stopped at owns that response's picture (`recordFor`). That
+ * is also the details rule: images belong to last locations in the chain,
+ * never to a region or territory.
  */
 function thumbOf(node) {
     for (let i = node.visits.length - 1; i >= 0; i -= 1) {
@@ -573,14 +582,19 @@ function renderChart(mode) {
 
     layout.order.filter(item => item.pin).forEach(item => {
         const node = item.n;
-        const r = node.level >= 2 || (node.level === 1 && node.kind === 'spot') ? PIN_R : PIN_R + 2;
         const isNow = nowItem === item;
         const isSel = sel === node.id;
+        /* A stop draws as a picture pin - the places narration ended at. A
+           place only passed through (no response ever stopped there) is a
+           smaller flat dot, and promotes on its own the moment a response
+           does stop there. */
+        const stopped = node.stops > 0 || descend(node).some(child => child.stops > 0);
+        const r = !stopped ? 10 : node.level >= 2 || (node.level === 1 && node.kind === 'spot') ? PIN_R : PIN_R + 2;
         const total = atlas.observations.length;
         const age = total ? (total - 1 - node.lastSeen) / total : 0;
-        const img = thumbOf(node);
+        const img = stopped ? thumbOf(node) : '';
         const clip = `mzc-c${r}`;
-        clipR.add(r);
+        if (img) clipR.add(r);
 
         const flag = flagged.has(node.id) || (node.children.length && descend(node).some(child => flagged.has(child.id)));
         const people = isNow && derived.nowId ? Object.keys(derived.present[derived.nowId] || {}).slice(0, 3) : [];
@@ -590,10 +604,10 @@ function renderChart(mode) {
         const label = mini ? (isNow || recentIds.has(node.id)) : true;
         const hiddenKids = node.children.filter(id => nodes[id].kind !== 'mobile' && nodes[id].kind !== 'transient').length;
 
-        pins.push(`<g class="mzc-pin lv${Math.min(node.level ?? 3, 3)}${isNow ? ' is-now' : ''}${isSel ? ' is-sel' : ''}${flag ? ' is-flag' : ''}${mini && !label ? ' is-quiet' : ''}" data-node="${esc(node.key)}" transform="translate(${f1(item.ax)} ${f1(item.ay)})" style="--age:${f1(Math.max(0, Math.min(1, age)))}" tabindex="${mini ? -1 : 0}" role="button" aria-label="${esc(node.name)}">
+        pins.push(`<g class="mzc-pin lv${Math.min(node.level ?? 3, 3)}${!stopped ? ' is-passed' : ''}${isNow ? ' is-now' : ''}${isSel ? ' is-sel' : ''}${flag ? ' is-flag' : ''}${mini && !label ? ' is-quiet' : ''}" data-node="${esc(node.key)}" transform="translate(${f1(item.ax)} ${f1(item.ay)})" style="--age:${f1(Math.max(0, Math.min(1, age)))}" tabindex="${mini ? -1 : 0}" role="button" aria-label="${esc(node.name)}">
         ${isNow ? `<circle class="mzc-ping" r="${r + 4}"/><circle class="mzc-ping p2" r="${r + 4}"/>` : ''}
         <circle class="mzc-pin-disc" r="${r}"/>
-        ${img ? `<image href="${esc(img)}" x="${-r}" y="${-r}" width="${2 * r}" height="${2 * r}" clip-path="url(#${clip})" preserveAspectRatio="xMidYMid slice" draggable="false"/>` : icon('map', 0, 0, r * 0.9)}
+        ${img ? `<image href="${esc(img)}" x="${-r}" y="${-r}" width="${2 * r}" height="${2 * r}" clip-path="url(#${clip})" preserveAspectRatio="xMidYMid slice" draggable="false"/>` : (stopped ? icon('map', 0, 0, r * 0.9) : '')}
         <circle class="mzc-pin-ring" r="${r}"/>
         ${hiddenKids && !mini ? `<g class="mzc-count" transform="translate(${f1(r * 0.78)} ${f1(r * 0.78)})"><circle r="7.5"/><text y="3" text-anchor="middle">${hiddenKids}</text></g>` : ''}
         ${flag && !mini ? `<g class="mzc-flagdot" transform="translate(${f1(-r * 0.78)} ${f1(-r * 0.78)})"><circle r="6.5"/><text y="3.2" text-anchor="middle">!</text></g>` : ''}
@@ -770,7 +784,7 @@ function renderWin() {
     els.cartSub.textContent = `${places} places \u00b7 ${atlas.observations.length} scenes`;
 
     const hasFlags = atlas.flags.same.length || atlas.flags.ambiguous.length || atlas.flags.mobilePending.length;
-    els.key.innerHTML = `<div><i class="k-now"></i>Where the story is</div><div><i class="k-pin"></i>A place, as last drawn</div><div><i></i>A journey, with how it went</div>${flagsShown && hasFlags ? '<div><i class="k-flag"></i>Needs a look</div>' : ''}`;
+    els.key.innerHTML = `<div><i class="k-now"></i>Where the story is</div><div><i class="k-pin"></i>Stopped here, as last drawn</div><div><i class="k-pass"></i>Passed through</div><div><i></i>A journey, with how it went</div>${flagsShown && hasFlags ? '<div><i class="k-flag"></i>Needs a look</div>' : ''}`;
 
     renderIndex();
     renderDetail();
@@ -897,7 +911,9 @@ function renderDetail() {
 
     const mobile = node.kind === 'mobile';
     const path = pathOf(node);
+    const stoppedHere = node.stops > 0;
     const chips = [`<span class="mz-map-chip${mobile ? ' is-accent' : ''}">${mobile ? svg(`m-${travelMode(node.name).glyph}`) : ''}${mobile ? 'moves' : node.kind}</span>`];
+    if (!mobile && !stoppedHere) chips.push('<span class="mz-map-chip">Passed through</span>');
     if (!mobile) chips.push(`<span class="mz-map-chip">${isOutdoor(node) ? 'Outdoor' : 'Indoor'}</span>`);
     if (derived.nowId === node.id) chips.push('<span class="mz-map-chip is-accent">Now</span>');
 

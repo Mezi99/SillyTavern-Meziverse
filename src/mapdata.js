@@ -213,9 +213,14 @@ function sourceOf(message) {
  * each message's SELECTED swipe variant is read: an unselected swipe is a
  * branch the story did not take, and must never become a scene or a place.
  *
+ * Each observation carries `last`: true for the scene the response STOPPED
+ * at - its final scene tag. The bg watcher counts only that one, so the
+ * response's single picture pointer belongs to it alone (see `recordFor` in
+ * map.js); the mid-reply scenes are real scenes but never own a picture.
+ *
  * @param {object[]} messages SillyTavern's chat array
  * @param {{persona?: string}} [options]
- * @returns {Array<{at:{msgIndex:number, tagIndex:number}, placeFull:string, chain:string[], date:string, time:string, hour:number|null, weather:string, locationTag:string, present:string[]}>}
+ * @returns {Array<{at:{msgIndex:number, tagIndex:number}, placeFull:string, chain:string[], date:string, time:string, hour:number|null, weather:string, locationTag:string, present:string[], last:boolean}>}
  */
 export function extractObservations(messages, { persona = '' } = {}) {
     const list = Array.isArray(messages) ? messages : [];
@@ -237,8 +242,15 @@ export function extractObservations(messages, { persona = '' } = {}) {
                 weather: scene.weather || '',
                 locationTag: scene.locationTag || '',
                 present: scene.present || [],
+                last: false,
             });
         });
+
+        // the scene the narration stopped at: this response's final one
+        for (let i = out.length - 1; i >= 0 && out[i].at.msgIndex === msgIndex; i -= 1) {
+            out[i].last = true;
+            break;
+        }
     });
 
     return out;
@@ -279,6 +291,7 @@ export function extractStampObservations(messages, records = {}) {
             weather: '',
             locationTag: '',
             present: [],
+            last: true,
         });
     });
 
@@ -334,7 +347,9 @@ const VEHICLE = /\b(?:car|bus|train|ship|boat|plane|aircraft|taxi|van|truck|moto
  * rebuild, so selection, the saved view and the curator's verdicts speak in
  * keys, never in n1..nN. Each observation is annotated with `nodeId` and,
  * when its chain was pure route context (no vehicle after the keyword),
- * `transit: true`.
+ * `transit: true`; `last` marks the scene its response stopped at (the one
+ * the bg watcher draws for), and each node counts `stops`, the responses
+ * that ended at it - the places pictures belong to.
  *
  * @param {Array<{chain:string[], at?:object, date?:string, time?:string, hour?:number|null, weather?:string, locationTag?:string, present?:string[]}>} observations
  * @param {{equivalences?: Array<[string, string]>}} [options]
@@ -408,6 +423,7 @@ export function buildAtlas(observations, { equivalences = [] } = {}) {
             trajectory: null,
             visits: [obsIndex],
             aspects: [],
+            stops: 0,
             lastSeen: obsIndex,
         };
         if (part.aspect) node.aspects.push(part.aspect);
@@ -511,6 +527,9 @@ export function buildAtlas(observations, { equivalences = [] } = {}) {
 
     obs.forEach(entry => {
         entry.nodeId = place(entry)?.id || null;
+        // a STOP: the response's narration ended at this place - the only
+        // scenes that may own a picture (the bg watcher counts the last tag)
+        if (entry.last && entry.nodeId) nodes[entry.nodeId].stops += 1;
     });
 
     /* Kinds: mobile and transient as detected, leaves as spots, containers by
@@ -586,6 +605,7 @@ function processObservation(entry) {
         weather: entry.weather || '',
         locationTag: entry.locationTag || '',
         present: Array.isArray(entry.present) ? entry.present : [],
+        last: !!entry.last,
     };
 }
 

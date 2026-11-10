@@ -69,6 +69,11 @@
 .mzc-pin.is-now .mzc-pin-ring { stroke: var(--mz-accent); stroke-width: 2.6px; }
 .mzc-pin.is-sel .mzc-pin-ring { stroke: var(--mz-text); stroke-width: 2.6px; }
 .mzc-pin:focus-visible .mzc-pin-disc { stroke: var(--mz-accent); stroke-width: 3; }
+/* passed through: a scene happened here, but narration never stopped here -
+   a flat small dot, promoted to a picture pin when a response does stop */
+.mzc-pin.is-passed .mzc-pin-disc { fill: var(--mzc-land-2); }
+.mzc-pin.is-passed .mzc-pin-ring { stroke-width: 1px; stroke-opacity: .55; }
+.mzc-pin.is-passed .mzc-pin-label { font-size: 9.5px; }
 .mzc-pin-label { fill: var(--mz-text); font-size: 10.5px; font-weight: 500; pointer-events: none; paint-order: stroke; stroke: var(--mzc-halo); stroke-width: 3.4px; stroke-linejoin: round; stroke-opacity: .85; }
 .mzc-pin.lv3 .mzc-pin-label, .mzc-pin.lv2 .mzc-pin-label { opacity: 0; transition: opacity var(--mz-dur) var(--mz-ease); }
 .mzc[data-zoom="2"] .mzc-pin.lv3 .mzc-pin-label, .mzc[data-zoom="2"] .mzc-pin.lv2 .mzc-pin-label,
@@ -222,6 +227,7 @@
 .mz-map-key i { display: inline-block; flex: none; width: 18px; height: 0; border-top: 2px dotted var(--mz-accent); }
 .mz-map-key i.k-now { width: 11px; height: 11px; border: 2px solid var(--mz-accent); border-radius: 50%; margin: 0 3px; }
 .mz-map-key i.k-pin { width: 11px; height: 11px; border: 1.5px solid color-mix(in srgb, var(--mz-text) 45%, transparent); border-radius: 50%; margin: 0 3px; }
+.mz-map-key i.k-pass { width: 9px; height: 9px; border: 1px solid color-mix(in srgb, var(--mz-text) 22%, transparent); border-radius: 50%; background: var(--mzc-land-2); margin: 0 4px; }
 .mz-map-key i.k-flag { width: 11px; height: 11px; border: 0; border-radius: 50%; background: var(--mz-warn); margin: 0 3px; }
 .mz-map-compass { position: absolute; z-index: 3; right: 24px; bottom: 24px; width: 46px; height: 46px; color: var(--mz-text-muted); pointer-events: none; opacity: .85; }
 
