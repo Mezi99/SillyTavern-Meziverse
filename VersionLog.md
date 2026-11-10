@@ -1,5 +1,24 @@
 # Meziverse — version log
 
+## 2.9.0 — 2026-11-10
+
+The places of the story find their chart: the map arrives — a contour atlas of every scene tag, drawn as territories, picture pins and the journeys between them.
+
+### The map
+- A **minimap window** in the corner crops the chart around where the story is now, and a **full map window** opens from it: pan and zoom over the same world, a text index, a place card, a cartouche, journey/flag layers and Fit/Now. The chart is generated from the scene tags alone — territories as soft land, places as picture pins wearing the picture last drawn there, journeys as dotted legs with a glyph for how they went (car, boat, rail, air, cart, rocket).
+- **En Route is a journey, not a place.** `En Route | <vehicle>` places nothing at or above the keyword: one moving node per vehicle, its trips as legs between the places around it, parked stops as spots of wherever it rests. A story ending mid-travel draws an open stub.
+- **Only the selected swipe variant maps** — unselected swipes are branch material and never touch the map; flipping the selection flips the map by itself.
+- **Pictures follow the backgrounds' contract**: one picture per response, belonging to the scene the narration STOPPED at. A place passed through mid-reply never borrows it: passed places draw as **smaller flat dots** and grow into picture pins the moment a response ends there.
+
+### Windows the user shapes
+- Both windows drag by any empty spot, resize by a corner grip and **remember their box**; the minimap also zooms (buttons or wheel). The place index is a tree folded to the story's own branch, and the place card is one Seen block (timeline, the visits with their Turn buttons), Who and Journeys — no scrollbar, no image space where no scene ended.
+- A tiny click/drag lesson worth keeping: pointer capture engages only once a drag IS one — capturing on pointerdown retargets the click and quietly kills every button under the pointer.
+
+### Notes
+- The version rides beside the wordmark ("Meziverse v2.9.0"); `manifest.json` matches.
+- Map flags (possible duplicates, ambiguous names, mobile-suspects) are display only for now: the map curator arrives as Part B, its verdicts keyed per chat with Undo, default Off.
+- The synthetic suite stands at 254 tests.
+
 ## 2.8.2 — 2026-11-08
 
 Music comes to the scene: the story's own soundtrack plays in the corner — asked for by tag, or chosen by feel.
