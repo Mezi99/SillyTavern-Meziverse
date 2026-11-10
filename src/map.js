@@ -845,10 +845,9 @@ function seenHtml(node) {
     const shown = (visitsExpanded ? node.visits.slice().reverse() : node.visits.slice(-3).reverse());
     const rows = shown.map(index => {
         const obs = atlas.observations[index];
-        const when = [obs.date, obs.time].filter(Boolean).join(' \u00b7 ');
-        const bits = [when || 'undated'];
-        if (obs.present?.length) bits.push(obs.present.join(', '));
-        return `<li><span>${esc(bits.join(' \u00b7 '))}</span><button class="mz-btn-ghost mz-map-goto" type="button" data-mz-map-goto="${obs.at?.msgIndex ?? ''}">Turn ${(obs.at?.msgIndex ?? -1) + 1}</button></li>`;
+        const when = [obs.date, obs.time].filter(Boolean).join(' \u00b7 ') || 'undated';
+        const who = obs.present?.length ? `<span class="who">${esc(obs.present.join(', '))}</span>` : '';
+        return `<li><span class="lines"><span class="when">${esc(when)}</span>${who}</span><button class="mz-btn-ghost mz-map-goto" type="button" data-mz-map-goto="${obs.at?.msgIndex ?? ''}">Turn ${(obs.at?.msgIndex ?? -1) + 1}</button></li>`;
     }).join('');
 
     const more = node.visits.length > 3
@@ -1117,6 +1116,7 @@ function wireDrag() {
         const rect = widget.getBoundingClientRect();
         const frameRect = frameEl.getBoundingClientRect();
         drag = {
+            pointerId: event.pointerId,
             dx: event.clientX - rect.left,
             dy: event.clientY - rect.top,
             x0: event.clientX,
@@ -1125,12 +1125,17 @@ function wireDrag() {
             fx: frameRect.left,
             fy: frameRect.top,
         };
-        widget.setPointerCapture(event.pointerId);
     });
     widget.addEventListener('pointermove', event => {
         if (!drag) return;
         if (!drag.moved && Math.hypot(event.clientX - drag.x0, event.clientY - drag.y0) < 4) return;
-        drag.moved = true;
+        if (!drag.moved) {
+            drag.moved = true;
+            /* Capture only once this IS a drag. Capturing on pointerdown
+               would retarget the click at the widget and every button on it
+               would go dead. */
+            try { widget.setPointerCapture(drag.pointerId); } catch { /* the pointer went away mid-gesture */ }
+        }
         widget.classList.add('is-dragging');
         const x = clamp(event.clientX - drag.fx - drag.dx, EDGE, frameEl.clientWidth - widget.offsetWidth - EDGE);
         const y = clamp(event.clientY - drag.fy - drag.dy, EDGE, frameEl.clientHeight - widget.offsetHeight - EDGE);
@@ -1139,12 +1144,15 @@ function wireDrag() {
     });
     const endDrag = () => {
         if (!drag) return;
+        const moved = drag.moved;
         widget.classList.remove('is-dragging');
-        settings().mapPos = {
-            x: parseFloat(widget.style.left) || 0,
-            y: parseFloat(widget.style.top) || 0,
-        };
-        saveSettings();
+        if (moved) {
+            settings().mapPos = {
+                x: parseFloat(widget.style.left) || 0,
+                y: parseFloat(widget.style.top) || 0,
+            };
+            saveSettings();
+        }
         setTimeout(() => { drag = null; }, 0);
     };
     widget.addEventListener('pointerup', endDrag);
@@ -1235,20 +1243,26 @@ function wireWinDrag() {
 
     els.winHead?.addEventListener('pointerdown', event => {
         if (event.button > 0 || event.target.closest('input, textarea')) return;
-        placeWinExplicit();
         winDrag = {
+            pointerId: event.pointerId,
             dx: event.clientX - win.getBoundingClientRect().left,
             dy: event.clientY - win.getBoundingClientRect().top,
             x0: event.clientX,
             y0: event.clientY,
             moved: false,
         };
-        els.winHead.setPointerCapture(event.pointerId);
     });
     els.winHead?.addEventListener('pointermove', event => {
         if (!winDrag) return;
         if (!winDrag.moved && Math.hypot(event.clientX - winDrag.x0, event.clientY - winDrag.y0) < 4) return;
-        winDrag.moved = true;
+        if (!winDrag.moved) {
+            winDrag.moved = true;
+            /* Capture only once this IS a drag: a capture on pointerdown
+               would retarget the click and kill the header's own buttons
+               (close, detail depth). */
+            placeWinExplicit();
+            try { els.winHead.setPointerCapture(winDrag.pointerId); } catch { /* the pointer went away mid-gesture */ }
+        }
         win.classList.add('is-moving');
         const frameRect = frameEl.getBoundingClientRect();
         const x = clamp(event.clientX - frameRect.left - winDrag.dx, EDGE, frameEl.clientWidth - win.offsetWidth - EDGE);
@@ -1258,8 +1272,9 @@ function wireWinDrag() {
     });
     const endMove = () => {
         if (!winDrag) return;
+        const moved = winDrag.moved;
         win.classList.remove('is-moving');
-        saveWinPlace();
+        if (moved) saveWinPlace();
         setTimeout(() => { winDrag = null; }, 0);
     };
     els.winHead?.addEventListener('pointerup', endMove);
