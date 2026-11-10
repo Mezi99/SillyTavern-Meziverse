@@ -68,6 +68,12 @@ const DEFAULTS = {
     mapDepth: 4,
     // The minimap window's remembered spot. Null parks it bottom-left.
     mapPos: null,
+    // The minimap's remembered size {w, h} and crop zoom. Null / 1 = built in.
+    mapMiniSize: null,
+    mapMiniZoom: 1,
+    // The full map window's remembered spot and size. Null = centred default.
+    mapWinPos: null,
+    mapWinSize: null,
     // Story requests: a `<music>` tag in a reply starts playback when the
     // reply lands. Off leaves playback to the player's own input.
     musicAuto: true,

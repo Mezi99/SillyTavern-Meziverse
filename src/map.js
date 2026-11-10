@@ -41,6 +41,9 @@ let widget = null;
 let win = null;
 let els = {};
 let drag = null;
+let miniSizing = false;
+let winDrag = null;
+let winSizing = false;
 let queued = false;
 
 /* Derived state: the atlas and its legs are cached by a chat signature, the
@@ -90,8 +93,13 @@ const WIDGET_HTML = `
 </div>
 <div class="mz-map-mini" data-mz-map-mini>
     <div data-mz-map-minisvg style="position:absolute;inset:0"></div>
+    <div class="mz-map-mini-zoom">
+        <button type="button" title="Zoom in" aria-label="Zoom in" data-mz-mini-zoom="1">+</button>
+        <button type="button" title="Zoom out" aria-label="Zoom out" data-mz-mini-zoom="-1">\u2212</button>
+    </div>
     <span class="mz-map-mini-n" aria-hidden="true">N</span>
     <button class="mz-map-mini-open" type="button" title="Open the map" aria-label="Open the map" data-mz-map-open>${svg('expand')}</button>
+    <div class="mz-map-mini-grip" data-mz-map-grip aria-hidden="true"></div>
 </div>`;
 
 const WIN_HTML = `
@@ -131,7 +139,8 @@ const WIN_HTML = `
         <svg class="mz-map-compass" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="20" fill="none" stroke="currentColor" stroke-opacity=".35"/><path d="M24 6l4.2 18L24 42l-4.2-18z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M24 6l4.2 18H19.8z" fill="currentColor"/><text x="24" y="4.6" text-anchor="middle" font-size="7" font-weight="700" fill="currentColor" font-family="Inter,sans-serif">N</text></svg>
     </div>
     <aside class="mz-map-detail" data-mz-map-detail hidden></aside>
-</div>`;
+</div>
+<div class="mz-mapwin-grip" data-mz-mapwin-grip aria-hidden="true"></div>`;
 
 /* ---------- lifecycle ---------- */
 
@@ -203,6 +212,7 @@ export function mountMap({ frame, goto = null } = {}) {
         head: widget.querySelector('[data-mz-map-head]'),
         mini: widget.querySelector('[data-mz-map-mini]'),
         miniSvg: widget.querySelector('[data-mz-map-minisvg]'),
+        miniGrip: widget.querySelector('[data-mz-map-grip]'),
         title: widget.querySelector('[data-mz-map-title]'),
         collapse: widget.querySelector('.mz-map-collapse'),
         sub: widget.querySelector('[data-mz-map-sub]'),
@@ -217,10 +227,14 @@ export function mountMap({ frame, goto = null } = {}) {
         cartSub: win.querySelector('[data-mz-map-csub]'),
         key: win.querySelector('[data-mz-map-key]'),
         detail: win.querySelector('[data-mz-map-detail]'),
+        winHead: win.querySelector('.mz-mapwin-head'),
+        winGrip: win.querySelector('[data-mz-mapwin-grip]'),
     };
 
     wireWidget();
     wireWin();
+    wireMiniResize();
+    wireWinDrag();
     render();
 }
 
@@ -652,6 +666,11 @@ function miniSvg() {
     if (width / height > ratio) height = width / ratio;
     else width = height * ratio;
 
+    /* The user's zoom: the same crop, seen closer (zoom in shows less). */
+    const zoom = clamp(Number(settings().mapMiniZoom) || 1, 0.6, 2.2);
+    width /= zoom;
+    height /= zoom;
+
     let cx = (box.x0 + box.x1) / 2;
     let cy = (box.y0 + box.y1) / 2;
     if (now) {
@@ -704,6 +723,15 @@ function renderWidget() {
     if (!compact && atlas) els.miniSvg.innerHTML = miniSvg();
     if (!compact && !atlas) els.miniSvg.innerHTML = '';
 
+    /* The size the user chose for this window - not while their hand is on
+       the grip, which would snap mid-resize. */
+    if (!miniSizing) {
+        const size = settings().mapMiniSize;
+        const sized = !!size && Number.isFinite(size.w) && Number.isFinite(size.h);
+        widget.style.width = compact ? '' : (sized ? `${clamp(size.w, 180, 420)}px` : '');
+        els.mini.style.height = sized ? `${clamp(size.h, 110, 380)}px` : '';
+    }
+
     /* The pill's way back to the minimap: the toggle stays on it - hidden
        only where the minimap cannot show at all - and names what it does. */
     if (els.collapse) {
@@ -720,6 +748,7 @@ function renderWidget() {
 function renderWin() {
     if (!win || win.hidden) return;
 
+    applyWinPlace();
     els.depthv.textContent = depthLabel();
 
     if (!atlas) {
@@ -747,25 +776,60 @@ function renderWin() {
     drawChart();
 }
 
+/* The index tree: a long story's places stay folded until asked for. Only
+   the branch the story is IN stands open by default (plus the one being
+   read); the user's own twists win over that, always. */
+const twistState = new Map();
+
+function branchOf(key, out) {
+    for (let at = key ? findByKey(key) : null; at; at = at.parentId ? atlas.nodes[at.parentId] : null) {
+        out.add(at.key);
+    }
+    return out;
+}
+
 function renderIndex() {
+    if (!atlas) {
+        els.index.innerHTML = '';
+        return;
+    }
     const query = (els.find?.value || '').trim().toLowerCase();
+
+    const auto = new Set();
+    if (query) {
+        // while searching, every match's path stands open so it can be found
+        Object.values(atlas.nodes).forEach(node => {
+            if (node.kind === 'mobile' || node.kind === 'transient') return;
+            const text = `${node.name} ${pathOf(node).join(' ')}`.toLowerCase();
+            if (text.includes(query)) branchOf(node.key, auto);
+        });
+    } else {
+        branchOf(nowNode()?.key, auto);
+        branchOf(selectedKey, auto);
+    }
+
+    const isOpen = node => (twistState.has(node.key) ? twistState.get(node.key) : auto.has(node.key));
     const rows = [];
 
     const walk = (node, depth) => {
         if (node.kind === 'mobile' || node.kind === 'transient') return;
-        const match = !query
-            || node.name.toLowerCase().includes(query)
-            || pathOf(node).join(' ').toLowerCase().includes(query);
-        const kids = node.children.map(id => atlas.nodes[id]);
-        if (match || kids.some(kid => kid.name.toLowerCase().includes(query))) {
-            rows.push(`<button class="mz-map-row d${Math.min(depth, 3)}${selectedKey === node.key ? ' is-sel' : ''}${derived.nowId === node.id ? ' is-now' : ''}" type="button" data-mz-map-pick="${esc(node.key)}"><span>${esc(node.name)}</span></button>`);
-        }
-        kids.forEach(kid => walk(kid, depth + 1));
+        if (query && !auto.has(node.key)) return;
+
+        const kids = node.children
+            .map(id => atlas.nodes[id])
+            .filter(kid => kid && kid.kind !== 'mobile' && kid.kind !== 'transient');
+        const open = isOpen(node);
+        const twist = kids.length
+            ? `<button class="mz-map-twist${open ? ' is-open' : ''}" type="button" data-mz-map-twist="${esc(node.key)}" aria-expanded="${open}" aria-label="${open ? 'Collapse' : 'Expand'} ${esc(node.name)}">${svg('chevdown')}</button>`
+            : '<span class="mz-map-twist"></span>';
+
+        rows.push(`<div class="mz-map-row d${Math.min(depth, 3)}${selectedKey === node.key ? ' is-sel' : ''}${derived.nowId === node.id ? ' is-now' : ''}">${twist}<button class="mz-map-pick" type="button" data-mz-map-pick="${esc(node.key)}"><span>${esc(node.name)}</span></button></div>`);
+        if (open) kids.forEach(kid => walk(kid, depth + 1));
     };
     atlas.roots.forEach(id => walk(atlas.nodes[id], 0));
 
     const vehicles = Object.values(atlas.nodes).filter(node => node.kind === 'mobile');
-    els.index.innerHTML = `<h4>Places</h4>${rows.join('')}${vehicles.length ? `<h4>Vehicles</h4>${vehicles.map(node => `<button class="mz-map-row d0${selectedKey === node.key ? ' is-sel' : ''}" type="button" data-mz-map-pick="${esc(node.key)}">${svg(`m-${travelMode(node.name).glyph}`)}<span>${esc(node.name)}</span></button>`).join('')}` : ''}`;
+    els.index.innerHTML = `<h4>Places</h4>${rows.join('')}${vehicles.length ? `<h4>Vehicles</h4>${vehicles.map(node => `<div class="mz-map-row d0${selectedKey === node.key ? ' is-sel' : ''}"><span class="mz-map-twist"></span><button class="mz-map-pick" type="button" data-mz-map-pick="${esc(node.key)}">${svg(`m-${travelMode(node.name).glyph}`)}<span>${esc(node.name)}</span></button></div>`).join('')}` : ''}`;
 }
 
 function seenHtml(node) {
@@ -972,9 +1036,62 @@ function select(key, panThere) {
 function wireWidget() {
     widget.addEventListener('click', event => {
         if (drag && drag.moved) return;
+        const zoom = event.target.closest('[data-mz-mini-zoom]');
+        if (zoom) {
+            stepMiniZoom(Number(zoom.dataset.mzMiniZoom));
+            return;
+        }
         if (event.target.closest('[data-mz-map-open]')) openMapWin();
     });
+    els.mini?.addEventListener('wheel', event => {
+        if (els.mini.hidden) return;
+        event.preventDefault();
+        stepMiniZoom(event.deltaY < 0 ? 1 : -1);
+    }, { passive: false });
     wireDrag();
+}
+
+/** The minimap's crop zoom: one step closer or further out, remembered. */
+function stepMiniZoom(direction) {
+    const next = clamp((Number(settings().mapMiniZoom) || 1) * (direction > 0 ? 1.25 : 0.8), 0.6, 2.2);
+    settings().mapMiniZoom = Math.round(next * 100) / 100;
+    saveSettings();
+    if (els.miniSvg && !els.mini.hidden) els.miniSvg.innerHTML = miniSvg();
+}
+
+/* The minimap's corner grip: the window grows to whatever the user wants
+   and remembers it. Its own capture, and no bubbling to the window's drag. */
+function wireMiniResize() {
+    els.miniGrip?.addEventListener('pointerdown', event => {
+        if (event.button > 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+        miniSizing = true;
+        const start = {
+            x: event.clientX,
+            y: event.clientY,
+            w: widget.offsetWidth,
+            h: els.mini.offsetHeight,
+        };
+        els.miniGrip.setPointerCapture(event.pointerId);
+        const move = event => {
+            widget.style.width = `${clamp(start.w + event.clientX - start.x, 180, 420)}px`;
+            els.mini.style.height = `${clamp(start.h + event.clientY - start.y, 110, 380)}px`;
+        };
+        const up = () => {
+            els.miniGrip.removeEventListener('pointermove', move);
+            els.miniGrip.removeEventListener('pointerup', up);
+            miniSizing = false;
+            settings().mapMiniSize = {
+                w: parseFloat(widget.style.width) || 0,
+                h: parseFloat(els.mini.style.height) || 0,
+            };
+            saveSettings();
+            positionWidget();
+        };
+        els.miniGrip.addEventListener('pointermove', move);
+        els.miniGrip.addEventListener('pointerup', up);
+    });
 }
 
 /* The minimap window drags by ANY spot on it - the 4px threshold separates
@@ -1039,6 +1156,138 @@ function positionWidget() {
     widget.style.top = `${y}px`;
 }
 
+/* ---------- the full window: move, resize, remember ---------- */
+
+/**
+ * Pins the window to an explicit box (left/top/width/height inline) - the
+ * state a drag or resize leaves it in, versus the CSS default of centred.
+ */
+function placeWinExplicit() {
+    if (win.classList.contains('is-placed')) return;
+    const rect = win.getBoundingClientRect();
+    const frameRect = frameEl.getBoundingClientRect();
+    win.classList.add('is-placed');
+    win.style.left = `${rect.left - frameRect.left}px`;
+    win.style.top = `${rect.top - frameRect.top}px`;
+    win.style.width = `${rect.width}px`;
+    win.style.height = `${rect.height}px`;
+}
+
+function resetWinPlace() {
+    win.classList.remove('is-placed');
+    win.style.left = win.style.top = win.style.width = win.style.height = '';
+}
+
+function saveWinPlace() {
+    if (!win.classList.contains('is-placed')) return;
+    settings().mapWinPos = {
+        x: parseFloat(win.style.left) || 0,
+        y: parseFloat(win.style.top) || 0,
+    };
+    settings().mapWinSize = {
+        w: parseFloat(win.style.width) || 0,
+        h: parseFloat(win.style.height) || 0,
+    };
+    saveSettings();
+}
+
+/** The window's remembered box, kept inside the frame - or the centred default. */
+function applyWinPlace() {
+    if (!win || win.hidden || winDrag || winSizing) return;
+
+    if (window.innerWidth <= NARROW) {
+        resetWinPlace();
+        return;
+    }
+
+    const pos = settings().mapWinPos;
+    const size = settings().mapWinSize;
+    const hasPlace = !!pos && Number.isFinite(pos.x) && Number.isFinite(pos.y);
+    const hasSize = !!size && Number.isFinite(size.w) && Number.isFinite(size.h);
+    if (!hasPlace && !hasSize) return;
+
+    placeWinExplicit();
+    if (hasSize) {
+        win.style.width = `${clamp(size.w, 680, Math.max(680, frameEl.clientWidth - 2 * EDGE))}px`;
+        win.style.height = `${clamp(size.h, 440, Math.max(440, frameEl.clientHeight - 2 * EDGE))}px`;
+    }
+    if (hasPlace) {
+        win.style.left = `${clamp(pos.x, EDGE, Math.max(EDGE, frameEl.clientWidth - win.offsetWidth - EDGE))}px`;
+        win.style.top = `${clamp(pos.y, EDGE, Math.max(EDGE, frameEl.clientHeight - win.offsetHeight - EDGE))}px`;
+    }
+}
+
+/* The full map window moves by its header and resizes by its corner. The
+   header's own controls still click - the threshold separates the two. */
+function wireWinDrag() {
+    win.addEventListener('dragstart', event => event.preventDefault());
+
+    els.winHead?.addEventListener('pointerdown', event => {
+        if (event.button > 0 || event.target.closest('input, textarea')) return;
+        placeWinExplicit();
+        winDrag = {
+            dx: event.clientX - win.getBoundingClientRect().left,
+            dy: event.clientY - win.getBoundingClientRect().top,
+            x0: event.clientX,
+            y0: event.clientY,
+            moved: false,
+        };
+        els.winHead.setPointerCapture(event.pointerId);
+    });
+    els.winHead?.addEventListener('pointermove', event => {
+        if (!winDrag) return;
+        if (!winDrag.moved && Math.hypot(event.clientX - winDrag.x0, event.clientY - winDrag.y0) < 4) return;
+        winDrag.moved = true;
+        win.classList.add('is-moving');
+        const frameRect = frameEl.getBoundingClientRect();
+        const x = clamp(event.clientX - frameRect.left - winDrag.dx, EDGE, frameEl.clientWidth - win.offsetWidth - EDGE);
+        const y = clamp(event.clientY - frameRect.top - winDrag.dy, EDGE, frameEl.clientHeight - win.offsetHeight - EDGE);
+        win.style.left = `${x}px`;
+        win.style.top = `${y}px`;
+    });
+    const endMove = () => {
+        if (!winDrag) return;
+        win.classList.remove('is-moving');
+        saveWinPlace();
+        setTimeout(() => { winDrag = null; }, 0);
+    };
+    els.winHead?.addEventListener('pointerup', endMove);
+    els.winHead?.addEventListener('pointercancel', endMove);
+
+    /* A double-click on the header puts the window back to centre. */
+    els.winHead?.addEventListener('dblclick', event => {
+        if (event.target.closest('button, input, textarea')) return;
+        settings().mapWinPos = null;
+        settings().mapWinSize = null;
+        saveSettings();
+        resetWinPlace();
+    });
+
+    els.winGrip?.addEventListener('pointerdown', event => {
+        if (event.button > 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+        placeWinExplicit();
+        winSizing = true;
+        const start = { x: event.clientX, y: event.clientY, w: win.offsetWidth, h: win.offsetHeight };
+        els.winGrip.setPointerCapture(event.pointerId);
+        const move = event => {
+            const frameRect = frameEl.getBoundingClientRect();
+            const rect = win.getBoundingClientRect();
+            win.style.width = `${clamp(start.w + event.clientX - start.x, 680, Math.max(680, frameRect.right - rect.left - EDGE))}px`;
+            win.style.height = `${clamp(start.h + event.clientY - start.y, 440, Math.max(440, frameRect.bottom - rect.top - EDGE))}px`;
+        };
+        const up = () => {
+            els.winGrip.removeEventListener('pointermove', move);
+            els.winGrip.removeEventListener('pointerup', up);
+            winSizing = false;
+            saveWinPlace();
+        };
+        els.winGrip.addEventListener('pointermove', move);
+        els.winGrip.addEventListener('pointerup', up);
+    });
+}
+
 function wireWin() {
     win.addEventListener('click', event => {
         const button = event.target.closest('button');
@@ -1046,6 +1295,9 @@ function wireWin() {
 
         if (button.hasAttribute('data-mz-map-close')) {
             closeMapWin();
+        } else if (button.dataset.mzMapTwist !== undefined) {
+            twistState.set(button.dataset.mzMapTwist, button.getAttribute('aria-expanded') !== 'true');
+            renderIndex();
         } else if (button.hasAttribute('data-mz-map-pick') || button.dataset.mzMapPick !== undefined) {
             select(button.dataset.mzMapPick, true);
         } else if (button.dataset.mzMapDepth) {
