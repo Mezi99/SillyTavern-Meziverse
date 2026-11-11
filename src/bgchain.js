@@ -16,7 +16,8 @@
  *
  * The pure parts (stamps, deciding, asking, parsing) live in backgrounds.js
  * and the SillyTavern calls in st.js; this file is the choreography between
- * them. Jobs run one at a time in order, a newer job for the same reply
+ * them. The watcher's LLM call rides its own door (connections.js - the
+ * Background Agent on the Connections tab). Jobs run one at a time in order, a newer job for the same reply
  * replaces the older one, and a chat change cancels everything. Failures come
  * back as statuses the UI may show; success is quiet apart from the stage
  * notices.
@@ -47,7 +48,6 @@ import {
     currentChatId,
     errorText,
     forceSetBackground,
-    generateRaw,
     imagine,
     imageGenerationStatus,
     on,
@@ -59,6 +59,7 @@ import {
     unlockBackground,
 } from './st.js';
 import { bgAutoOn, bgImagesOn, settings } from './settings.js';
+import { generateOn } from './connections.js';
 import { resolveScene } from './scene.js';
 
 const LOG = '[Meziverse] bg';
@@ -464,13 +465,15 @@ async function runWatcherChain({ store, messages, index, swipeId, place, scene, 
     let answer = null;
     let failure = null;
     try {
-        const reply = await generateRaw({
+        // The one ride: the Background Agent's own connection (whatever the
+        // Connections tab has chosen), the same `{ok, text, error}` back
+        // whatever the door. No jsonSchema: some connections reject
+        // structured output outright (422 Unprocessable Entity), and nothing
+        // here needs it - parseWatcherReply reads the JSON out of the answer
+        // text, plain-text protocol tolerated, same as the music DJ.
+        const reply = await generateOn('backgroundAgent', {
             prompt: request.prompt,
             systemPrompt: request.systemPrompt,
-            // No jsonSchema: some connections reject structured output
-            // outright (422 Unprocessable Entity), and nothing here needs
-            // it - parseWatcherReply reads the JSON out of the answer text,
-            // plain-text protocol tolerated, same as the music DJ.
         });
 
         if (my !== chainSeq) return { status: 'superseded' };

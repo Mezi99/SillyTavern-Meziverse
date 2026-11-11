@@ -1,9 +1,9 @@
 /**
  * The Connections tab: where each watcher agent's LLM calls ride.
  *
- * One engine, many doors. Every watcher agent - the Music DJ today, the
- * background and map watchers as they learn to ride one - picks its own
- * connection here and asks through the same `generateOn`: the connection
+ * One engine, many doors. Every watcher agent - the background watcher and
+ * the Music DJ today, the map watcher as it learns to ride one - picks its
+ * own connection here and asks through the same `generateOn`: the connection
  * SillyTavern is talking through now, one of SillyTavern's own Connection
  * Manager profiles, or a custom OpenAI-compatible endpoint. The agent id is
  * the only thing that differs between watchers, so a new agent's section is
@@ -24,10 +24,15 @@ import { connectionFor, setConnection } from './settings.js';
 const LOG = '[Meziverse connections]';
 
 /**
- * The agents that get a section on the tab. The background and map agents
- * join this list in their own batches - same component, same engine.
+ * The agents that get a section on the tab - in the order the sections sit.
+ * The map agent joins this list in its own batch - same component, same
+ * engine.
  */
 export const CONNECTION_AGENTS = [
+    {
+        id: 'backgroundAgent',
+        label: 'Background Agent',
+    },
     {
         id: 'musicAgent',
         label: 'Music Agent',
