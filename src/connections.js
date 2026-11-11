@@ -31,7 +31,6 @@ export const CONNECTION_AGENTS = [
     {
         id: 'musicAgent',
         label: 'Music Agent',
-        blurb: 'Which LLM the Music DJ asks. Its own watcher call, its own connection - the rest of Meziverse keeps riding whatever the main chat rides.',
     },
 ];
 
@@ -173,12 +172,12 @@ async function generateViaCustom(connection, request) {
 const svg = name => `<svg class="ico" aria-hidden="true"><use href="#mz-i-${name}"/></svg>`;
 
 /** One agent's expandable section - the same component for every agent. */
-function connectionSection({ id, label, blurb }) {
+function connectionSection({ id, label }) {
     return `
         <div class="mz-set-group mz-set-group--fold" data-mz-pane="connections" data-mz-conn="${id}">
             <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="conn-${id}">${label} ${svg('chevdown')}</button></h3>
             <div class="mz-set-row">
-                <span class="mz-set-label"><b>Connection</b><small>${blurb}</small></span>
+                <span class="mz-set-label"><b>Connection</b></span>
                 <div class="mz-seg" role="group" aria-label="Connection source">
                     <button type="button" data-mz-conn-src="current">Current ST API</button>
                     <button type="button" data-mz-conn-src="profile">ST profile</button>
@@ -186,23 +185,23 @@ function connectionSection({ id, label, blurb }) {
                 </div>
             </div>
             <div class="mz-set-row" data-mz-conn-row="profile">
-                <span class="mz-set-label"><b>Connection profile</b><small>Any profile saved in SillyTavern\u2019s Connection Manager - its own API, model and presets.</small></span>
+                <span class="mz-set-label"><b>Connection profile</b></span>
                 <select class="mz-select" data-mz-conn-select aria-label="Connection profile"></select>
             </div>
             <div class="mz-set-row mz-set-row--prompt" data-mz-conn-row="custom-url">
-                <span class="mz-set-label"><b>API URL</b><small>The base URL of an OpenAI-compatible chat endpoint ( /chat/completions is called on it ), e.g. http://localhost:1234/v1</small></span>
+                <span class="mz-set-label"><b>API URL</b></span>
                 <input class="mz-select" type="text" data-mz-conn-field="customUrl" aria-label="API URL" placeholder="http://localhost:1234/v1" spellcheck="false">
             </div>
             <div class="mz-set-row mz-set-row--prompt" data-mz-conn-row="custom-key">
-                <span class="mz-set-label"><b>API key</b><small>Sent as a Bearer token. Leave empty for a local server that wants none.</small></span>
+                <span class="mz-set-label"><b>API key</b><small>Saved in SillyTavern\u2019s extension settings.</small></span>
                 <input class="mz-select" type="password" data-mz-conn-field="customKey" aria-label="API key" placeholder="sk-..." autocomplete="off">
             </div>
             <div class="mz-set-row mz-set-row--prompt" data-mz-conn-row="custom-model">
-                <span class="mz-set-label"><b>Model</b><small>The model name the endpoint knows. Optional - some servers fill it in themselves.</small></span>
+                <span class="mz-set-label"><b>Model</b></span>
                 <input class="mz-select" type="text" data-mz-conn-field="customModel" aria-label="Model" placeholder="model name" spellcheck="false">
             </div>
             <div class="mz-set-row">
-                <span class="mz-set-label"><b>Test</b><small>One tiny call through this connection, answered here.</small></span>
+                <span class="mz-set-label"><b>Test</b></span>
                 <div>
                     <button class="mz-btn-ghost" type="button" data-mz-conn-test>Send test call</button>
                     <span class="mz-conn-state" data-mz-conn-state></span>

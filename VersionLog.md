@@ -1,6 +1,25 @@
 # Meziverse — version log
 
-## 2.9.0 — 2026-11-10
+## 2.9.1 - 2026-11-11
+
+The player gets its design, and the watchers get their own doors.
+
+### The player, redesigned
+- One widget, two faces: a docked pill (art, a ticker that glides on long titles, play) and one card that is **both** the floating player and the pill's dropdown - the track's own cover blurred behind its top, a two-line title with the channel and a mood chip, and a status line that reads *Now playing*, *Paused* or *Could not play*.
+- Transport with a centre of gravity: volume left, stop / play / fresh pick centre, video right. Fresh pick is a sparkle that turns while the Music DJ is choosing.
+- A seek bar with times - the hour-long mixes the DJ loves finally show their length - and a **mini mode**: the card shrinks to one row when it is in the story's way (shrink button or double-click on the grip).
+- The **whole card drags** now, not just its head: a 4px threshold keeps clicks clean, a release near an edge snaps softly to the gutter, arrow keys nudge it, and a blocked video moves its complaint (with its "Watch on YouTube" way out) out of the title into a note.
+- New in-player loader: while the Music DJ thinks, the player reads **"Selecting track..."** itself - in the widget, never a toast.
+
+### The Connections tab
+- Every watcher agent now rides its own LLM. Settings gains a **Connections** tab where each agent picks: the **current ST API** (the default - nothing changes), any of SillyTavern's **Connection Manager profiles**, or a **custom OpenAI-compatible endpoint** (URL, key, model).
+- The **Music Agent** section is the first; the background and map agents follow on the same shared engine - one factory, one router, never a copy. A **Test** button sends one tiny call through the chosen door and answers inline.
+- The custom API key is saved in SillyTavern's extension settings and used only from your own browser.
+
+### Small fixes
+- The settings sheet keeps **one standard size on every tab**; long sections scroll inside it instead of resizing the window.
+
+## 2.9.0 - 2026-11-10
 
 The places of the story find their chart: the map arrives — a contour atlas of every scene tag, drawn as territories, picture pins and the journeys between them.
 

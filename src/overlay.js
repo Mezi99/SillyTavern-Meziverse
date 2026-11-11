@@ -33,7 +33,7 @@ import { mountMap, mapUiClosed, mapUiOpened, refreshMap, isMapWinOpen, openMapWi
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr, notify } from './notify.js';
 
-const VERSION = '2.9.0';
+const VERSION = '2.9.1';
 const PANE_DEFAULT = 300;
 const LOG_W_DEFAULT = 720;
 const LOG_H_SHARE = 0.7;
@@ -200,6 +200,7 @@ const FRAME_HTML = `
             <button type="button" role="tab" aria-selected="false" data-mz-tab="mode">Meziverse mode</button>
         </div>
 
+        <div class="mz-set-scroll">
         <div class="mz-set-group mz-set-group--fold" data-mz-pane="general">
             <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="appearance">Appearance ${svg('chevdown')}</button></h3>
             <div class="mz-set-row">
@@ -514,6 +515,7 @@ const FRAME_HTML = `
         </div>
 
         <div data-mz="connections-host"></div>
+        </div>
 
         <footer class="mz-sheet-foot">
             <button class="mz-btn-ghost" type="button" data-mz-action="reset-pane">Reset pane height</button>

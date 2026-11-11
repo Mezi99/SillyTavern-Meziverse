@@ -1687,8 +1687,10 @@ body.mz-open .popup { z-index: 9500 !important; }
     left: 50%;
     display: none;
     width: min(680px, calc(100% - 80px));
-    max-height: calc(100% - 96px);
-    overflow: auto;
+    /* One standard size on every tab: the sheet never grows or shrinks with
+       its content - a long tab scrolls inside (see .mz-set-scroll). */
+    height: min(700px, calc(100% - 96px));
+    overflow: hidden;
     padding: 22px 24px 20px;
     border: 1px solid var(--mz-line-strong);
     border-radius: var(--mz-r-lg);
@@ -1700,8 +1702,19 @@ body.mz-open .popup { z-index: 9500 !important; }
 
 .mz-frame.is-settings-open .mz-sheet {
     display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
     gap: 18px;
     animation: mz-sheet-in var(--mz-dur) var(--mz-ease);
+}
+
+/* The panes' own region: what a tab shows, scrolled when it runs long. */
+.mz-set-scroll {
+    display: grid;
+    gap: 18px;
+    align-content: start;
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-width: thin;
 }
 
 @keyframes mz-sheet-in {
