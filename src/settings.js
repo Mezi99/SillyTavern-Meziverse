@@ -102,6 +102,10 @@ const DEFAULTS = {
     // The DJ prompt the user tunes: the rules. The pick style and the answer
     // format are appended by code.
     musicDjPrompt: DEFAULT_DJ_PROMPT,
+    // The Connections tab: which LLM each watcher agent's calls ride - the
+    // current ST API, a Connection Manager profile, or a custom
+    // OpenAI-compatible endpoint. One entry per agent id (connections.js).
+    connections: {},
     // The watcher prompts the user tunes: the scene-tagged hand and the
     // plain-prose hand. The answer format is appended by code.
     bgPromptOn: DEFAULT_BG_PROMPT_ON,
@@ -263,4 +267,34 @@ export function entryOn(name) {
 /** Ask SillyTavern to save settings on its usual debounce. */
 export function saveSettings() {
     ctx()?.saveSettingsDebounced?.();
+}
+
+/**
+ * One watcher agent's connection, with every field filled in: the source is
+ * 'current' (the API SillyTavern is talking through now) unless it was
+ * deliberately set to 'profile' or 'custom'. A copy - patches go back
+ * through `setConnection`.
+ */
+export function normalizeConnection(raw) {
+    const value = raw && typeof raw === 'object' ? raw : {};
+    return {
+        source: value.source === 'profile' || value.source === 'custom' ? value.source : 'current',
+        profileId: typeof value.profileId === 'string' ? value.profileId : '',
+        customUrl: typeof value.customUrl === 'string' ? value.customUrl : '',
+        customKey: typeof value.customKey === 'string' ? value.customKey : '',
+        customModel: typeof value.customModel === 'string' ? value.customModel : '',
+    };
+}
+
+/** The connection one watcher agent rides. See `normalizeConnection`. */
+export function connectionFor(id) {
+    return normalizeConnection(settings().connections?.[id]);
+}
+
+/** Applies a patch to one agent's connection and remembers it. */
+export function setConnection(id, patch) {
+    const store = settings();
+    if (!store.connections || typeof store.connections !== 'object') store.connections = {};
+    store.connections[id] = { ...normalizeConnection(store.connections[id]), ...patch };
+    saveSettings();
 }

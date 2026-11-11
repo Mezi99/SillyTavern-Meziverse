@@ -257,7 +257,12 @@ async function askDj({ forceFreshPick = false } = {}) {
         };
         lastDjRequest = request;
 
-        const answer = await generateRaw(request);
+        // The one ride: the controller's own connection (whatever the
+        // Connections tab has chosen for the Music Agent), falling back to
+        // the plain call when no controller is wired.
+        const answer = controller?.ask
+            ? await controller.ask(request)
+            : await generateRaw(request);
         if (!answer.ok) {
             console.warn(`${LOG} the watcher call failed`, answer.error);
             return null;

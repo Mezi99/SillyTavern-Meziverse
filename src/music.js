@@ -23,6 +23,7 @@ import { notify } from './notify.js';
 import { parseTags } from './tags.js';
 import { buildSearchUrl, buildVideosUrl, dropUnembeddable, friendlySearchError, preferredDuration, toResults } from './musicsearch.js';
 import { initMusicDj, musicDjArrived, musicDjFreshPick, resetMusicDjPacing } from './musicdj.js';
+import { generateOn } from './connections.js';
 
 const LOG = '[Meziverse music]';
 
@@ -574,6 +575,9 @@ export function initMusic({ isOpen } = {}) {
                 state.picking = !!on;
                 render();
             },
+            // The one ride for the DJ's calls: whatever connection the
+            // Music Agent's section on the Connections tab has chosen.
+            ask: request => generateOn('musicAgent', request),
         },
     });
 

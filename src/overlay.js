@@ -28,6 +28,7 @@ import { placeHtml } from './prose.js';
 import { mountCues, closeMemory } from './cues.js';
 import { closeFloats } from './floats.js';
 import { mountMusic, musicUiClosed, musicUiOpened, refreshMusic } from './music.js';
+import { mountConnections } from './connections.js';
 import { mountMap, mapUiClosed, mapUiOpened, refreshMap, isMapWinOpen, openMapWin, closeMapWin } from './map.js';
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr, notify } from './notify.js';
@@ -195,6 +196,7 @@ const FRAME_HTML = `
         <div class="mz-seg mz-set-tabs" role="tablist" aria-label="Settings sections">
             <button class="is-on" type="button" role="tab" aria-selected="true" data-mz-tab="general">General</button>
             <button type="button" role="tab" aria-selected="false" data-mz-tab="image">Features</button>
+            <button type="button" role="tab" aria-selected="false" data-mz-tab="connections">Connections</button>
             <button type="button" role="tab" aria-selected="false" data-mz-tab="mode">Meziverse mode</button>
         </div>
 
@@ -511,6 +513,8 @@ const FRAME_HTML = `
             </div>
         </div>
 
+        <div data-mz="connections-host"></div>
+
         <footer class="mz-sheet-foot">
             <button class="mz-btn-ghost" type="button" data-mz-action="reset-pane">Reset pane height</button>
         </footer>
@@ -575,6 +579,10 @@ export function mount() {
     if (!DEV_EXTRAS) {
         root.querySelectorAll('[data-mz-tab="mode"], [data-mz-pane="mode"]').forEach(element => element.remove());
     }
+
+    // The Connections tab: one section per watcher agent, from the one
+    // factory (connections.js). The sections replace their host in place.
+    mountConnections(root.querySelector('[data-mz="connections-host"]'));
 
     frame = root.querySelector('.mz-frame');
     els = {

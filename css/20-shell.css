@@ -324,6 +324,16 @@ body.mz-open .popup { z-index: 9500 !important; }
 
 .mz-set-row--prompt .mz-btn-ghost { justify-self: start; }
 
+/* The Connections tab's test answer, beside its button. */
+.mz-conn-state {
+    margin-left: 8px;
+    font-family: var(--mz-font-ui);
+    font-size: var(--mz-text-2xs);
+    letter-spacing: .06em;
+    color: var(--mz-text-dim);
+}
+.mz-conn-state.is-bad { color: var(--mz-bad); }
+
 .mz-textarea {
     width: 100%;
     padding: 8px 10px;
