@@ -1,6 +1,9 @@
 /* ==========================================================================
-   Meziverse — the music player
-   The pill in the header (or the undocked card) and its video stage.
+   Meziverse — the music player (v3 layout)
+   One widget, two faces: a pill in the header (docked) and a card (undocked,
+   or the pill's dropdown). Both faces share the same card markup, so the
+   panel and the floating player are one design, not two.
+   The whole undocked card is the drag handle; only controls are exempt.
    ========================================================================== */
 
 .mz-music-slot {
@@ -10,222 +13,515 @@
     margin-right: 8px;
 }
 
-/* ---------- the widget: a pill docked, a card undocked ---------- */
-
 .mz-music {
     position: relative;
-    display: flex;
-    flex-direction: column;
     min-width: 0;
-    max-width: 280px;
-    border: 1px solid var(--mz-line);
-    border-radius: var(--mz-r-pill);
-    background: var(--mz-surface);
-    color: var(--mz-text);
     font-family: var(--mz-font-ui);
+    color: var(--mz-text);
 }
 
 .mz-music.is-undocked {
     position: fixed;
     z-index: calc(var(--mz-z-sheet) - 3);
-    width: 320px;
-    max-width: calc(100vw - 16px);
-    border-radius: var(--mz-r-lg);
-    border-color: var(--mz-line-strong);
-    background: var(--mz-surface-solid);
 }
 
-.mz-music.is-dragging {
-    cursor: grabbing;
-    user-select: none;
-}
+/* ---------- the pill (docked) ---------- */
 
-.mz-music-head {
+.mz-music-pill {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 2px 5px 2px 2px;
-    min-width: 0;
-}
-
-.mz-music.is-undocked .mz-music-head {
-    cursor: grab;
-    padding: 4px 6px 4px 4px;
-}
-
-.mz-music-art {
-    flex: none;
-    display: grid;
-    place-items: center;
-    width: 26px;
-    height: 26px;
+    height: 28px;
+    max-width: 280px;
+    padding: 0 3px 0 3px;
     border: 1px solid var(--mz-line);
-    border-radius: 50%;
-    overflow: hidden;
-    background: var(--mz-surface-2);
-    color: var(--mz-text-dim);
-    cursor: pointer;
+    border-radius: var(--mz-r-pill);
+    background: var(--mz-surface);
 }
 
-.mz-music-art .ico { width: 13px; height: 13px; }
+.mz-music.is-undocked .mz-music-pill { display: none; }
 
-.mz-music-thumb {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-
-.mz-music.is-live .mz-music-art {
-    border-color: color-mix(in srgb, var(--mz-accent) 35%, var(--mz-line));
-}
-
-.mz-music-title {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 1px;
+.mz-music-ticker {
+    flex: 0 1 auto;
     min-width: 0;
-    max-width: 150px;
+    max-width: 176px;
+    overflow: hidden;
     padding: 0;
     border: 0;
     background: none;
-    color: inherit;
-    font-family: inherit;
+    color: var(--mz-text);
+    font: 500 var(--mz-text-xs) var(--mz-font-ui);
     text-align: left;
+    white-space: nowrap;
     cursor: pointer;
 }
 
-.mz-music-title b {
-    min-width: 0;
-    max-width: 100%;
-    overflow: hidden;
-    font-size: var(--mz-text-xs);
-    font-weight: 500;
-    color: var(--mz-text);
-    text-overflow: ellipsis;
-    white-space: nowrap;
+.mz-music-ticker-in { display: inline-block; }
+
+/* A title that does not fit fades out at the edge, and slides to its end
+   and back while the track plays (or on hover). Full title is the tooltip. */
+.mz-music-ticker.is-long {
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 16px), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 16px), transparent);
 }
 
-.mz-music-title small {
-    min-width: 0;
-    max-width: 100%;
-    overflow: hidden;
-    font-size: var(--mz-text-2xs);
-    color: var(--mz-text-dim);
-    text-overflow: ellipsis;
-    white-space: nowrap;
+.mz-music-ticker.is-long .mz-music-ticker-in {
+    animation: mz-ticker 14s ease-in-out infinite alternate;
+    animation-play-state: paused;
 }
+
+.mz-music.is-playing .mz-music-ticker.is-long .mz-music-ticker-in,
+.mz-music-ticker.is-long:hover .mz-music-ticker-in { animation-play-state: running; }
+
+@keyframes mz-ticker {
+    0%, 12% { transform: translateX(0); }
+    88%, 100% { transform: translateX(var(--mz-over, 0px)); }
+}
+
+.mz-music-pill .mz-ibtn { width: 22px; height: 22px; flex: none; }
+.mz-music-pill .mz-ibtn .ico { width: 12px; height: 12px; }
+.mz-music.is-open .mz-music-more .ico { transform: rotate(180deg); }
+.mz-music-more .ico { transition: transform var(--mz-dur) var(--mz-ease); }
+
+/* ---------- the artwork (both faces) ---------- */
+
+.mz-music-art {
+    --art: 64px;
+    position: relative;
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: var(--art);
+    height: var(--art);
+    padding: 0;
+    border: 1px solid var(--mz-line);
+    border-radius: var(--mz-r);
+    overflow: hidden;
+    background: var(--mz-surface-2);
+    color: var(--mz-text-dim);
+    transition: box-shadow var(--mz-dur-mark) var(--mz-ease), border-color var(--mz-dur-mark) var(--mz-ease);
+}
+
+.mz-music-pill .mz-music-art { --art: 22px; border-radius: 50%; cursor: pointer; }
+.mz-music-art .ico { width: 38%; height: 38%; }
+.mz-music-thumb { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 
 .mz-music.is-playing .mz-music-art {
     border-color: var(--mz-accent-line);
-    box-shadow: 0 0 6px color-mix(in srgb, var(--mz-accent) 30%, transparent);
+    box-shadow: 0 0 0 1px var(--mz-accent-line), 0 6px 22px -6px color-mix(in srgb, var(--mz-accent) 45%, transparent);
 }
 
-.mz-music-more .ico {
-    transition: transform var(--mz-dur) var(--mz-ease);
-}
+/* ---------- the card ---------- */
 
-.mz-music.is-open .mz-music-more .ico { transform: rotate(180deg); }
-
-.mz-music.is-undocked .mz-music-more { display: none; }
-
-/* ---------- the panel: the paste row, the volume, the video toggle ---------- */
-
-.mz-music-body {
+.mz-music-card {
+    position: relative;
+    isolation: isolate;
     display: grid;
-    gap: 8px;
-    padding: 4px 10px 10px;
-}
-
-.mz-music:not(.is-undocked) .mz-music-body {
-    position: absolute;
-    top: calc(100% + 8px);
-    right: 0;
-    width: 300px;
-    padding: 10px;
+    gap: 10px;
+    width: 320px;
+    max-width: calc(100vw - 16px);
+    padding: 0 14px 14px;
     border: 1px solid var(--mz-line-strong);
     border-radius: var(--mz-r-lg);
     background: var(--mz-surface-solid);
-    z-index: calc(var(--mz-z-sheet) - 4);
+    box-shadow: var(--mz-shadow-sm);
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
 }
 
-.mz-music-row {
+.mz-music:not(.is-undocked) .mz-music-card { display: none; }
+
+/* docked: the card drops from the pill */
+.mz-music:not(.is-undocked).is-open .mz-music-card {
+    display: grid;
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    z-index: calc(var(--mz-z-sheet) - 4);
+    box-shadow: var(--mz-shadow);
+}
+
+.mz-music.is-undocked .mz-music-card { cursor: grab; animation: mz-music-in 220ms var(--mz-ease); }
+.mz-music.is-undocked button,
+.mz-music.is-undocked a,
+.mz-music.is-undocked input[type="range"] { cursor: pointer; }
+.mz-music.is-undocked input[type="text"] { cursor: text; }
+
+.mz-music.is-dragging .mz-music-card {
+    cursor: grabbing;
+    transform: scale(1.012);
+    box-shadow: var(--mz-shadow);
+}
+
+.mz-music.is-snapping { transition: left 180ms var(--mz-ease), top 180ms var(--mz-ease); }
+
+@keyframes mz-music-in {
+    from { opacity: 0; transform: translateY(6px) scale(.985); }
+    to { opacity: 1; transform: none; }
+}
+
+/* The track's own picture, blurred, tinting the top of the card. */
+.mz-music-ambient {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    opacity: 0;
+    transition: opacity .6s var(--mz-ease);
+    pointer-events: none;
+}
+
+.mz-music.is-live .mz-music-ambient { opacity: 1; }
+
+.mz-music-ambient img {
+    position: absolute;
+    inset: -30px;
+    width: calc(100% + 60px);
+    height: calc(100% + 60px);
+    object-fit: cover;
+    filter: blur(34px) saturate(1.5);
+    opacity: .5;
+}
+
+.mz-music-ambient::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg,
+        color-mix(in srgb, var(--mz-surface-solid) 35%, transparent) 0%,
+        var(--mz-surface-solid) 70%);
+}
+
+/* ---------- the grip: status on the left, window buttons on the right ---------- */
+
+.mz-music-grip {
+    position: relative;
     display: flex;
     align-items: center;
-    gap: 6px;
-    min-width: 0;
+    justify-content: space-between;
+    height: 32px;
+    margin: 0 -14px;
+    padding: 0 8px 0 14px;
+    touch-action: none;
+    outline: 0;
 }
 
-.mz-music-input {
-    flex: 1;
-    min-width: 0;
-    max-width: none !important;
+.mz-music-dots {
+    position: absolute;
+    left: 50%;
+    top: 7px;
+    display: flex;
+    gap: 4px;
+    transform: translateX(-50%);
+    opacity: .55;
+    transition: opacity var(--mz-dur) var(--mz-ease);
 }
 
-.mz-music-vol {
-    flex: 1;
-    min-width: 0;
-    accent-color: var(--mz-accent);
-}
+.mz-music-dots i { width: 3px; height: 3px; border-radius: 50%; background: var(--mz-text-muted); }
+.mz-music-card:hover .mz-music-dots,
+.mz-music-grip:focus-visible .mz-music-dots { opacity: 1; }
+.mz-music-grip:focus-visible { box-shadow: inset 0 0 0 1px var(--mz-accent-line); border-radius: var(--mz-r-lg) var(--mz-r-lg) 0 0; }
+.mz-music:not(.is-undocked) .mz-music-dots,
+.mz-music:not(.is-undocked) .mz-music-minibtn { display: none; }
+.mz-music:not(.is-undocked) .mz-music-grip { touch-action: auto; }
 
-/* The error state's escape hatch: the video is still one click away. */
-.mz-music-watch {
-    justify-self: start;
-    text-decoration: none;
-}
-
-.mz-music-watch:hover { color: var(--mz-accent); }
-
-/* The settings row's key state: quiet, factual. */
-.mz-music-keystate {
-    margin-left: 8px;
-    font-family: var(--mz-font-ui);
+.mz-music-status {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 6px;
     font-size: var(--mz-text-2xs);
-    letter-spacing: .06em;
+    font-weight: 500;
+    letter-spacing: .12em;
+    text-transform: uppercase;
     color: var(--mz-text-dim);
 }
 
-/* ---------- the video stage ---------- */
+.mz-music.is-playing .mz-music-status { color: var(--mz-accent); }
+.mz-music.has-error .mz-music-status { color: var(--mz-bad); }
 
-/* Fixed and frame-level, like the cue popover. While audio plays without
-   the panel open the stage is clipped, never hidden: an embed that goes
-   `display:none` takes its sound with it in some browsers. */
+.mz-eq { display: inline-flex; align-items: flex-end; gap: 2px; width: 12px; height: 10px; }
+.mz-eq i {
+    flex: 1;
+    height: 100%;
+    border-radius: 1px;
+    background: currentColor;
+    transform-origin: bottom;
+    transform: scaleY(.28);
+}
+
+.mz-music.is-playing .mz-eq i { animation: mz-eq 880ms ease-in-out infinite alternate; }
+.mz-eq i:nth-child(2) { animation-delay: -300ms; }
+.mz-eq i:nth-child(3) { animation-delay: -620ms; }
+.mz-eq i:nth-child(4) { animation-delay: -150ms; }
+
+@keyframes mz-eq { from { transform: scaleY(.25); } to { transform: scaleY(1); } }
+
+.mz-music-wintools { display: flex; align-items: center; gap: 0; margin-top: 6px; }
+.mz-music-wintools .mz-ibtn { width: 24px; height: 24px; }
+.mz-music-wintools .mz-ibtn .ico { width: 13px; height: 13px; }
+
+/* ---------- now playing ---------- */
+
+.mz-music-now {
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr);
+    gap: 12px;
+    align-items: center;
+}
+
+.mz-music-meta { display: grid; gap: 3px; min-width: 0; }
+
+/* Two lines, then an ellipsis; the whole title is the tooltip. */
+.mz-music-name {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    font-size: var(--mz-text-md);
+    font-weight: 500;
+    line-height: 1.32;
+    color: var(--mz-text);
+    overflow-wrap: anywhere;
+}
+
+.mz-music-name.is-empty { color: var(--mz-text-dim); font-weight: 400; }
+
+.mz-music-by {
+    overflow: hidden;
+    font-size: var(--mz-text-xs);
+    color: var(--mz-text-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mz-music-chip {
+    justify-self: start;
+    max-width: 100%;
+    height: 18px;
+    padding: 0 8px;
+    overflow: hidden;
+    border: 1px solid var(--mz-accent-line);
+    border-radius: var(--mz-r-pill);
+    background: var(--mz-accent-wash);
+    font-size: var(--mz-text-2xs);
+    line-height: 16px;
+    letter-spacing: .04em;
+    color: var(--mz-accent);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mz-music-nowtools { display: none; align-items: center; gap: 2px; }
+
+/* ---------- ranges (seek and volume) ---------- */
+
+.mz-music-range {
+    --p: 0%;
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 14px;
+    margin: 0;
+    background: none;
+    outline: 0;
+}
+
+.mz-music-range::-webkit-slider-runnable-track {
+    height: 3px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, var(--mz-accent) var(--p), color-mix(in srgb, var(--mz-text) 14%, transparent) var(--p));
+}
+
+.mz-music-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 11px;
+    height: 11px;
+    margin-top: -4px;
+    border: 0;
+    border-radius: 50%;
+    background: var(--mz-text);
+    transform: scale(0);
+    transition: transform var(--mz-dur-fast) var(--mz-ease);
+}
+
+.mz-music-range::-moz-range-track { height: 3px; border-radius: 2px; background: color-mix(in srgb, var(--mz-text) 14%, transparent); }
+.mz-music-range::-moz-range-progress { height: 3px; border-radius: 2px; background: var(--mz-accent); }
+.mz-music-range::-moz-range-thumb { width: 11px; height: 11px; border: 0; border-radius: 50%; background: var(--mz-text); transform: scale(0); transition: transform var(--mz-dur-fast) var(--mz-ease); }
+
+.mz-music-range:hover::-webkit-slider-thumb,
+.mz-music-range:focus-visible::-webkit-slider-thumb,
+.mz-music-vol::-webkit-slider-thumb { transform: scale(1); }
+.mz-music-range:hover::-moz-range-thumb,
+.mz-music-range:focus-visible::-moz-range-thumb,
+.mz-music-vol::-moz-range-thumb { transform: scale(1); }
+.mz-music-vol::-webkit-slider-thumb { width: 9px; height: 9px; margin-top: -3px; }
+.mz-music-vol::-moz-range-thumb { width: 9px; height: 9px; }
+
+.mz-music-seek {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    font-size: var(--mz-text-2xs);
+    color: var(--mz-text-dim);
+    font-variant-numeric: tabular-nums;
+}
+
+/* a live stream has no length: no seek row */
+.mz-music.is-stream .mz-music-seek,
+.mz-music:not(.is-live) .mz-music-seek { visibility: hidden; }
+
+/* ---------- transport: volume left, play centre, video right ---------- */
+
+.mz-music-transport {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+}
+
+.mz-music-vols { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.mz-music-vol { flex: 1; max-width: 64px; min-width: 28px; }
+.mz-music-mid { display: flex; align-items: center; gap: 8px; }
+.mz-music-end { display: flex; justify-content: flex-end; }
+
+.mz-music-transport .mz-ibtn { width: 30px; height: 30px; border-radius: 50%; }
+.mz-music-transport .mz-ibtn .ico { width: 15px; height: 15px; }
+.mz-music-transport .mz-ibtn[aria-pressed="true"] { color: var(--mz-accent); background: var(--mz-accent-wash); }
+
+.mz-music-play {
+    display: grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: var(--mz-accent);
+    color: var(--mz-accent-ink);
+    transition: transform var(--mz-dur-fast) var(--mz-ease), filter var(--mz-dur-fast) var(--mz-ease);
+}
+
+.mz-music-play .ico { width: 18px; height: 18px; }
+.mz-music-play:hover { transform: scale(1.06); filter: brightness(1.08); }
+.mz-music-play:active { transform: scale(.96); }
+
+/* Fresh pick is the DJ's "something else": it sits beside play, in the
+   accent, and turns while the DJ is thinking. */
+.mz-music-fresh { color: var(--mz-accent) !important; }
+.mz-music-fresh:hover { background: var(--mz-accent-wash) !important; }
+.mz-music.is-picking .mz-music-fresh .ico { animation: mz-spin 1.1s linear infinite; }
+@keyframes mz-spin { to { transform: rotate(360deg); } }
+
+/* ---------- find: one field, the action inside it ---------- */
+
+.mz-music-find {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    height: 34px;
+    padding: 0 4px 0 11px;
+    border: 1px solid var(--mz-line);
+    border-radius: var(--mz-r-sm);
+    background: var(--mz-surface-2);
+    transition: border-color var(--mz-dur) var(--mz-ease);
+}
+
+.mz-music-find:focus-within { border-color: var(--mz-accent-line); }
+.mz-music-find > .ico { flex: none; width: 13px; height: 13px; color: var(--mz-text-dim); }
+
+.mz-music-find input {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    outline: 0;
+    background: none;
+    color: var(--mz-text);
+    font: inherit;
+    font-size: var(--mz-text-xs);
+    user-select: text;
+    -webkit-user-select: text;
+}
+
+.mz-music-find input::placeholder { color: var(--mz-text-dim); }
+.mz-music-go { width: 26px; height: 26px; border-radius: var(--mz-r-xs); color: var(--mz-accent); }
+.mz-music-go:disabled { color: var(--mz-text-dim); opacity: .5; cursor: default; }
+.mz-music-go:not(:disabled):hover { background: var(--mz-accent-wash); }
+
+/* ---------- the note: what went wrong, or what is missing ---------- */
+
+.mz-music-note {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+    padding: 8px 10px;
+    border: 1px solid var(--mz-line);
+    border-radius: var(--mz-r-sm);
+    background: var(--mz-surface-2);
+    font-size: var(--mz-text-xs);
+    line-height: 1.4;
+    color: var(--mz-text-muted);
+    user-select: text;
+    -webkit-user-select: text;
+}
+
+.mz-music-note.is-bad {
+    border-color: color-mix(in srgb, var(--mz-bad) 28%, transparent);
+    background: color-mix(in srgb, var(--mz-bad) 9%, transparent);
+    color: color-mix(in srgb, var(--mz-bad) 70%, var(--mz-text));
+}
+
+.mz-music-note a { justify-self: start; color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.mz-music-note a:hover { color: var(--mz-text); }
+
+/* ---------- mini: one row, covers as little story as possible ---------- */
+
+.mz-music.is-undocked.is-mini .mz-music-card { width: 296px; gap: 0; padding: 8px 8px 8px 8px; }
+.mz-music.is-mini .mz-music-grip,
+.mz-music.is-mini .mz-music-seek,
+.mz-music.is-mini .mz-music-transport,
+.mz-music.is-mini .mz-music-find,
+.mz-music.is-mini .mz-music-note,
+.mz-music.is-mini .mz-music-chip,
+.mz-music.is-mini .mz-music-by { display: none; }
+
+.mz-music.is-mini .mz-music-now { grid-template-columns: 38px minmax(0, 1fr) auto; gap: 10px; }
+.mz-music.is-mini .mz-music-art { --art: 38px; border-radius: var(--mz-r-sm); }
+.mz-music.is-mini .mz-music-name { -webkit-line-clamp: 1; font-size: var(--mz-text-sm); }
+.mz-music.is-mini .mz-music-nowtools { display: flex; }
+.mz-music-nowtools .mz-ibtn { width: 28px; height: 28px; }
+.mz-music-nowtools .mz-music-miniplay { background: var(--mz-accent); color: var(--mz-accent-ink); border-radius: 50%; }
+.mz-music-nowtools .mz-music-miniplay:hover { background: var(--mz-accent); filter: brightness(1.08); }
+
+/* ---------- the video stage: under the card, the card's width ---------- */
+
 .mz-music-stage {
     position: fixed;
     z-index: calc(var(--mz-z-sheet) - 2);
-    width: 320px;
     aspect-ratio: 16 / 9;
     border: 1px solid var(--mz-line-strong);
-    border-radius: var(--mz-r-sm);
+    border-radius: var(--mz-r);
     overflow: hidden;
     background: #000;
-    transition:
-        opacity var(--mz-dur) var(--mz-ease),
-        clip-path var(--mz-dur) var(--mz-ease);
+    box-shadow: var(--mz-shadow-sm);
+    transition: opacity var(--mz-dur) var(--mz-ease), clip-path var(--mz-dur) var(--mz-ease);
 }
 
-.mz-music-stage.is-audio {
-    opacity: 0;
-    pointer-events: none;
-    clip-path: inset(50%);
-}
+.mz-music-stage.is-audio { opacity: 0; pointer-events: none; clip-path: inset(50%); }
+.mz-music-embed, .mz-music-embed iframe { width: 100%; height: 100%; border: 0; display: block; }
 
-.mz-music-embed,
-.mz-music-embed iframe {
-    width: 100%;
-    height: 100%;
-    border: 0;
-    display: block;
-}
+/* ---------- the settings row's key state (unchanged) ---------- */
+.mz-music-keystate { margin-left: 8px; font-family: var(--mz-font-ui); font-size: var(--mz-text-2xs); letter-spacing: .06em; color: var(--mz-text-dim); }
 
-/* ---------- narrow screens: the pill keeps only what matters ---------- */
-
+/* ---------- narrow screens: pill only, trimmed ---------- */
 @media (max-width: 760px) {
-    .mz-music { max-width: 168px; }
-    .mz-music-title { max-width: 64px; }
-    .mz-music-title small { display: none; }
+    .mz-music-pill { max-width: 176px; }
+    .mz-music-ticker { max-width: 72px; }
     .mz-music-more { display: none; }
-    .mz-music:not(.is-undocked) .mz-music-body {
-        width: min(300px, calc(100vw - 24px));
-    }
+    .mz-music:not(.is-undocked) .mz-music-card { width: min(320px, calc(100vw - 24px)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .mz-music *, .mz-music *::before { animation: none !important; transition: none !important; }
 }

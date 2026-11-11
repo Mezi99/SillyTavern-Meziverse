@@ -83,6 +83,9 @@ const DEFAULTS = {
     // wide screens and re-docks itself on narrow ones. Its remembered spot.
     musicDocked: true,
     musicPos: null,
+    // Mini: the undocked card shrinks to one row when it is in the story's
+    // way. Toggled by the card's own shrink/expand buttons.
+    musicMini: false,
     // The YouTube Data API key behind song search - the user's own free
     // Google key, used from the browser. Restrict it by HTTP referrer (the
     // search fetch pins one) or by IP; never leave it unrestricted.

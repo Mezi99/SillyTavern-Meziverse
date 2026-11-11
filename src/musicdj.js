@@ -236,37 +236,44 @@ export function getLastDjRequest() {
 
 /** Asks the DJ and applies its one intent. */
 async function askDj({ forceFreshPick = false } = {}) {
-    const { history, last } = await splitStory(chatMessages(), { turns: DJ_STORY_TURNS });
-    const request = {
-        systemPrompt: djSystemPrompt({ core: controller?.promptCore?.(), mode: controller?.pickMode?.() }),
-        prompt: djMessages({
-            history,
-            last,
-            playing: controller?.current?.() ?? null,
-            forceFreshPick,
-        }),
-        // Deliberately no responseLength: on providers that count the prompt
-        // against the budget, any cap this request can afford starves the
-        // answer to nothing ("No message generated"). The global response
-        // length is used instead, and `parseDjAnswer` extracts the JSON
-        // whatever else comes with it.
-    };
-    lastDjRequest = request;
+    // The player's loader: from here until the answer is applied (or gone),
+    // the widget says "Selecting track..." - in the player, never a toast.
+    controller?.picking?.(true);
+    try {
+        const { history, last } = await splitStory(chatMessages(), { turns: DJ_STORY_TURNS });
+        const request = {
+            systemPrompt: djSystemPrompt({ core: controller?.promptCore?.(), mode: controller?.pickMode?.() }),
+            prompt: djMessages({
+                history,
+                last,
+                playing: controller?.current?.() ?? null,
+                forceFreshPick,
+            }),
+            // Deliberately no responseLength: on providers that count the prompt
+            // against the budget, any cap this request can afford starves the
+            // answer to nothing ("No message generated"). The global response
+            // length is used instead, and `parseDjAnswer` extracts the JSON
+            // whatever else comes with it.
+        };
+        lastDjRequest = request;
 
-    const answer = await generateRaw(request);
-    if (!answer.ok) {
-        console.warn(`${LOG} the watcher call failed`, answer.error);
-        return null;
+        const answer = await generateRaw(request);
+        if (!answer.ok) {
+            console.warn(`${LOG} the watcher call failed`, answer.error);
+            return null;
+        }
+
+        const intent = parseDjAnswer(answer.text);
+
+        if (intent.action === 'volume' && intent.volume !== null) {
+            controller?.setVolume?.(intent.volume);
+        }
+        if (intent.action === 'play' && intent.searchQuery) {
+            controller?.play?.(intent.searchQuery, { mood: intent.mood });
+        }
+
+        return intent;
+    } finally {
+        controller?.picking?.(false);
     }
-
-    const intent = parseDjAnswer(answer.text);
-
-    if (intent.action === 'volume' && intent.volume !== null) {
-        controller?.setVolume?.(intent.volume);
-    }
-    if (intent.action === 'play' && intent.searchQuery) {
-        controller?.play?.(intent.searchQuery, { mood: intent.mood });
-    }
-
-    return intent;
 }

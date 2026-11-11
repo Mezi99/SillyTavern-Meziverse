@@ -149,14 +149,16 @@ const state = {
     error: null,
     playing: false,
     searching: false,
+    picking: false,
     panelOpen: false,
     videoOpen: false,
     candidates: null,
     candidateAt: 0,
+    cur: 0,
+    dur: 0,
 };
 
 const NARROW = 760;
-const STAGE_W = 320;
 
 let uiIsOpen = () => true;
 let widget = null;
@@ -167,6 +169,7 @@ let ytApiPromise = null;
 let lastHandled = null;
 let drag = null;
 let retryArmed = true;
+let seekTimer = null;
 
 /* The tracks heard this session - a rotating pick never returns to one. */
 const RECENT_MAX = 5;
@@ -326,6 +329,8 @@ function advanceCandidate() {
     state.videoId = next.videoId;
     state.title = next.title ?? '';
     state.channel = next.channel ?? '';
+    state.cur = 0;
+    state.dur = 0;
     render();
     rebuildPlayer(next.videoId);
 }
@@ -384,6 +389,8 @@ function playRequest(text, { mood = null, rotate = false } = {}) {
     state.error = null;
     state.candidates = null;
     state.candidateAt = 0;
+    state.cur = 0;
+    state.dur = 0;
     retryArmed = true;
     render();
 
@@ -484,6 +491,8 @@ async function searchAndPlay(query, { mood = null, rotate = false } = {}) {
         state.videoId = pick.videoId;
         state.title = pick.title;
         state.channel = pick.channel;
+        state.cur = 0;
+        state.dur = 0;
         retryArmed = true;
         render();
 
@@ -559,6 +568,12 @@ export function initMusic({ isOpen } = {}) {
             current: () => ({ title: state.title, channel: state.channel, mood: state.mood }),
             play: (query, options) => playRequest(query, { ...options, rotate: true }),
             setVolume,
+            // The loader: while a DJ call is in flight the player says
+            // "Selecting track..." itself - in the widget, never a toast.
+            picking: on => {
+                state.picking = !!on;
+                render();
+            },
         },
     });
 
@@ -596,6 +611,7 @@ export function musicUiClosed() {
         /* the embed answers when it answers */
     }
     state.playing = false;
+    syncSeekTimer();
 }
 
 /** Re-reads the settings the widget shows - called when a switch flips. */
@@ -609,33 +625,60 @@ export function refreshMusic() {
 const svg = name => `<svg class="ico" aria-hidden="true"><use href="#mz-i-${name}"/></svg>`;
 
 const WIDGET_HTML = `
-<div class="mz-music-head" data-mz-music-head>
-    <button class="mz-music-art" type="button" title="Music player" aria-label="Music player" data-mz-music="toggle-panel">
+<div class="mz-music-pill">
+    <button class="mz-music-art" type="button" data-mz-music="toggle-panel" aria-label="Music player">
         <img class="mz-music-thumb" alt="" hidden>
         ${svg('music')}
     </button>
-    <button class="mz-music-title" type="button" data-mz-music="toggle-panel">
-        <b data-mz-music="title">No track</b>
-        <small data-mz-music="sub">Paste a link or name a song</small>
-    </button>
-    <button class="mz-ibtn" type="button" title="Play" aria-label="Play" data-mz-music="playpause">${svg('play')}</button>
-    <button class="mz-ibtn" type="button" title="Stop" aria-label="Stop" data-mz-music="stop">${svg('stop')}</button>
+    <button class="mz-music-ticker" type="button" data-mz-music="toggle-panel"><span class="mz-music-ticker-in" data-mz-music="ticker">No track</span></button>
+    <button class="mz-ibtn" type="button" data-mz-music="playpause" data-mz-playbtn></button>
     <button class="mz-ibtn mz-music-more" type="button" title="Player panel" aria-label="Player panel" data-mz-music="toggle-panel">${svg('chevdown')}</button>
-    <button class="mz-ibtn" type="button" title="Undock" aria-label="Undock the player" data-mz-music="dock">${svg('undock')}</button>
+    <button class="mz-ibtn" type="button" data-mz-music="dock" data-mz-dockbtn></button>
 </div>
-<div class="mz-music-body" data-mz-music-body hidden>
-    <a class="mz-btn-ghost mz-music-watch" data-mz-music-watch href="#" target="_blank" rel="noreferrer noopener" hidden>Watch on YouTube</a>
-    <div class="mz-music-row">
-        <input class="mz-select mz-music-input" data-mz-music="input" placeholder="YouTube link, video ID, or song to find" aria-label="YouTube link, video ID, or song to find">
-        <button class="mz-btn-ghost" type="button" data-mz-music="load">Play</button>
+<section class="mz-music-card" aria-label="Music player">
+    <div class="mz-music-ambient" aria-hidden="true"><img alt="" hidden></div>
+    <header class="mz-music-grip" data-mz-music-grip tabindex="0" role="group" aria-label="Move the player. Arrow keys nudge it.">
+        <span class="mz-music-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="mz-music-status"><span class="mz-eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span data-mz-music="status">Nothing playing</span></span>
+        <span class="mz-music-wintools">
+            <button class="mz-ibtn mz-music-minibtn" type="button" title="Shrink" aria-label="Shrink the player" data-mz-music="mini">${svg('chevup')}</button>
+            <button class="mz-ibtn" type="button" data-mz-music="dock" data-mz-dockbtn></button>
+        </span>
+    </header>
+    <div class="mz-music-now">
+        <span class="mz-music-art"><img class="mz-music-thumb" alt="" hidden>${svg('music')}</span>
+        <div class="mz-music-meta">
+            <b class="mz-music-name" data-mz-music="title">No track</b>
+            <span class="mz-music-by" data-mz-music="by"></span>
+            <span class="mz-music-chip" data-mz-music="chip" hidden></span>
+        </div>
+        <div class="mz-music-nowtools">
+            <button class="mz-ibtn mz-music-miniplay" type="button" data-mz-music="playpause" data-mz-playbtn></button>
+            <button class="mz-ibtn" type="button" title="Expand" aria-label="Expand the player" data-mz-music="mini">${svg('chevdown')}</button>
+        </div>
     </div>
-    <div class="mz-music-row">
-        <button class="mz-ibtn" type="button" title="Mute" aria-label="Mute" data-mz-music="mute">${svg('vol')}</button>
-        <input class="mz-music-vol" type="range" min="0" max="100" step="1" data-mz-music="volume" aria-label="Volume">
-        <button class="mz-btn-ghost" type="button" data-mz-music="video">Video</button>
-        <button class="mz-btn-ghost" type="button" title="Ask the Music DJ for a different pick" data-mz-music="dj" hidden>Fresh pick</button>
+    <div class="mz-music-seek">
+        <span data-mz-music="cur">0:00</span>
+        <input class="mz-music-range mz-music-scrub" type="range" min="0" max="1000" step="1" value="0" aria-label="Seek" data-mz-music="scrub">
+        <span data-mz-music="dur">0:00</span>
     </div>
-</div>`;
+    <div class="mz-music-transport">
+        <div class="mz-music-vols">
+            <button class="mz-ibtn" type="button" data-mz-music="mute" data-mz-mutebtn></button>
+            <input class="mz-music-range mz-music-vol" type="range" min="0" max="100" step="1" aria-label="Volume" data-mz-music="volume">
+        </div>
+        <div class="mz-music-mid">
+            <button class="mz-ibtn" type="button" title="Stop" aria-label="Stop" data-mz-music="stop">${svg('stop')}</button>
+            <button class="mz-music-play" type="button" data-mz-music="playpause" data-mz-playbtn></button>
+            <button class="mz-ibtn mz-music-fresh" type="button" title="Fresh pick: ask the Music DJ for something different" aria-label="Fresh pick" data-mz-music="dj">${svg('fresh')}</button>
+        </div>
+        <div class="mz-music-end">
+            <button class="mz-ibtn" type="button" title="Show video" aria-label="Show video" aria-pressed="false" data-mz-music="video">${svg('video')}</button>
+        </div>
+    </div>
+    <label class="mz-music-find">${svg('search')}<input type="text" data-mz-music="input" placeholder="Paste a link or name a song" aria-label="YouTube link, video ID, or song to find"><button class="mz-ibtn mz-music-go" type="button" title="Play" aria-label="Play" data-mz-music="load" disabled>${svg('send')}</button></label>
+    <p class="mz-music-note" data-mz-music="note" hidden></p>
+</section>`;
 
 /**
  * Builds the player where the scene keeps it: a pill in the header that can
@@ -663,24 +706,27 @@ export function mountMusic({ slot, frame }) {
     frame.appendChild(stage);
 
     els = {
-        head: widget.querySelector('[data-mz-music-head]'),
-        body: widget.querySelector('[data-mz-music-body]'),
-        thumb: widget.querySelector('.mz-music-thumb'),
-        note: widget.querySelector('.mz-music-art .ico'),
-        title: widget.querySelector('[data-mz-music="title"]'),
-        sub: widget.querySelector('[data-mz-music="sub"]'),
-        playpause: widget.querySelector('[data-mz-music="playpause"]'),
-        mute: widget.querySelector('[data-mz-music="mute"]'),
-        dock: widget.querySelector('[data-mz-music="dock"]'),
-        volume: widget.querySelector('[data-mz-music="volume"]'),
         input: widget.querySelector('[data-mz-music="input"]'),
-        dj: widget.querySelector('[data-mz-music="dj"]'),
-        watch: widget.querySelector('[data-mz-music-watch]'),
+        volume: widget.querySelector('[data-mz-music="volume"]'),
+        scrub: widget.querySelector('[data-mz-music="scrub"]'),
+        ticker: widget.querySelector('[data-mz-music="ticker"]'),
         embed: stage.querySelector('.mz-music-embed'),
     };
 
     wireWidget();
     render();
+}
+
+/**
+ * Every element answering to a widget name: the pill, the card and the mini
+ * row share them, so one update reaches all faces at once.
+ */
+function q(name) {
+    return Array.from(widget.querySelectorAll(`[data-mz-music="${name}"]`));
+}
+
+function one(name) {
+    return q(name)[0] ?? null;
 }
 
 function wireWidget() {
@@ -724,6 +770,11 @@ function wireWidget() {
                 saveSettings();
                 render();
                 break;
+            case 'mini':
+                settings().musicMini = settings().musicMini !== true;
+                saveSettings();
+                render();
+                break;
             case 'mute':
                 settings().musicMuted = settings().musicMuted !== true;
                 applyVolume();
@@ -753,6 +804,20 @@ function wireWidget() {
         setVolume(els.volume.value);
     });
 
+    els.scrub.addEventListener('input', () => {
+        if (!state.dur) return;
+        try {
+            player?.seekTo?.(state.dur * (els.scrub.value / 1000), true);
+        } catch {
+            /* the embed answers when it answers */
+        }
+    });
+
+    els.input.addEventListener('input', () => {
+        const load = one('load');
+        if (load) load.disabled = !els.input.value.trim();
+    });
+
     els.input.addEventListener('keydown', event => {
         if (event.key !== 'Enter') return;
         event.preventDefault();
@@ -760,27 +825,44 @@ function wireWidget() {
         if (text.trim()) playRequest(text);
     });
 
-    // A thumbnail that never lands falls back to the note glyph.
-    els.thumb.addEventListener('error', () => {
-        els.thumb.hidden = true;
-        if (els.note) els.note.hidden = false;
-    });
+    // A thumbnail that never lands falls back to the music glyph beside it
+    // (capture: the error event does not bubble).
+    widget.addEventListener('error', event => {
+        const img = event.target;
+        if (!(img instanceof HTMLImageElement)) return;
+        img.hidden = true;
+        const icon = img.parentElement?.querySelector('.ico');
+        if (icon) icon.style.display = '';
+    }, true);
 
     wireDrag();
 }
 
-/* The undocked card is dragged by its head - never by its buttons. */
+/* The whole undocked card is the handle - only controls are exempt. */
 function wireDrag() {
-    els.head.addEventListener('pointerdown', event => {
-        if (!isUndocked() || event.target.closest('button, input, a')) return;
+    widget.addEventListener('pointerdown', event => {
+        if (!isUndocked() || event.button > 0 || event.target.closest('button, input, a, label')) return;
         const rect = widget.getBoundingClientRect();
-        drag = { dx: event.clientX - rect.left, dy: event.clientY - rect.top };
-        els.head.setPointerCapture(event.pointerId);
-        widget.classList.add('is-dragging');
+        drag = {
+            dx: event.clientX - rect.left,
+            dy: event.clientY - rect.top,
+            x0: event.clientX,
+            y0: event.clientY,
+            moved: false,
+        };
+        // Capture on the widget: a release outside the window still ends it.
+        widget.setPointerCapture(event.pointerId);
     });
 
-    els.head.addEventListener('pointermove', event => {
+    widget.addEventListener('pointermove', event => {
         if (!drag) return;
+        // A 4px threshold keeps clicks clean - a press on the title stays one.
+        if (!drag.moved && Math.hypot(event.clientX - drag.x0, event.clientY - drag.y0) < 4) return;
+        if (!drag.moved) {
+            drag.moved = true;
+            widget.classList.add('is-dragging');
+            widget.classList.remove('is-snapping');
+        }
         const x = clamp(event.clientX - drag.dx, 8, window.innerWidth - widget.offsetWidth - 8);
         const y = clamp(event.clientY - drag.dy, 8, window.innerHeight - widget.offsetHeight - 8);
         widget.style.left = `${x}px`;
@@ -790,17 +872,65 @@ function wireDrag() {
 
     const endDrag = () => {
         if (!drag) return;
+        const moved = drag.moved;
         drag = null;
         widget.classList.remove('is-dragging');
-        settings().musicPos = {
-            x: parseFloat(widget.style.left) || 0,
-            y: parseFloat(widget.style.top) || 0,
-        };
+        if (!moved) return;
+
+        // A soft magnet to the 12px gutter when the card lands near an edge.
+        const MARGIN = 12;
+        const THRESHOLD = 28;
+        const w = widget.offsetWidth;
+        const h = widget.offsetHeight;
+        const x = parseFloat(widget.style.left) || 0;
+        const y = parseFloat(widget.style.top) || 0;
+        const sx = x < MARGIN + THRESHOLD ? MARGIN
+            : x > window.innerWidth - w - MARGIN - THRESHOLD ? window.innerWidth - w - MARGIN
+                : x;
+        const sy = y < MARGIN + THRESHOLD ? MARGIN
+            : y > window.innerHeight - h - MARGIN - THRESHOLD ? window.innerHeight - h - MARGIN
+                : y;
+        if (sx !== x || sy !== y) {
+            widget.classList.add('is-snapping');
+            widget.style.left = `${sx}px`;
+            widget.style.top = `${sy}px`;
+            setTimeout(() => {
+                widget.classList.remove('is-snapping');
+                positionStage();
+            }, 200);
+        }
+
+        settings().musicPos = { x: sx, y: sy };
         saveSettings();
+        positionStage();
     };
 
-    els.head.addEventListener('pointerup', endDrag);
-    els.head.addEventListener('pointercancel', endDrag);
+    widget.addEventListener('pointerup', endDrag);
+    widget.addEventListener('pointercancel', endDrag);
+
+    // Keyboard: the grip holds focus, arrows nudge (Shift for a longer step),
+    // and a double-click on it shrinks the card out of the story's way.
+    const grip = widget.querySelector('[data-mz-music-grip]');
+    grip.addEventListener('keydown', event => {
+        const dir = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key];
+        if (!dir || !isUndocked()) return;
+        event.preventDefault();
+        const step = event.shiftKey ? 48 : 12;
+        const x = clamp((parseFloat(widget.style.left) || 0) + dir[0] * step, 8, window.innerWidth - widget.offsetWidth - 8);
+        const y = clamp((parseFloat(widget.style.top) || 0) + dir[1] * step, 8, window.innerHeight - widget.offsetHeight - 8);
+        widget.style.left = `${x}px`;
+        widget.style.top = `${y}px`;
+        settings().musicPos = { x, y };
+        saveSettings();
+        positionStage();
+    });
+
+    grip.addEventListener('dblclick', event => {
+        if (event.target.closest('button')) return;
+        settings().musicMini = settings().musicMini !== true;
+        saveSettings();
+        render();
+    });
 }
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -813,21 +943,71 @@ function isUndocked() {
     return settings().musicDocked === false && window.innerWidth >= NARROW;
 }
 
-/** The stage sits under the widget, clamped - above it at the bottom edge. */
+/**
+ * The stage sits under the card at the card's own width - clamped, and above
+ * the card when the bottom edge leaves no room. With the card closed the
+ * stage keeps the spot it has: the audio never stops for a reposition.
+ */
 function positionStage() {
     if (!widget || !stage || stage.hidden) return;
 
-    const rect = widget.getBoundingClientRect();
-    const width = STAGE_W;
+    const card = widget.querySelector('.mz-music-card');
+    const rect = card?.getBoundingClientRect();
+    if (!rect?.width) return;
+
+    const width = rect.width;
     const height = Math.round(width * 9 / 16);
-    const left = clamp(rect.right - width, 8, window.innerWidth - width - 8);
+    const left = clamp(rect.left, 8, window.innerWidth - width - 8);
     const below = rect.bottom + 8;
     const top = below + height + 8 <= window.innerHeight
         ? below
         : clamp(rect.top - height - 8, 8, window.innerHeight - height - 8);
 
+    stage.style.width = `${width}px`;
     stage.style.left = `${left}px`;
     stage.style.top = `${top}px`;
+}
+
+/** Clock time as the seek row reads it: m:ss, or h:mm:ss past the hour. */
+function fmtTime(seconds) {
+    const s = Math.max(0, Math.floor(Number(seconds) || 0));
+    const m = Math.floor(s / 60);
+    const h = Math.floor(m / 60);
+    const ss = String(s % 60).padStart(2, '0');
+    return h ? `${h}:${String(m % 60).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
+}
+
+/**
+ * The seek row's own pulse: while the embed plays, its clock is read twice a
+ * second and written to the row directly - never a full render. It stops the
+ * moment the music does.
+ */
+function syncSeekTimer() {
+    const want = !!player && state.playing;
+    if (want && !seekTimer) seekTimer = setInterval(seekTick, 500);
+    if (!want && seekTimer) {
+        clearInterval(seekTimer);
+        seekTimer = null;
+    }
+}
+
+function seekTick() {
+    try {
+        state.cur = Number(player?.getCurrentTime?.()) || 0;
+        state.dur = Number(player?.getDuration?.()) || 0;
+    } catch {
+        /* the embed answers when it answers */
+        return;
+    }
+
+    q('cur').forEach(span => { span.textContent = fmtTime(state.cur); });
+    q('dur').forEach(span => { span.textContent = fmtTime(state.dur); });
+    const scrub = els.scrub;
+    if (scrub) {
+        scrub.value = String(state.dur ? Math.round(state.cur / state.dur * 1000) : 0);
+        scrub.style.setProperty('--p', `${scrub.value / 10}%`);
+    }
+    widget?.classList.toggle('is-stream', !!state.videoId && !state.dur);
 }
 
 /** The widget, told the truth about every piece of state it carries. */
@@ -837,12 +1017,18 @@ function render() {
     const on = musicOn();
     const undocked = isUndocked();
     const live = !!state.videoId;
+    const playing = state.playing && live;
+    const picking = state.picking;
 
     widget.hidden = !on;
     widget.classList.toggle('is-undocked', undocked);
     widget.classList.toggle('is-open', undocked || state.panelOpen);
-    widget.classList.toggle('is-playing', state.playing);
+    widget.classList.toggle('is-mini', undocked && settings().musicMini === true);
+    widget.classList.toggle('is-playing', playing);
     widget.classList.toggle('is-live', live);
+    widget.classList.toggle('is-stream', live && !state.dur);
+    widget.classList.toggle('has-error', !!state.error);
+    widget.classList.toggle('is-picking', picking);
 
     if (undocked) {
         // The saved spot, but never mid-drag: a buffering event landing
@@ -859,53 +1045,127 @@ function render() {
         widget.style.top = '';
     }
 
-    els.body.hidden = !(undocked || state.panelOpen);
+    // The title is only ever the track - an error or a wait leaves it and
+    // speaks through the note or the status line instead.
+    const title = state.searching ? 'Searching\u2026'
+        : picking ? 'Selecting track\u2026'
+            : (state.title || (live ? 'Loading\u2026' : 'No track'));
+    q('title').forEach(el => {
+        el.textContent = title;
+        el.title = state.title || '';
+        el.classList.toggle('is-empty', !state.title);
+    });
 
-    els.title.textContent = state.error
-        ?? (state.searching ? 'Searching\u2026' : (state.title || (live ? 'Loading\u2026' : 'No track')));
-    els.sub.textContent = state.pending
-        ? (musicKey()
-            ? `\u201c${state.pending}\u201d`
-            : `Wants: \u201c${state.pending}\u201d \u00b7 add an API key to play named songs`)
-        : (state.channel
-            || (state.mood ? `Mood: ${state.mood}` : (live ? '' : 'Paste a link or name a song')));
+    const by = state.searching ? `\u201c${state.pending}\u201d`
+        : picking ? ''
+            : (state.title ? state.channel : (live ? '' : 'Paste a link or name a song'));
+    q('by').forEach(el => { el.textContent = by; });
 
-    const thumb = els.thumb;
-    if (live) {
-        const src = thumbnailUrl(state.videoId);
-        if (thumb.getAttribute('src') !== src) thumb.src = src;
-        thumb.hidden = false;
-        if (els.note) els.note.hidden = true;
-    } else {
-        thumb.hidden = true;
-        if (els.note) els.note.hidden = false;
+    const chip = one('chip');
+    if (chip) {
+        chip.hidden = !state.mood || !live;
+        chip.textContent = state.mood ? `Mood \u00b7 ${state.mood}` : '';
     }
 
-    els.playpause.innerHTML = state.playing ? svg('pause') : svg('play');
-    els.playpause.title = state.playing ? 'Pause' : 'Play';
-    els.playpause.setAttribute('aria-label', state.playing ? 'Pause' : 'Play');
+    // The status line reads the room: working, playing, or gone wrong.
+    const status = state.error ? 'Could not play'
+        : state.searching ? 'Finding a track'
+            : picking ? 'Selecting track'
+                : !live ? 'Nothing playing'
+                    : playing ? 'Now playing' : 'Paused';
+    q('status').forEach(el => { el.textContent = status; });
+
+    const tk = els.ticker;
+    if (tk) {
+        tk.textContent = state.searching ? 'Searching\u2026'
+            : picking ? 'Selecting track\u2026'
+                : (state.title || 'No track');
+        tk.title = state.title || '';
+    }
+
+    // Thumbnails and ambient: the track's own picture everywhere it shows.
+    const src = live ? thumbnailUrl(state.videoId) : '';
+    widget.querySelectorAll('.mz-music-thumb').forEach(img => {
+        img.hidden = !live;
+        if (live && img.getAttribute('src') !== src) img.src = src;
+    });
+    widget.querySelectorAll('.mz-music-art > .ico').forEach(icon => {
+        icon.style.display = live ? 'none' : '';
+    });
+    const ambient = widget.querySelector('.mz-music-ambient img');
+    if (ambient) {
+        ambient.hidden = !live;
+        if (live && ambient.getAttribute('src') !== src) ambient.src = src;
+    }
+
+    // Buttons: one name, every face.
+    q('playpause').forEach(btn => {
+        btn.innerHTML = playing ? svg('pause') : svg('play');
+        btn.title = playing ? 'Pause' : 'Play';
+        btn.setAttribute('aria-label', btn.title);
+    });
 
     const muted = settings().musicMuted === true;
-    els.mute.innerHTML = muted ? svg('mute') : svg('vol');
-    els.mute.title = muted ? 'Unmute' : 'Mute';
-    els.mute.setAttribute('aria-label', muted ? 'Unmute' : 'Mute');
+    q('mute').forEach(btn => {
+        btn.innerHTML = muted ? svg('mute') : svg('vol');
+        btn.title = muted ? 'Unmute' : 'Mute';
+        btn.setAttribute('aria-label', btn.title);
+    });
 
-    els.dock.innerHTML = undocked ? svg('dock') : svg('undock');
-    els.dock.title = undocked ? 'Dock the player' : 'Undock';
-    els.dock.setAttribute('aria-label', undocked ? 'Dock the player' : 'Undock the player');
+    q('dock').forEach(btn => {
+        btn.innerHTML = undocked ? svg('dock') : svg('undock');
+        btn.title = undocked ? 'Dock the player' : 'Undock';
+        btn.setAttribute('aria-label', undocked ? 'Dock the player' : 'Undock the player');
+    });
 
-    els.volume.value = String(clampVolume(settings().musicVolume));
     // Fresh pick is the manual trigger: it lives wherever a search can run,
     // the Music DJ switch (the auto watcher) notwithstanding.
-    els.dj.hidden = !musicKey();
+    const dj = one('dj');
+    if (dj) dj.hidden = !musicKey();
+    const video = one('video');
+    if (video) video.setAttribute('aria-pressed', String(state.videoOpen));
 
-    // The escape hatch: a blocked or gone video is still one click away.
-    if (live) {
-        els.watch.href = `https://www.youtube.com/watch?v=${state.videoId}`;
-        els.watch.hidden = !state.error;
-    } else {
-        els.watch.hidden = true;
+    // The seek row and the volume, with their filled parts.
+    const scrub = els.scrub;
+    if (scrub) {
+        scrub.value = String(state.dur ? Math.round(state.cur / state.dur * 1000) : 0);
+        scrub.style.setProperty('--p', `${scrub.value / 10}%`);
     }
+    q('cur').forEach(el => { el.textContent = fmtTime(state.cur); });
+    q('dur').forEach(el => { el.textContent = fmtTime(state.dur); });
+
+    const vol = els.volume;
+    if (vol) {
+        vol.value = String(muted ? 0 : clampVolume(settings().musicVolume));
+        vol.style.setProperty('--p', `${vol.value}%`);
+    }
+
+    // The note carries what went wrong or what is missing - the escape
+    // hatch link beside a blocked video is the only button in it.
+    const note = one('note');
+    if (note) {
+        if (state.error) {
+            note.hidden = false;
+            note.className = 'mz-music-note is-bad';
+            note.innerHTML = `<span></span>${state.videoId ? `<a href="https://www.youtube.com/watch?v=${state.videoId}" target="_blank" rel="noreferrer noopener">Watch on YouTube</a>` : ''}`;
+            note.firstChild.textContent = state.error;
+        } else if (!musicKey() && state.pending) {
+            note.hidden = false;
+            note.className = 'mz-music-note';
+            note.innerHTML = '<span></span>';
+            note.firstChild.textContent = `\u201c${state.pending}\u201d \u2014 add a YouTube API key in Settings to play named songs.`;
+        } else {
+            note.hidden = true;
+        }
+    }
+
+    // The pill's ticker glides only when the title does not fit in it.
+    requestAnimationFrame(() => {
+        if (!tk?.isConnected) return;
+        const over = tk.scrollWidth - tk.clientWidth;
+        tk.classList.toggle('is-long', over > 2);
+        tk.style.setProperty('--mz-over', `${-(over + 4)}px`);
+    });
 
     // The stage renders whenever a track exists - an embed created inside a
     // `display:none` box fails exactly like a blocked video, so the clip
@@ -914,4 +1174,6 @@ function render() {
     stage.classList.toggle('is-open', state.videoOpen);
     stage.classList.toggle('is-audio', !state.videoOpen);
     positionStage();
+
+    syncSeekTimer();
 }

@@ -66,6 +66,8 @@ const SPRITE = `<svg class="mz-sprite" aria-hidden="true" focusable="false">
 <symbol id="mz-i-undock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 13.5V19a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 19V7.5A1.5 1.5 0 0 1 5 6h5.5"/><path d="M13.5 3.5H20V10"/><path d="M20 3.5l-8 8"/></symbol>
 <symbol id="mz-i-dock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3.5h4.5A1.5 1.5 0 0 1 20 5v4.5"/><path d="M20 14v4.5a1.5 1.5 0 0 1-1.5 1.5H14"/><path d="M3.5 12H15"/><path d="M11 8l4 4-4 4"/></symbol>
 <symbol id="mz-i-video" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5.5" width="17" height="13" rx="2"/><path d="M10 9.5l5 2.5-5 2.5z"/></symbol>
+<symbol id="mz-i-fresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 4.5l1.7 4.6 4.6 1.7-4.6 1.7-1.7 4.6-1.7-4.6-4.6-1.7 4.6-1.7z"/><path d="M18.2 3.5v3.4M16.5 5.2h3.4M18 15.5v3.2M16.4 17.1h3.2"/></symbol>
+<symbol id="mz-i-chevup" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 14.5l6-6 6 6"/></symbol>
 </svg>`;
 
 /** Builds one icon node pointing at the sprite. */
