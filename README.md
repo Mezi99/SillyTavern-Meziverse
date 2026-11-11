@@ -4,7 +4,7 @@ A fullscreen visual-novel scene for SillyTavern — built for one character card
 
 Meziverse is an extension, not a fork. SillyTavern stays the engine and the storage: the same chat, the same character, the same generation. Open the scene from the wand menu or the Extensions panel, step back out whenever you like.
 
- ##What you need
+ ## What you need
  Nothing extra, just SillyTavern! Load you  favorite preset and card, open Meziverse and play!
  
  <img width="1919" height="1079" alt="Screenshot 2026-11-11 at 10-54-44 SillyTavern" src="https://github.com/user-attachments/assets/6654ebea-9eaf-4292-8756-7651226bcd25" />
