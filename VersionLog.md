@@ -1,5 +1,22 @@
 # Meziverse — version log
 
+## 2.9.3 - 2026-11-12
+
+The narration pane hears the model think — and grows ST's own hands.
+
+### The reasoning block
+- When the model shows its thinking, the pane can show it too: an **ST-style expandable above the prose** — the formatted body, "Thought for …" / "Thinking…" / "Reasoning" labels — arriving **collapsed**, click to open. One pane-wide open/closed state is kept across turn steps and streaming redraws.
+- The **head toggle** sits left of the card name (neutral glyph — not theme-coloured) and is **on by default**; with it off the pane reads exactly as before.
+- The read is read-only and ST-true: `extra.reasoning_display_text ?? extra.reasoning`, per swipe from `swipe_info[swipe_id].extra`, with the inline `think` body as a streaming-safe fallback. **The log drawer never shows reasoning.**
+
+### ST's own glyphs
+- The ST-mirror buttons wear **SillyTavern's exact FontAwesome glyphs**, all 11px, the theme's colours through `currentColor`: copy, branch (pane head and log drawer), eye — flipping exclude/include like ST — pencil, the edit bar ✓ / 🗑 / ✕, swipe chevrons, the composer's menu / impersonate / continue, and send · stop (`fa-paper-plane` → `fa-circle-stop`).
+- The **brush moved out of the brand bar** into the narration pane head, right of the card name — ST's `fa-paintbrush`, same wiring and behavior (the background watcher is untouched).
+
+### Notes
+- Composer textarea padding tightened to 5px so it sits with the smaller icons.
+- `manifest.json` matches; the synthetic suite stands at 265 tests.
+
 ## 2.9.2 - 2026-11-12
 
 The background watcher picks its own door.
