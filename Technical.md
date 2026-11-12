@@ -1,6 +1,6 @@
 # Meziverse — how it works
 
-Technical notes for version 2.9.2. Written for whoever picks this up next — including future us.
+Technical notes for version 2.9.3. Written for whoever picks this up next — including future us.
 
 ## The one rule: Ride SillyTavern
 
@@ -43,7 +43,7 @@ src/
   bgchain.js        the background chain: targets, queue, decide, ask, draw, stamp; stage notices, triggers
   mapdata.js        the map's pure core: scene tags → place atlas, journeys, layout (pure)
   map.js            the map on screen: the minimap window, the full map window, the chart renderer
-  icons.js          inline SVG sprite (mz-i-* symbols)
+  icons.js          inline SVG sprite (mz-i-* symbols) + fa()/faHtml() Font Awesome helpers for the ST-mirror glyphs
 test/
   tags.test.js      synthetic tokenizer tests
   scene.test.js     synthetic scene tests
@@ -71,9 +71,10 @@ style.css            @imports the sheets (manifest points here)
 ## The scene
 
 - **Mount once, open/close by class.** `#mz-root` is built at boot and hidden; `open()` adds `is-open` (and `body.mz-open`), `close()` removes them. Exit always returns to ST.
-- **Two headers.** Meziverse header (34 px): "Meziverse" + the version, the background pill and the brush, chat file name, settings + exit. Chat header (48 px): the scene cluster (date, time, place, weather chip) + log button; the cast strip rides just below it, flush on the reading pane (Settings > Images > Avatars switches it off; the pane's height never depends on it).
+- **Two headers.** Meziverse header (34 px): "Meziverse" + the version, the background pill, chat file name, settings + exit. Chat header (48 px): the scene cluster (date, time, place, weather chip) + log button; the cast strip rides just below it, flush on the reading pane (Settings > Images > Avatars switches it off; the pane's height never depends on it).
 - **Reading pane** shows the newest message as prose; a drag handle resizes it (persisted in settings). The **log** is a floating, stretchable window listing earlier turns, with per-turn actions and its own remembered size.
-- **Message actions** replicate ST's message-header menu as flat icon buttons — no dropdowns — on ALL turns: copy, branch, hide-from-prompt (eye), edit, swipe, download-earlier. Edit opens ST's own `.mes_edit` editor (the pane mirrors `#curEditTextarea` one-way) with an edit bar ✓ / 🗑 / ✕; a 400 ms watch owns edit-state exit, and Esc defers to ST while its editor is open.
+- **Message actions** replicate ST's message-header menu as flat icon buttons — no dropdowns — on ALL turns: copy, branch, hide-from-prompt (eye), edit, swipe, download-earlier. Edit opens ST's own `.mes_edit` editor (the pane mirrors `#curEditTextarea` one-way) with an edit bar ✓ / 🗑 / ✕; a 400 ms watch owns edit-state exit, and Esc defers to ST while its editor is open. The **ST-mirror buttons wear ST's own FontAwesome glyph classes**, rendered by `fa()`/`faHtml()` at 11px with the theme's colours through `currentColor` — the eye flips exclude/include (`fa-eye`/`fa-eye-slash`) and send flips to `fa-circle-stop` while generating. The **brush** rides the pane head, right of the card name (ST's `fa-solid fa-paintbrush`), keeping its `bg-generate` action and states unchanged.
+- **Reasoning is pane-only.** A head toggle left of the card name (default on, `settings().showReasoning`) reveals the model's thinking as an ST-style expandable above the prose — collapsed on arrival, one open/closed state per pane kept across turn steps and streaming redraws. The read (`prose.js` `reasoningOf`) takes `extra.reasoning_display_text ?? extra.reasoning`, per swipe from `swipe_info[swipe_id].extra`, falling back to an inline `think` body (`tags.js` `readInlineThink`, streaming-safe). The log renders `compact: true` and never draws one.
 
 ## Scene info (the first feature family)
 

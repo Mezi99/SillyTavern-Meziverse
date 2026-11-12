@@ -10,7 +10,7 @@
  */
 
 import { castImages, castKey, formatMessage, imageSource, say } from './st.js';
-import { splitCues, stripTags } from './tags.js';
+import { readInlineThink, splitCues, stripTags } from './tags.js';
 import { describeScene, describeSpeech, isUsableScene } from './scene.js';
 import { iconHtml } from './icons.js';
 import { avatarsOn, modeOn, speechFxOn } from './settings.js';
@@ -211,6 +211,78 @@ function meanwhileBox(tag, at, total) {
         + (importance
             ? `<p class="mz-mw-why"><b>Why it matters</b><span>${escapeHtml(importance)}</span></p>`
             : '')
+        + '</div></div></div>'
+        + '</div>';
+}
+
+/* ---------- the reasoning block ---------- */
+
+/**
+ * The reasoning written for one message variant, or '' when there is none.
+ * Read exactly where SillyTavern keeps it - `extra.reasoning`, or its display
+ * twin - with the variant's own `swipe_info` slot as the fallback around
+ * swipes, and an in-band `think` body as the last resort for chats
+ * SillyTavern never moved the reasoning out of. Read-only, like everything
+ * here.
+ */
+export function reasoningOf(message) {
+    if (!message || typeof message !== 'object') return '';
+
+    const fromExtra = pickReasoning(message.extra);
+    if (fromExtra) return fromExtra;
+
+    const slot = message.swipe_info?.[Number(message.swipe_id ?? 0)];
+    const fromSlot = pickReasoning(slot?.extra);
+    if (fromSlot) return fromSlot;
+
+    return readInlineThink(message.mes);
+}
+
+function pickReasoning(extra) {
+    const display = typeof extra?.reasoning_display_text === 'string' ? extra.reasoning_display_text.trim() : '';
+    if (display) return display;
+    return typeof extra?.reasoning === 'string' ? extra.reasoning.trim() : '';
+}
+
+/**
+ * The block's head line, as SillyTavern words it: how long the thinking took
+ * once that is known, "Thinking…" while the shown turn is still generating,
+ * and the plain word otherwise.
+ */
+export function thoughtLabel(message, streaming = false) {
+    const duration = Number(message?.extra?.reasoning_duration);
+    if (Number.isFinite(duration) && duration > 0) return `Thought for ${humanSpan(duration)}`;
+    return streaming ? 'Thinking\u2026' : 'Reasoning';
+}
+
+function humanSpan(ms) {
+    const seconds = Math.round(ms / 1000);
+    if (seconds < 60) return `${Math.max(1, seconds)} second${seconds === 1 ? '' : 's'}`;
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'}`;
+    const hours = Math.round(minutes / 60);
+    return `${hours} hour${hours === 1 ? '' : 's'}`;
+}
+
+/**
+ * One reasoning block as the pane draws it: an ST-style expandable above the
+ * turn's prose - the head carries the label and the chevron, the body rides
+ * SillyTavern's own formatter. The open state is passed in: the pane keeps
+ * one, so a redraw never flips a block the reader opened.
+ */
+export function reasoningHtml(message, index, text, { open = false, label = 'Reasoning' } = {}) {
+    const source = typeof text === 'string' ? text : '';
+    const body = tidy(formatMessage({ ...message, mes: source }, index))
+        || escapeHtml(source).replace(/\r\n|\r|\n/g, '<br>');
+
+    return `<div class="mz-reason${open ? ' is-open' : ''}">`
+        + `<button class="mz-reason-head" type="button" aria-expanded="${open ? 'true' : 'false'}">`
+        + '<span class="mz-reason-glyph">' + iconHtml('mz-i-thought') + '</span>'
+        + `<span class="mz-reason-label">${escapeHtml(label)}</span>`
+        + iconHtml('mz-i-chevdown', 'mz-reason-chev')
+        + '</button>'
+        + '<div class="mz-reason-body"><div class="mz-reason-in"><div>'
+        + body
         + '</div></div></div>'
         + '</div>';
 }

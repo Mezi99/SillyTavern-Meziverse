@@ -550,3 +550,88 @@
     .mz-port-tools { opacity: 1; }
     .mz-thought-btn { opacity: 1; }
 }
+
+/* ==========================================================================
+   The reasoning block
+   The model's thinking, above the turn's prose in the reading pane: an
+   ST-style expandable that grows in place. The pane keeps one open/closed
+   state for every turn it draws, and the log drawer never draws one.
+   ========================================================================== */
+
+.mz-reason {
+    --c: var(--mz-text-muted);
+    margin: 0 0 .85em;
+    border: 1px solid color-mix(in srgb, var(--c) 22%, transparent);
+    border-left: 2px solid color-mix(in srgb, var(--c) 55%, transparent);
+    border-radius: var(--mz-r);
+    background: linear-gradient(95deg, color-mix(in srgb, var(--c) 10%, transparent), color-mix(in srgb, var(--c) 2%, transparent) 75%);
+    overflow: hidden;
+    transition: border-color var(--mz-dur-fast), background var(--mz-dur) var(--mz-ease);
+}
+.mz-reason:hover { border-color: color-mix(in srgb, var(--c) 40%, transparent); }
+.mz-reason.is-open { border-color: color-mix(in srgb, var(--c) 36%, transparent); border-left-color: var(--c); }
+
+.mz-reason-head {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    width: 100%;
+    min-height: 34px;
+    padding: 5px 12px 5px 10px;
+    text-align: left;
+    color: var(--mz-text);
+}
+.mz-reason-glyph {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--c) 14%, transparent);
+    color: var(--c);
+}
+.mz-reason-glyph .ico { width: 13px; height: 13px; }
+.mz-reason-label {
+    flex: 1;
+    font: 500 var(--mz-text-2xs) var(--mz-font-ui);
+    letter-spacing: .08em;
+    color: var(--mz-text-dim);
+}
+.mz-reason-chev {
+    flex: none;
+    width: 14px;
+    height: 14px;
+    color: var(--mz-text-dim);
+    transition: transform var(--mz-dur) var(--mz-ease), color var(--mz-dur-fast);
+}
+.mz-reason:hover .mz-reason-chev { color: var(--c); }
+.mz-reason.is-open .mz-reason-chev { transform: rotate(180deg); color: var(--c); }
+
+/* grid-template-rows animates the height without measuring it */
+.mz-reason-body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 360ms var(--mz-ease); }
+.mz-reason.is-open .mz-reason-body { grid-template-rows: 1fr; }
+.mz-reason-in { min-height: 0; overflow: hidden; }
+.mz-reason-in > div {
+    padding: 2px 16px 13px 43px;
+    font: 400 var(--mz-text-sm) / 1.65 var(--mz-font-ui);
+    color: var(--mz-text-muted);
+    opacity: 0;
+    transform: translateY(-4px);
+    transition: opacity 300ms var(--mz-ease), transform 300ms var(--mz-ease);
+}
+.mz-reason.is-open .mz-reason-in > div { opacity: 1; transform: none; transition-delay: 90ms; }
+.mz-reason-in p { margin: 0 0 .7em; }
+.mz-reason-in p:last-child { margin-bottom: 0; }
+/* the reasoning quotes the story in its own quiet voice */
+.mz-reason-in q { color: var(--mz-text); }
+
+/* ---------- small screens ---------- */
+
+@media (max-width: 759px) {
+    .mz-reason-in > div { padding-left: 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .mz-reason-body, .mz-reason-in > div { transition: none; }
+}
