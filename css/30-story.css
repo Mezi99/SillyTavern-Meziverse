@@ -261,6 +261,91 @@
 
 .mz-scene.is-date .mz-scene-place { font-size: calc(13.5px * var(--mz-ui-scale)); }
 
+/* ---- the ribbon's own edit ----
+   The seat takes the plan's small square; while editing it becomes save and
+   cancel, and the place becomes one row per level - the date, the clock, the
+   weather and the cast stay as the tag wrote them. */
+.mz-scene-pencil,
+.mz-scene-save,
+.mz-scene-cancel {
+    width: 28px;
+    height: 28px;
+    border: 1px solid rgba(255, 255, 255, .22);
+    border-radius: 8px;
+    background: var(--mz-scene-scrim);
+    color: var(--mz-scene-ink);
+}
+
+.mz-scene-pencil:hover,
+.mz-scene-pencil:focus-visible,
+.mz-scene-save:hover,
+.mz-scene-save:focus-visible {
+    color: var(--mz-scene-key);
+    border-color: var(--mz-scene-line);
+}
+
+.mz-scene-cancel:hover,
+.mz-scene-cancel:focus-visible {
+    color: var(--mz-scene-ink);
+    border-color: var(--mz-scene-line);
+}
+
+/* date-first seats its pencil at the top, like the plan draws it */
+.mz-scene.is-date .mz-scene-tools { align-self: flex-start; }
+
+.mz-scene.is-quiet .mz-scene-pencil,
+.mz-scene.is-quiet .mz-scene-save,
+.mz-scene.is-quiet .mz-scene-cancel {
+    background: transparent;
+    border-color: rgba(255, 255, 255, .12);
+    color: var(--mz-text-muted);
+}
+
+.mz-loc-edit {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 3px 2px;
+    min-width: 0;
+}
+
+.mz-loc-step {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    min-width: 0;
+}
+
+.mz-loc-lvl {
+    min-width: 90px;
+    max-width: 100%;
+    padding: 4px 7px;
+    border: 1px solid var(--mz-line-strong);
+    border-radius: var(--mz-r-sm);
+    background: var(--mz-surface-2);
+    color: var(--mz-prose-plain);
+    font-family: var(--mz-font-ui);
+    font-size: calc(13.5px * var(--mz-ui-scale));
+}
+
+.mz-loc-lvl:focus {
+    border-color: var(--mz-scene-line);
+    outline: none;
+}
+
+.mz-loc-del,
+.mz-loc-add {
+    width: 22px;
+    height: 22px;
+    color: var(--mz-text-dim);
+}
+
+.mz-loc-del:hover,
+.mz-loc-add:hover {
+    color: var(--mz-text);
+    background: none;
+}
+
 /* the same ribbon, quieter, inside the chat log - the old band kept whole */
 .mz-scene.is-compact {
     position: relative;

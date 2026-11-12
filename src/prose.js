@@ -12,7 +12,7 @@
 import { castImages, castKey, formatMessage, imageSource, say } from './st.js';
 import { readInlineThink, splitCues, stripTags } from './tags.js';
 import { describeScene, describeSpeech, isUsableScene } from './scene.js';
-import { iconHtml } from './icons.js';
+import { faHtml, iconHtml } from './icons.js';
 import { avatarsOn, modeOn, sceneHeaderStyle, speechFxOn } from './settings.js';
 
 const OPENING_BREAKS = /^(?:\s|<br\s*\/?>)+/i;
@@ -103,7 +103,7 @@ export function weatherGlyph(weatherTag, hour = null) {
 }
 
 /** One scene as the header the plan drew - three wardrobes, one set of data. */
-function sceneRow(tag, { compact, persona }) {
+function sceneRow(tag, { compact, persona, at = -1 }) {
     if (!isUsableScene(tag)) return '';
 
     const scene = describeScene(tag, { persona });
@@ -138,8 +138,11 @@ function sceneRow(tag, { compact, persona }) {
         ? `<span class="mz-scene-weather">${icon}${scene.weather ? `<span class="mz-scene-wx">${escapeHtml(scene.weather)}</span>` : ''}</span>`
         : '';
     const cast = scene.present.length ? castNames(scene.present) : '';
-    // The edit seat, right of the header (filled in by the ribbon edit flow).
-    const tools = '<span class="mz-scene-tools"></span>';
+    // The edit seat, right of the header: the ribbon's own pencil. The edit
+    // flow turns the seat into save/cancel and the place into level rows.
+    const tools = '<span class="mz-scene-tools">'
+        + `<button class="mz-ibtn mz-scene-pencil" type="button" title="Edit this scene" aria-label="Edit this scene" data-mz-action="scene-edit" data-mz-scene-at="${Number(at)}">${faHtml('fa-solid fa-pencil')}</button>`
+        + '</span>';
 
     if (style === 'date') {
         // Date-first: the date as headline, one row of time / weather / cast,
@@ -149,7 +152,7 @@ function sceneRow(tag, { compact, persona }) {
         if (weather) row.push(weather);
         if (cast) row.push(`<span class="mz-scene-ppl">${glyph(PEOPLE_GLYPH)}${cast}</span>`);
 
-        return `<aside class="mz-scene is-date" aria-label="Scene">`
+        return `<aside class="mz-scene is-date" data-mz-scene-at="${Number(at)}" aria-label="Scene">`
             + '<div class="mz-scene-head">'
             + '<div class="mz-scene-mid">'
             + (scene.date ? `<div class="mz-scene-date">${escapeHtml(scene.date)}</div>` : '')
@@ -167,7 +170,7 @@ function sceneRow(tag, { compact, persona }) {
     if (scene.date) l1.push(`<span class="mz-scene-date">${escapeHtml(scene.date)}</span>`);
     if (weather) l1.push(weather);
 
-    return `<aside class="mz-scene is-${style}" aria-label="Scene">`
+    return `<aside class="mz-scene is-${style}" data-mz-scene-at="${Number(at)}" aria-label="Scene">`
         + '<div class="mz-scene-head">'
         + (scene.time ? `<b class="mz-scene-time">${escapeHtml(scene.time)}</b>` : '')
         + '<div class="mz-scene-mid">'
@@ -409,6 +412,7 @@ export function toHtml(message, index, { compact = false, persona = '' } = {}) {
     let run = '';
     let slots = [];
     let at = 0;
+    let sceneAt = 0;
 
     // One formatMessage call per run of prose, so a mark or a bubble in the
     // middle of a paragraph does not break the paragraph: its slot rides
@@ -437,8 +441,11 @@ export function toHtml(message, index, { compact = false, persona = '' } = {}) {
         if (cue.type === 'scene') {
             flushRun();
             // The tag vanishes from the prose either way; the row is scene
-            // info and follows the tag in both modes.
-            const row = sceneRow(cue.tag, { compact, persona });
+            // info and follows the tag in both modes. Every scene - even one
+            // too bare to draw - counts its place, so the ribbon knows which
+            // tag its edit pencil belongs to.
+            const row = sceneRow(cue.tag, { compact, persona, at: sceneAt });
+            sceneAt += 1;
             if (row) parts.push(row);
             continue;
         }
