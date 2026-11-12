@@ -22,6 +22,16 @@
     --mz-prose-em: var(--mz-text-muted);
     --mz-prose-strong: var(--mz-text);
     --mz-prose-log-plain: var(--mz-text-muted);
+
+    /* The scene header's inks (the plan's --scene-* family, mz- prefixed like
+       everything here). The scrim is one neutral dark for every theme; each
+       theme tints the four below - key: the location's leaf; ink: primary
+       scene text; soft: secondary; line: rules and borders. */
+    --mz-scene-key: #f2c46d;
+    --mz-scene-ink: #f6eddc;
+    --mz-scene-soft: #e2d6bb;
+    --mz-scene-line: rgba(242, 196, 109, .45);
+    --mz-scene-scrim: rgba(8, 6, 5, .58);
 }
 
 /* ---------- ink · jade (default) ---------- */
@@ -41,6 +51,10 @@
     --mz-accent-line: rgba(119, 194, 170, .24);
     --mz-accent-wash: rgba(119, 194, 170, .07);
     --mz-accent-ink: #08110e;
+    --mz-scene-key: #a3e2cd;
+    --mz-scene-ink: #eaf7f2;
+    --mz-scene-soft: #cfe7de;
+    --mz-scene-line: rgba(163, 226, 205, .45);
     --mz-tone-desire: #c09a86;
     --mz-tone-desire-low: #b794f4;
     --mz-ok: #86c295;
@@ -77,6 +91,10 @@
     --mz-accent-line: rgba(207, 170, 114, .26);
     --mz-accent-wash: rgba(207, 170, 114, .07);
     --mz-accent-ink: #17110a;
+    --mz-scene-key: #f2c46d;
+    --mz-scene-ink: #f6eddc;
+    --mz-scene-soft: #e2d6bb;
+    --mz-scene-line: rgba(242, 196, 109, .45);
     --mz-tone-desire: #c09a86;
     --mz-tone-desire-low: #b794f4;
     --mz-ok: #9dbe8f;
@@ -110,6 +128,10 @@
     --mz-accent-line: rgba(200, 146, 156, .26);
     --mz-accent-wash: rgba(200, 146, 156, .07);
     --mz-accent-ink: #150b0e;
+    --mz-scene-key: #f5b3c1;
+    --mz-scene-ink: #faeef1;
+    --mz-scene-soft: #eed6dc;
+    --mz-scene-line: rgba(245, 179, 193, .45);
     --mz-tone-desire: #c49a8e;
     --mz-tone-desire-low: #b794f4;
     --mz-ok: #93bb9a;

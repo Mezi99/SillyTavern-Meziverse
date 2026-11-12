@@ -13,7 +13,7 @@ import { castImages, castKey, formatMessage, imageSource, say } from './st.js';
 import { readInlineThink, splitCues, stripTags } from './tags.js';
 import { describeScene, describeSpeech, isUsableScene } from './scene.js';
 import { iconHtml } from './icons.js';
-import { avatarsOn, modeOn, speechFxOn } from './settings.js';
+import { avatarsOn, modeOn, sceneHeaderStyle, speechFxOn } from './settings.js';
 
 const OPENING_BREAKS = /^(?:\s|<br\s*\/?>)+/i;
 const CLOSING_BREAKS = /(?:\s|<br\s*\/?>)+$/i;
@@ -46,36 +46,138 @@ export function placeHtml(placeFull) {
     const raw = typeof placeFull === 'string' ? placeFull : '';
     if (!raw) return '';
 
-    return raw.split('|')
+    const levels = raw.split('|')
         .map(level => level.trim())
-        .filter(Boolean)
-        .map(escapeHtml)
+        .filter(Boolean);
+
+    // Levels read as a path: parents quiet, the leaf the header's accent.
+    // Unstyled spans elsewhere (chat bar, log) read as plain text.
+    return levels
+        .map((level, at) => at === levels.length - 1
+            ? `<span class="mz-scene-leaf">${escapeHtml(level)}</span>`
+            : `<span class="mz-scene-lvl">${escapeHtml(level)}</span>`)
         .join('<span class="mz-scene-sep" aria-hidden="true">\u203a</span>');
 }
 
-/** One scene as a quiet band of its own, at the point it appeared. */
+/** The cast as the scene header reads it. */
+function castNames(present) {
+    return present.map(name => escapeHtml(name)).join(', ');
+}
+
+/* ---------- the scene header's stroke glyphs ---------- */
+
+/* 24x24 stroke icons on a currentColor line, the plan's mockup set. The
+   glyph follows the tag's `weatherTag` state - never the free-text weather,
+   which prints beside it - and the date-first row's time/people glyphs are
+   drawn from the same hand. */
+
+const WEATHER_GLYPHS = {
+    sunny: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+    clear: '<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5Z"/><path d="M17 3v4M15 5h4"/>',
+    rain: '<path d="M7 15a4 4 0 0 1-.5-7.97A5.5 5.5 0 0 1 17 8a3.5 3.5 0 0 1 0 7"/><path d="M8 18l-1 3M12 18l-1 3M16 18l-1 3"/>',
+    storm: '<path d="M7 14a4 4 0 0 1-.5-7.97A5.5 5.5 0 0 1 17 7a3.5 3.5 0 0 1 0 7"/><path d="M12 12l-2 4h3l-2 4"/>',
+    snow: '<path d="M12 3v18M4.2 7.5l15.6 9M19.8 7.5l-15.6 9"/><path d="M9.7 4.6L12 6.8l2.3-2.2M9.7 19.4L12 17.2l2.3 2.2"/>',
+    fog: '<path d="M5 7h14M3 11h18M6 15h13M9 19h8"/>',
+    overcast: '<path d="M8 19a4 4 0 0 1-.4-7.98A5.5 5.5 0 0 1 18 12a3.5 3.5 0 0 1 0 7Z"/><path d="M9.3 8.4A4 4 0 0 1 16.6 7.2"/>',
+    wind: '<path d="M3 8h10a3 3 0 1 0-3-3"/><path d="M3 12h15a3 3 0 1 1-3 3"/><path d="M3 16h7"/>',
+};
+
+const CLOCK_GLYPH = '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>';
+const PEOPLE_GLYPH = '<circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2.4"/><path d="M16 14.2a5 5 0 0 1 5 5.8"/>';
+
+function glyph(path) {
+    return `<svg class="mz-wi" viewBox="0 0 24 24" aria-hidden="true">${path}</svg>`;
+}
+
+/**
+ * The icon a scene's weatherTag earns. "Clear" reads as the crescent at
+ * night and the sun by day (the plain sun stays "sunny"); an unknown or
+ * missing state draws nothing - the free text is never read for a glyph.
+ */
+export function weatherGlyph(weatherTag, hour = null) {
+    const key = String(weatherTag || '').trim().toLowerCase();
+    if (!WEATHER_GLYPHS[key]) return '';
+    const night = hour !== null && (hour >= 19 || hour < 6);
+    if (key === 'clear' && !night) return glyph(WEATHER_GLYPHS.sunny);
+    return glyph(WEATHER_GLYPHS[key]);
+}
+
+/** One scene as the header the plan drew - three wardrobes, one set of data. */
 function sceneRow(tag, { compact, persona }) {
     if (!isUsableScene(tag)) return '';
 
     const scene = describeScene(tag, { persona });
-    const when = [];
 
-    if (scene.date) when.push(`<span class="mz-scene-date">${escapeHtml(scene.date)}</span>`);
-    if (scene.time) when.push(`<b class="mz-scene-time">${escapeHtml(scene.time)}</b>`);
+    // The log drawer keeps its own quiet band, whatever the pane wears.
+    if (compact) {
+        const when = [];
 
+        if (scene.date) when.push(`<span class="mz-scene-date">${escapeHtml(scene.date)}</span>`);
+        if (scene.time) when.push(`<b class="mz-scene-time">${escapeHtml(scene.time)}</b>`);
+
+        const place = placeHtml(scene.placeFull);
+        const present = castNames(scene.present);
+
+        return `<aside class="mz-scene is-compact" aria-label="Scene">`
+            + '<span class="mz-scene-orn" aria-hidden="true"></span>'
+            + '<div class="mz-scene-main">'
+            + (when.length
+                ? `<span class="mz-scene-when">${when.join('<span class="mz-scene-dot" aria-hidden="true">\u00b7</span>')}</span>`
+                : '')
+            + (scene.weather ? `<span class="mz-scene-weather">${escapeHtml(scene.weather)}</span>` : '')
+            + (place ? `<span class="mz-scene-place">${place}</span>` : '')
+            + '</div>'
+            + (present ? `<span class="mz-scene-cast">${present}</span>` : '')
+            + '</aside>';
+    }
+
+    const style = sceneHeaderStyle();
     const place = placeHtml(scene.placeFull);
-    const present = scene.present.map(name => escapeHtml(name)).join(', ');
+    const icon = weatherGlyph(scene.weatherTag, scene.hour);
+    const weather = scene.weather || icon
+        ? `<span class="mz-scene-weather">${icon}${scene.weather ? `<span class="mz-scene-wx">${escapeHtml(scene.weather)}</span>` : ''}</span>`
+        : '';
+    const cast = scene.present.length ? castNames(scene.present) : '';
+    // The edit seat, right of the header (filled in by the ribbon edit flow).
+    const tools = '<span class="mz-scene-tools"></span>';
 
-    return `<aside class="mz-scene${compact ? ' is-compact' : ''}" aria-label="Scene">`
-        + '<span class="mz-scene-orn" aria-hidden="true"></span>'
-        + '<div class="mz-scene-main">'
-        + (when.length
-            ? `<span class="mz-scene-when">${when.join('<span class="mz-scene-dot" aria-hidden="true">\u00b7</span>')}</span>`
-            : '')
-        + (scene.weather ? `<span class="mz-scene-weather">${escapeHtml(scene.weather)}</span>` : '')
-        + (place ? `<span class="mz-scene-place">${place}</span>` : '')
+    if (style === 'date') {
+        // Date-first: the date as headline, one row of time / weather / cast,
+        // the location last.
+        const row = [];
+        if (scene.time) row.push(`<span class="mz-scene-t">${glyph(CLOCK_GLYPH)}${escapeHtml(scene.time)}</span>`);
+        if (weather) row.push(weather);
+        if (cast) row.push(`<span class="mz-scene-ppl">${glyph(PEOPLE_GLYPH)}${cast}</span>`);
+
+        return `<aside class="mz-scene is-date" aria-label="Scene">`
+            + '<div class="mz-scene-head">'
+            + '<div class="mz-scene-mid">'
+            + (scene.date ? `<div class="mz-scene-date">${escapeHtml(scene.date)}</div>` : '')
+            + (row.length ? `<div class="mz-scene-row">${row.join('')}</div>` : '')
+            + (place ? `<div class="mz-scene-place">${place}</div>` : '')
+            + '</div>'
+            + tools
+            + '</div>'
+            + '</aside>';
+    }
+
+    // Chapter rule (default) and Quiet share the two-line skeleton: the clock
+    // against the date/weather line over the breadcrumb, the cast below.
+    const l1 = [];
+    if (scene.date) l1.push(`<span class="mz-scene-date">${escapeHtml(scene.date)}</span>`);
+    if (weather) l1.push(weather);
+
+    return `<aside class="mz-scene is-${style}" aria-label="Scene">`
+        + '<div class="mz-scene-head">'
+        + (scene.time ? `<b class="mz-scene-time">${escapeHtml(scene.time)}</b>` : '')
+        + '<div class="mz-scene-mid">'
+        + (l1.length ? `<div class="mz-scene-l1">${l1.join('<span class="mz-scene-dot" aria-hidden="true">\u00b7</span>')}</div>` : '')
+        + (place ? `<div class="mz-scene-place">${place}</div>` : '')
         + '</div>'
-        + (present ? `<span class="mz-scene-cast">${present}</span>` : '')
+        + (style === 'quiet' ? '<span class="mz-scene-fill" aria-hidden="true"></span>' : '')
+        + tools
+        + '</div>'
+        + (cast ? `<div class="mz-scene-cast">With ${cast}</div>` : '')
         + '</aside>';
 }
 

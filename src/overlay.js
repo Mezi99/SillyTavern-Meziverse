@@ -7,7 +7,7 @@
  */
 
 import { chatMessages, currentChatId, errorText, imageGenerationStatus, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer, stDefaultBackground } from './st.js';
-import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, bgImagesOn, weatherFxOn, indoorFxOn, speechFxOn, musicOn, musicAutoOn, musicDjOn, musicKey, musicPickMode, mapOn, mapMiniOn, DEV_EXTRAS } from './settings.js';
+import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, bgImagesOn, weatherFxOn, indoorFxOn, sceneHeaderStyle, speechFxOn, musicOn, musicAutoOn, musicDjOn, musicKey, musicPickMode, mapOn, mapMiniOn, DEV_EXTRAS } from './settings.js';
 import { DEFAULT_DJ_PROMPT, getLastDjRequest } from './musicdj.js';
 import {
     forceBackground,
@@ -368,6 +368,17 @@ const FRAME_HTML = `
         </div>
 
         <div class="mz-set-group mz-set-group--fold" data-mz-pane="image">
+            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="sceneheader">Scene header ${svg('chevdown')}</button></h3>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Header style</b><small>How each scene tag reads in the reading pane: a chapter rule, the quiet old look, or the date first. The same fields, three wardrobes; the log keeps its own compact band.</small></span>
+                <div class="mz-seg" role="group" aria-label="Scene header style">
+                    <button type="button" data-mz-pick-scenehead="rule">Chapter rule</button>
+                    <button type="button" data-mz-pick-scenehead="quiet">Quiet</button>
+                    <button type="button" data-mz-pick-scenehead="date">Date-first</button>
+                </div>
+            </div>
+        </div>
+        <div class="mz-set-group mz-set-group--fold" data-mz-pane="image">
             <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="speech">Speech ${svg('chevdown')}</button></h3>
             <div class="mz-set-row">
                 <span class="mz-set-label"><b>Speech bubbles</b><small>Spoken lines wear a bubble in the reading pane - the speaker's name and picture when the cast holds one, the words, and the tone said in, quietly after. Off leaves the prose plain.</small></span>
@@ -718,6 +729,7 @@ export function mount() {
     applyWeatherFx();
     applyIndoorFx();
     applySpeechFx();
+    applySceneHeader();
     applyMusic();
     applyMap();
     applyEntries();
@@ -1165,6 +1177,16 @@ function requestText(request) {
  * settings, and hands the player its own re-read. Off: the widget hides and
  * whatever was playing stops.
  */
+/** Marks the scene header style segment's pressed button. */
+function applySceneHeader() {
+    const style = sceneHeaderStyle();
+
+    root.querySelectorAll('[data-mz-pick-scenehead]').forEach(button => {
+        const isOn = button.dataset.mzPickScenehead === style;
+        button.setAttribute('aria-pressed', String(isOn));
+    });
+}
+
 function applyMusic() {
     for (const button of root.querySelectorAll('[data-mz-action="music"]')) {
         button.classList.toggle('is-on', musicOn());
@@ -2205,6 +2227,15 @@ function wireActions() {
             settings().musicPick = musicPick.dataset.mzPickMusicpick;
             applyMusic();
             saveSettings();
+            return;
+        }
+
+        const sceneHead = event.target.closest('[data-mz-pick-scenehead]');
+        if (sceneHead) {
+            settings().sceneHeaderStyle = sceneHead.dataset.mzPickScenehead;
+            saveSettings();
+            applySceneHeader();
+            transcript?.refresh();
             return;
         }
 
