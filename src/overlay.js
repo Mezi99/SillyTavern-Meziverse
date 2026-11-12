@@ -7,7 +7,7 @@
  */
 
 import { chatMessages, currentChatId, errorText, imageGenerationStatus, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer, stDefaultBackground } from './st.js';
-import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, bgImagesOn, weatherFxOn, indoorFxOn, speechFxOn, musicOn, musicAutoOn, musicDjOn, musicKey, musicPickMode, mapOn, mapMiniOn, DEV_EXTRAS } from './settings.js';
+import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, bgImagesOn, weatherFxOn, indoorFxOn, sceneHeaderStyle, speechFxOn, musicOn, musicAutoOn, musicDjOn, musicKey, musicPickMode, mapOn, mapMiniOn, DEV_EXTRAS } from './settings.js';
 import { DEFAULT_DJ_PROMPT, getLastDjRequest } from './musicdj.js';
 import {
     forceBackground,
@@ -33,7 +33,7 @@ import { mountMap, mapUiClosed, mapUiOpened, refreshMap, isMapWinOpen, openMapWi
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr, notify } from './notify.js';
 
-const VERSION = '2.9.3';
+const VERSION = '2.9.4';
 const PANE_DEFAULT = 300;
 const LOG_W_DEFAULT = 720;
 const LOG_H_SHARE = 0.7;
@@ -281,6 +281,19 @@ const FRAME_HTML = `
                     <label class="mz-color"><input type="color" data-mz-color="q" aria-label="Speech color"><span>Speech</span></label>
                     <label class="mz-color"><input type="color" data-mz-color="em" aria-label="Emphasis color"><span>Emphasis</span></label>
                     <label class="mz-color"><input type="color" data-mz-color="strong" aria-label="Strong color"><span>Strong</span></label>
+                </div>
+            </div>
+        </div>
+
+        <div class="mz-set-group mz-set-group--fold" data-mz-pane="general">
+            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="sceneheader">Scene header ${svg('chevdown')}</button></h3>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Header style</b><small>How each scene tag reads in the reading pane: quiet, a chapter rule, the date first, or the simple band of old. The same fields, four wardrobes; the log keeps its own compact band.</small></span>
+                <div class="mz-seg" role="group" aria-label="Scene header style">
+                    <button type="button" data-mz-pick-scenehead="quiet">Quiet</button>
+                    <button type="button" data-mz-pick-scenehead="rule">Chapter rule</button>
+                    <button type="button" data-mz-pick-scenehead="date">Date-first</button>
+                    <button type="button" data-mz-pick-scenehead="simple">Simple</button>
                 </div>
             </div>
         </div>
@@ -718,6 +731,7 @@ export function mount() {
     applyWeatherFx();
     applyIndoorFx();
     applySpeechFx();
+    applySceneHeader();
     applyMusic();
     applyMap();
     applyEntries();
@@ -1165,6 +1179,17 @@ function requestText(request) {
  * settings, and hands the player its own re-read. Off: the widget hides and
  * whatever was playing stops.
  */
+/** Marks the scene header style segment's pressed button. */
+function applySceneHeader() {
+    const style = sceneHeaderStyle();
+
+    root.querySelectorAll('[data-mz-pick-scenehead]').forEach(button => {
+        const isOn = button.dataset.mzPickScenehead === style;
+        button.classList.toggle('is-on', isOn);
+        button.setAttribute('aria-pressed', String(isOn));
+    });
+}
+
 function applyMusic() {
     for (const button of root.querySelectorAll('[data-mz-action="music"]')) {
         button.classList.toggle('is-on', musicOn());
@@ -2205,6 +2230,15 @@ function wireActions() {
             settings().musicPick = musicPick.dataset.mzPickMusicpick;
             applyMusic();
             saveSettings();
+            return;
+        }
+
+        const sceneHead = event.target.closest('[data-mz-pick-scenehead]');
+        if (sceneHead) {
+            settings().sceneHeaderStyle = sceneHead.dataset.mzPickScenehead;
+            saveSettings();
+            applySceneHeader();
+            transcript?.refresh();
             return;
         }
 

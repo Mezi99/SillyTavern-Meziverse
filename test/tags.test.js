@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseMessage, parseTags, readInlineThink, scenesOf, speechesOf, splitCues, stripNonSceneTags, stripTags } from '../src/tags.js';
+import { editSceneAttrs, parseMessage, parseTags, readInlineThink, sceneTagAt, scenesOf, speechesOf, splitCues, stripNonSceneTags, stripTags } from '../src/tags.js';
 
 const scene = attrs => `<scene ${attrs} />`;
 
@@ -296,4 +296,46 @@ test('readInlineThink is streaming-safe', () => {
     assert.equal(readInlineThink(HALF_OPEN), '', 'a half-written open tag yields nothing yet');
     assert.equal(readInlineThink(HALF_NAME), '', 'not even a name');
     assert.equal(readInlineThink('<think/>'), '', 'a self-closing tag has no body');
+});
+
+test("editSceneAttrs writes one scene's location alone", () => {
+    const mes = 'intro <scene location="Old Town | Pier 9" date="Day 1" /> mid <scene location="Docks" /> end';
+    const next = editSceneAttrs(mes, 1, { location: 'Castle | Keep' });
+
+    assert.equal(next, 'intro <scene location="Old Town | Pier 9" date="Day 1" /> mid <scene location="Castle | Keep" /> end',
+        'the other scene, and every word, stay exactly as written');
+});
+
+test('a scene edit leaves trackers and speech byte for byte', () => {
+    const mes = '<LEDGER gold="12" />\n<scene location="Docks" />\n<speech character="Mara">"Anchor\'s out"</speech>';
+    const next = editSceneAttrs(mes, 0, { location: 'Pier | East' });
+
+    assert.equal(next, '<LEDGER gold="12" />\n<scene location="Pier | East" />\n<speech character="Mara">"Anchor\'s out"</speech>');
+});
+
+test('a missing attribute is written before the tag closes', () => {
+    assert.equal(editSceneAttrs('<scene date="Day 1" />', 0, { location: 'Docks' }), '<scene date="Day 1" location="Docks" />');
+    assert.equal(editSceneAttrs('<scene>', 0, { location: 'Docks' }), '<scene location="Docks">');
+    assert.equal(editSceneAttrs('<scene date="Day 1">', 0, { location: 'Docks' }), '<scene date="Day 1" location="Docks">');
+});
+
+test('escaped values round-trip through an edit', () => {
+    const next = editSceneAttrs('<scene location="Plain" />', 0, { location: 'The "Eagle" & Owl' });
+
+    assert.equal(next, '<scene location="The &quot;Eagle&quot; &amp; Owl" />');
+    assert.equal(parseTags(next)[0].attrs.location, 'The "Eagle" & Owl', 'the reader decodes what the edit encodes');
+});
+
+test('a scene edit off the end changes nothing', () => {
+    const mes = '<scene location="Docks" />';
+    assert.equal(editSceneAttrs(mes, 3, { location: 'Nowhere' }), mes);
+    assert.equal(editSceneAttrs('no tags at all', 0, { location: 'Nowhere' }), 'no tags at all');
+});
+
+test('sceneTagAt counts scenes like the ribbons do', () => {
+    const mes = 'a <scene date="1" /> b <scene date="2"> c';
+
+    assert.equal(sceneTagAt(mes, 1)?.attrs.date, '2');
+    assert.equal(sceneTagAt(mes, 2), null);
+    assert.equal(sceneTagAt('no tags', 0), null);
 });

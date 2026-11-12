@@ -9,6 +9,7 @@
  */
 
 import { acceptEdit, branchChat, cancelEdit, chatMessages, copyMessage, ctx, currentChatId, deleteEditedMessage, editMessage, editorTextarea, on, personaName, setPromptHidden, swipeMessage, swipeSupported, swipingAllowed } from './st.js';
+import { editSceneAttrs, sceneTagAt } from './tags.js';
 import { reasoningHtml, reasoningOf, renderInto, thoughtLabel, toHtml } from './prose.js';
 import { closePopover } from './cues.js';
 import { resolveScene } from './scene.js';
@@ -78,6 +79,13 @@ export function createTranscript({
     let reasoningOpen = false;
     // the message index SillyTavern's editor is open on, or null
     let editingIndex = null;
+    // The scene ribbon's own edit: which turn and which scene tag, and the
+    // location levels being typed. It rides redraws (the ribbon is rebuilt
+    // and the editor re-attaches) until it is saved or discarded.
+    let sceneEdit = null;
+    // While a scene save drives SillyTavern's editor, the edit watch must
+    // not adopt it as a message edit of its own.
+    let sceneSaving = false;
     // guard so our own textarea sync is not echoed back to SillyTavern's
     let syncing = false;
 
@@ -200,6 +208,9 @@ export function createTranscript({
         if (!entry || frame.classList.contains('is-generating')) return false;
         if (editingIndex !== null) return false;
 
+        // ST's editor is one editor: the ribbon's own edit stands down first
+        if (sceneEdit) cancelSceneEdit();
+
         const opened = await editMessage(entry.index);
         if (!opened) return false;
 
@@ -256,6 +267,236 @@ export function createTranscript({
         return editingIndex !== null;
     }
 
+    /* ---------- the scene ribbon's own edit ---------- */
+
+    /** The ribbon's location, as the edit rows read it: one row per level. */
+    function sceneLevels(mes, at) {
+        const raw = String(sceneTagAt(mes, at)?.attrs?.location ?? '');
+        const levels = raw.split('|').map(level => level.trim()).filter(Boolean);
+        return levels.length ? levels : [''];
+    }
+
+    /** Whether the draft can be saved: the chain keeps at least one level. */
+    function sceneSavable() {
+        return !!sceneEdit && sceneEdit.levels.some(level => level.trim());
+    }
+
+    /** Greys the save seat out while the chain would save nothing. */
+    function syncSceneSave() {
+        const save = prose.querySelector('[data-mz-action="scene-save"]');
+        if (save) save.disabled = !sceneSavable();
+    }
+
+    /** Builds one edit row: the level's input and its remove seat. */
+    function sceneRowEditor() {
+        const rows = document.createElement('div');
+        rows.className = 'mz-loc-edit';
+
+        sceneEdit.levels.forEach((value, at) => {
+            const step = document.createElement('span');
+            step.className = 'mz-loc-step';
+
+            const field = document.createElement('input');
+            field.className = 'mz-loc-lvl';
+            field.type = 'text';
+            field.value = value;
+            field.dataset.mzLoc = String(at);
+            field.spellcheck = false;
+            field.setAttribute('aria-label', `Location level ${at + 1}`);
+
+            const del = document.createElement('button');
+            del.type = 'button';
+            del.className = 'mz-ibtn mz-loc-del';
+            del.dataset.mzAction = 'scene-lvl-del';
+            del.dataset.mzSceneLvl = String(at);
+            del.title = 'Remove this level';
+            del.setAttribute('aria-label', 'Remove this level');
+            del.append(fa('fa-solid fa-xmark'));
+
+            step.append(field, del);
+            rows.append(step);
+
+            if (at < sceneEdit.levels.length - 1) {
+                const sep = document.createElement('span');
+                sep.className = 'mz-scene-sep';
+                sep.textContent = '\u203a';
+                sep.setAttribute('aria-hidden', 'true');
+                rows.append(sep);
+            }
+        });
+
+        const add = document.createElement('button');
+        add.type = 'button';
+        add.className = 'mz-ibtn mz-loc-add';
+        add.dataset.mzAction = 'scene-lvl-add';
+        add.title = 'Add a location level';
+        add.setAttribute('aria-label', 'Add a location level');
+        add.append(fa('fa-solid fa-plus'));
+        rows.append(add);
+
+        return rows;
+    }
+
+    /** Re-renders the level rows in place, keeping the draft as written. */
+    function redrawSceneRows(focusAt = null) {
+        const rows = prose.querySelector('.mz-loc-edit');
+        if (!rows) return;
+
+        rows.replaceWith(sceneRowEditor());
+        syncSceneSave();
+
+        const aim = focusAt === null ? null : prose.querySelector(`[data-mz-loc="${Number(focusAt)}"]`);
+        (aim ?? prose.querySelector('[data-mz-loc="0"]'))?.focus({ preventScroll: true });
+    }
+
+    /**
+     * Brings the ribbon to its own edit state, or back out of it. The place
+     * becomes level rows and the pencil stands down for save / cancel - the
+     * date, time, weather and cast stay, read-only, as the tag wrote them.
+     */
+    function drawSceneEdit() {
+        if (!prose) return;
+
+        const aside = sceneEdit
+            ? prose.querySelector(`aside[data-mz-scene-at="${Number(sceneEdit.at)}"]`)
+            : null;
+
+        // A redraw can lose the ribbon (another turn, a swipe, a delete):
+        // the edit ends with it, and a dropped draft follows nothing home.
+        if (sceneEdit && (!aside || editingIndex !== null)) {
+            sceneEdit = null;
+            return;
+        }
+
+        prose.classList.toggle('is-scene-edit', !!sceneEdit);
+        if (!aside || aside.querySelector('.mz-loc-edit')) return;
+
+        const place = aside.querySelector('.mz-scene-place');
+        if (place) {
+            place.hidden = true;
+            // The simple band runs its fields in one flex row: the rows take
+            // a line of their own beneath it. The other wardrobes - column
+            // already - place them right where the place stood.
+            const host = aside.querySelector('.mz-scene-main') || place;
+            host.insertAdjacentElement('afterend', sceneRowEditor());
+        }
+
+        // the pencils stand down for save and cancel
+        for (const pencil of aside.querySelectorAll('.mz-scene-pencil')) pencil.hidden = true;
+
+        const tools = aside.querySelector('.mz-scene-tools');
+        const save = document.createElement('button');
+        save.type = 'button';
+        save.className = 'mz-ibtn mz-scene-save';
+        save.dataset.mzAction = 'scene-save';
+        save.title = 'Save this scene';
+        save.setAttribute('aria-label', 'Save this scene');
+        save.append(fa('fa-solid fa-check'));
+
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.className = 'mz-ibtn mz-scene-cancel';
+        cancel.dataset.mzAction = 'scene-cancel';
+        cancel.title = 'Discard changes';
+        cancel.setAttribute('aria-label', 'Discard changes');
+        cancel.append(fa('fa-solid fa-xmark'));
+
+        tools?.append(save, cancel);
+        syncSceneSave();
+        prose.querySelector(`[data-mz-loc="${Number(sceneEdit.aim ?? 0)}"]`)?.focus({ preventScroll: true });
+    }
+
+    /** Opens the location rows on one ribbon of the shown turn. */
+    function startSceneEdit(at) {
+        const entry = currentEntry();
+        if (!entry || sceneEdit || editingIndex !== null) return false;
+        if (frame.classList.contains('is-generating')) return false;
+        if (!Number.isInteger(at) || at < 0) return false;
+
+        sceneEdit = { index: entry.index, at, levels: sceneLevels(entry.message.mes, at), aim: 0 };
+        drawSceneEdit();
+        return true;
+    }
+
+    /** Leaves the ribbon's edit without touching anything. */
+    function cancelSceneEdit() {
+        if (!sceneEdit) return false;
+        sceneEdit = null;
+        drawPane();
+        return true;
+    }
+
+    /**
+     * Saves the draft: only the scene tag's `location` attribute is rewritten
+     * in the raw message - the prose, the trackers and every other tag stay
+     * byte for byte - and the write goes through SillyTavern's own editor, so
+     * it does the save, the re-render and the events (the map and the
+     * background chain re-derive from `MESSAGE_EDITED` by themselves).
+     */
+    async function saveSceneEdit() {
+        const draft = sceneEdit;
+        if (!draft) return false;
+
+        const levels = draft.levels.map(level => level.trim()).filter(Boolean);
+        if (!levels.length) return false;
+
+        const message = chatMessages()[draft.index];
+        const before = typeof message?.mes === 'string' ? message.mes : '';
+        const next = editSceneAttrs(before, draft.at, { location: levels.join(' | ') });
+
+        sceneEdit = null;
+        if (next === before) {
+            drawPane();
+            return true;
+        }
+
+        sceneSaving = true;
+        try {
+            const opened = await editMessage(draft.index);
+            const st = opened ? editorTextarea(draft.index) : null;
+            if (!st) {
+                drawPane();
+                return false;
+            }
+
+            st.value = next;
+            await acceptEdit();
+        } finally {
+            sceneSaving = false;
+        }
+
+        return true;
+    }
+
+    /** The ribbon edit's buttons, by their action name. */
+    function sceneAction(name, button) {
+        if (name === 'scene-edit') {
+            if (!sceneEdit) startSceneEdit(Number(button.dataset.mzSceneAt));
+            return;
+        }
+        if (!sceneEdit) return;
+
+        if (name === 'scene-save') {
+            saveSceneEdit();
+            return;
+        }
+        if (name === 'scene-cancel') {
+            cancelSceneEdit();
+            return;
+        }
+        if (name === 'scene-lvl-add') {
+            sceneEdit.levels.push('');
+            redrawSceneRows(sceneEdit.levels.length - 1);
+            return;
+        }
+        if (name === 'scene-lvl-del') {
+            const at = Number(button.dataset.mzSceneLvl);
+            if (Number.isInteger(at)) sceneEdit.levels.splice(at, 1);
+            if (!sceneEdit.levels.length) sceneEdit.levels = [''];
+            redrawSceneRows();
+        }
+    }
+
     /**
      * Watches for SillyTavern's editor to appear on another message (ST
      * allows one editor; opening it elsewhere auto-accepts ours), to close
@@ -263,6 +504,8 @@ export function createTranscript({
      */
     function watchEdit() {
         if (editingIndex === null) {
+            // a scene save driving ST's editor is no message edit of its own
+            if (sceneSaving) return;
             const st = editorTextarea();
             if (st) {
                 // ST opened an editor on its own (or auto-accepted ours and
@@ -371,6 +614,11 @@ export function createTranscript({
         if (editingIndex !== null && entry && entry.index === editingIndex && edit) {
             edit.value = edit.value || entry.message.mes || '';
         }
+
+        // the ribbon's own edit rides redraws on its own turn and dies with
+        // any other turn, without ever moving a draft somewhere new
+        if (sceneEdit && (!entry || entry.index !== sceneEdit.index)) sceneEdit = null;
+        drawSceneEdit();
 
         prose.scrollTop = stick ? prose.scrollHeight : 0;
         updateControls();
@@ -635,6 +883,14 @@ export function createTranscript({
     // state, so stepping between turns - and every redraw mid-stream -
     // follows whatever the reader last chose.
     prose.addEventListener('click', event => {
+        // the ribbon's own edit buttons come first: they never open a
+        // reasoning block under them
+        const seat = event.target.closest('[data-mz-action^="scene-"]');
+        if (seat) {
+            sceneAction(seat.dataset.mzAction, seat);
+            return;
+        }
+
         const head = event.target.closest('.mz-reason-head');
         if (!head) return;
 
@@ -642,6 +898,39 @@ export function createTranscript({
         for (const block of prose.querySelectorAll('.mz-reason')) {
             block.classList.toggle('is-open', reasoningOpen);
             block.querySelector('.mz-reason-head')?.setAttribute('aria-expanded', String(reasoningOpen));
+        }
+    });
+
+    // the draft is kept as it is typed - a redraw rebuilds the rows from it
+    prose.addEventListener('input', event => {
+        const field = event.target.closest('[data-mz-loc]');
+        if (!field || !sceneEdit) return;
+
+        sceneEdit.levels[Number(field.dataset.mzLoc)] = field.value;
+        sceneEdit.aim = Number(field.dataset.mzLoc);
+        syncSceneSave();
+    });
+
+    prose.addEventListener('keydown', event => {
+        if (!sceneEdit) return;
+
+        if (event.key === 'Escape') {
+            // Esc belongs to this edit: the scene's own chain waits behind it
+            event.preventDefault();
+            event.stopPropagation();
+            cancelSceneEdit();
+            return;
+        }
+
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            const field = event.target.closest('[data-mz-loc]');
+            const at = field ? Number(field.dataset.mzLoc) : -1;
+            if (at >= 0 && at < sceneEdit.levels.length - 1) {
+                prose.querySelector(`[data-mz-loc="${at + 1}"]`)?.focus({ preventScroll: true });
+            } else {
+                saveSceneEdit();
+            }
         }
     });
 

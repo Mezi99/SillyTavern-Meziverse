@@ -444,11 +444,71 @@ function parseAttributes(inner) {
     let match;
     while ((match = ATTRIBUTE.exec(inner))) {
         const name = match[1].toLowerCase();
-        if (match[2] !== undefined) attrs[name] = match[2];
-        else attrs[name] = match[3] ?? '';
+        if (match[2] !== undefined) attrs[name] = decodeAttr(match[2]);
+        else attrs[name] = decodeAttr(match[3] ?? '');
     }
 
     return attrs;
+}
+
+/* Attribute values are read verbatim; the handful of HTML entities are
+   decoded on the way in and re-encoded on the way out, so a quoted word or
+   an ampersand round-trips through a scene edit exactly. */
+
+const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", '#34': '"', '#39': "'" };
+
+function decodeAttr(value) {
+    return String(value ?? '').replace(/&(amp|lt|gt|quot|apos|#34|#39);/gi, (all, name) => ENTITIES[name.toLowerCase()] ?? all);
+}
+
+export function encodeAttrValue(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/"/g, '&quot;');
+}
+
+/**
+ * The complete scene tag at one ordinal in a message - the same count the
+ * ribbons carry - or null.
+ */
+export function sceneTagAt(mes, at) {
+    const text = typeof mes === 'string' ? mes : '';
+    return parseTags(text).filter(tag => tag.name === 'scene' && tag.closed)[Number(at)] ?? null;
+}
+
+/**
+ * Rewrites one scene tag's attributes in a raw message, leaving every other
+ * byte - the prose, the tracker rows, the other tags, the quotes - exactly
+ * as it was. `at` is the scene tag's ordinal among the message's complete
+ * scene tags; `changes` maps an attribute name to its new value. An
+ * attribute the tag never carried is written just before the tag closes.
+ *
+ * @param {string} mes the raw message text
+ * @param {number} at the scene tag's ordinal in that message
+ * @param {Record<string, string>} changes attribute name -> new value
+ * @returns {string} the message with only that tag's attributes rewritten
+ */
+export function editSceneAttrs(mes, at, changes) {
+    const text = typeof mes === 'string' ? mes : '';
+    const tag = sceneTagAt(text, at);
+    if (!tag) return text;
+
+    // a scene is always self-closing here, so the tag is one open span
+    let open = text.slice(tag.start, tag.end);
+
+    for (const [name, value] of Object.entries(changes || {})) {
+        const escaped = encodeAttrValue(value);
+        const written = new RegExp(`(\\s${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*=\\s*)(?:"[^"]*"|'[^']*')`, 'i');
+
+        open = written.test(open)
+            // its value alone is replaced: the name and its spacing stay
+            ? open.replace(written, (all, head) => `${head}"${escaped}"`)
+            // never carried? written just before the tag closes
+            : open.replace(/\s*(\/?)\s*>$/, (all, slash) => ` ${name}="${escaped}"${slash ? ' /' : ''}>`);
+    }
+
+    return text.slice(0, tag.start) + open + text.slice(tag.end);
 }
 
 /* ---------- code spans ---------- */

@@ -1,5 +1,21 @@
 # Meziverse — version log
 
+## 2.9.4 - 2026-11-13
+
+The scene ribbon gets its wardrobes — and its own pen.
+
+### Four scene header styles
+- Settings > **General** > Scene header picks how every `<scene>` ribbon reads in the reading pane: **Quiet** (the new default), **Chapter rule**, **Date-first**, and **Simple** — the first band Meziverse ever drew. One set of fields, four wardrobes; the log keeps its own compact band whatever the choice, and the segment shows the pressed style.
+- **Weather follows the tag**, never the free text: a 24×24 stroke glyph per `weatherTag` state in every style (unknown or missing draws nothing; **Clear** reads as the sun by day, the crescent at night), with the free-text weather printing beside it. The date-first row gains clock and people glyphs from the same hand.
+- All type rides the interface scale; the date-first headline, the location chain (11px everywhere) and the clocks were sized down for a tighter ribbon. Text sits on a **soft dark-grey scrim** (not black — that glared on bright backgrounds) with dimmer-white secondary text instead of grey, so the header holds on any stamped background.
+
+### The ribbon edits its own place
+- A **pencil** in every ribbon's seat (reading pane only) turns that ribbon into an editor: the location breadcrumb becomes one input per level — add, remove, Enter steps through, Esc discards — while the date, time, weather and cast stay as the tag wrote them. Save / Cancel replace the pencil; nothing is written until Save.
+- Saving rewrites **only the `location` attribute inside that one scene tag** — prose, trackers and every other tag stay byte for byte — and the write goes through **SillyTavern's own editor**, so ST saves and re-renders while the map and the background chain re-derive from the corrected place by themselves. The message editor and the scene editor stand down for each other.
+
+### Notes
+- `manifest.json` matches; the synthetic suite stands at 272 tests.
+
 ## 2.9.3 - 2026-11-12
 
 The narration pane hears the model think — and grows ST's own hands.
