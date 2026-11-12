@@ -13,13 +13,13 @@
 
 /* ---------- scene rows ----------
    One ribbon per complete <scene> tag, at its place in the prose. The pane
-   wears one of three wardrobes (Settings > Features > Scene header), the
-   drawn mockups: 'rule' (chapter rule - the default), 'quiet' (the old
-   muted look kept subtle) and 'date' (date-first). Every response can
-   arrive on its own background, so contrast comes from the scene inks on a
-   dark scrim plus a text shadow. The second and later tags look exactly
-   like the first: the divider is structural only - more room, a thin rule.
-   The log drawer keeps its own compact band whatever the pane wears. */
+   wears one of four wardrobes (Settings > General > Scene header): 'quiet'
+   (the default), 'rule' (chapter rule), 'date' (date-first) and 'simple'
+   (the first band Meziverse ever drew). Every response can arrive on its
+   own background, so contrast comes from the scene inks on a soft dark-grey
+   scrim plus a text shadow. The second and later tags look exactly like the
+   first: the divider is structural only - more room, a thin rule. The log
+   drawer keeps its own compact band whatever the pane wears. */
 
 /* the stroke set: weather glyphs ride the text line, the clock/people
    glyphs the date-first row - currentColor, sized with the text */
@@ -59,7 +59,7 @@
     display: flex;
     gap: 14px;
     min-width: 0;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, .75), 0 0 10px rgba(0, 0, 0, .45);
+    text-shadow: 0 1px 2px rgba(22, 20, 18, .6), 0 0 10px rgba(22, 20, 18, .38);
 }
 
 .mz-scene-mid {
@@ -88,6 +88,9 @@
     min-width: 0;
     overflow-wrap: anywhere;
 }
+
+/* the location chain reads small and tidy in every wardrobe */
+.mz-scene:not(.is-compact) .mz-scene-place { font-size: calc(11px * var(--mz-ui-scale)); }
 
 /* the last level is where the story is: the accent rides it */
 .mz-scene .mz-scene-leaf { font-weight: 600; }
@@ -122,7 +125,7 @@
 
 .mz-scene.is-rule .mz-scene-time {
     flex: none;
-    font-size: calc(22px * var(--mz-ui-scale));
+    font-size: calc(18px * var(--mz-ui-scale));
     font-weight: 600;
     line-height: 1.1;
     color: var(--mz-scene-ink);
@@ -140,8 +143,6 @@
 .mz-scene.is-rule .mz-scene-place,
 .mz-scene.is-date .mz-scene-place { color: var(--mz-scene-soft); }
 
-.mz-scene.is-rule .mz-scene-place { font-size: calc(14px * var(--mz-ui-scale)); }
-
 .mz-scene.is-rule .mz-scene-leaf,
 .mz-scene.is-date .mz-scene-leaf { color: var(--mz-scene-key); }
 
@@ -150,7 +151,7 @@
     padding: 0 12px 0 14px;
     font-size: calc(12.5px * var(--mz-ui-scale));
     color: var(--mz-scene-soft);
-    text-shadow: 0 1px 2px rgba(0, 0, 0, .75), 0 0 10px rgba(0, 0, 0, .45);
+    text-shadow: 0 1px 2px rgba(22, 20, 18, .6), 0 0 10px rgba(22, 20, 18, .38);
 }
 
 /* the repeated tag: the same styling, a thin rule above */
@@ -159,8 +160,9 @@
     box-shadow: 0 -1px 0 var(--mz-scene-line);
 }
 
-/* ---- Quiet (the old look):
-   no scrim, muted greys, a caps date line, a fading hairline to the seat ---- */
+/* ---- Quiet (the default):
+   no scrim, dimmer-white text under the clock, a caps date line, a fading
+   hairline to the seat ---- */
 .mz-scene.is-quiet .mz-scene-head {
     align-items: center;
     padding-top: 14px;
@@ -174,7 +176,7 @@
 
 .mz-scene.is-quiet .mz-scene-time {
     flex: none;
-    font-size: calc(22px * var(--mz-ui-scale));
+    font-size: calc(18px * var(--mz-ui-scale));
     font-weight: 600;
     line-height: 1;
     color: var(--mz-scene-ink);
@@ -186,18 +188,17 @@
     font-size: calc(12px * var(--mz-ui-scale));
     letter-spacing: .08em;
     text-transform: uppercase;
-    color: var(--mz-text-muted);
+    color: var(--mz-scene-soft);
     overflow-wrap: anywhere;
 }
 
 .mz-scene.is-quiet .mz-scene-weather { color: var(--mz-scene-key); }
 
 .mz-scene.is-quiet .mz-scene-place {
-    font-size: calc(14px * var(--mz-ui-scale));
     color: var(--mz-prose-plain);
 }
 
-.mz-scene.is-quiet .mz-scene-lvl { color: var(--mz-text-muted); }
+.mz-scene.is-quiet .mz-scene-lvl { color: var(--mz-scene-soft); }
 .mz-scene.is-quiet .mz-scene-leaf { color: inherit; }
 
 .mz-scene.is-quiet .mz-scene-fill {
@@ -212,7 +213,8 @@
     margin: 0 0 8px;
     padding: 0 12px 0 14px;
     font-size: calc(12px * var(--mz-ui-scale));
-    color: var(--mz-text-dim);
+    color: var(--mz-scene-soft);
+    text-shadow: 0 1px 2px rgba(22, 20, 18, .5);
 }
 
 /* ---- Date-first (fast-paced stories):
@@ -221,7 +223,7 @@
     align-items: flex-start;
     margin: 0 0 10px;
     padding: 10px 12px;
-    background: linear-gradient(90deg, var(--mz-scene-scrim), rgba(0, 0, 0, .18));
+    background: linear-gradient(90deg, var(--mz-scene-scrim), rgba(36, 34, 32, .22));
     border: 1px solid rgba(255, 255, 255, .08);
     border-top: 2px solid var(--mz-scene-key);
     border-radius: 10px;
@@ -230,7 +232,7 @@
 .mz-scene.is-date .mz-scene-mid { gap: 6px; }
 
 .mz-scene.is-date .mz-scene-date {
-    font-size: calc(19px * var(--mz-ui-scale));
+    font-size: calc(13px * var(--mz-ui-scale));
     font-weight: 650;
     line-height: 1.25;
     color: var(--mz-scene-ink);
@@ -242,7 +244,7 @@
     flex-wrap: wrap;
     gap: 4px 16px;
     align-items: center;
-    font-size: calc(13.5px * var(--mz-ui-scale));
+    font-size: calc(11px * var(--mz-ui-scale));
     color: var(--mz-scene-soft);
 }
 
@@ -259,7 +261,99 @@
     font-variant-numeric: tabular-nums;
 }
 
-.mz-scene.is-date .mz-scene-place { font-size: calc(13.5px * var(--mz-ui-scale)); }
+/* ---- Simple (the first band Meziverse ever drew):
+   the diamond ornament, the when/weather/place run over a whisper of the
+   accent, the cast line - brightened for contrast, with the edit seat ---- */
+.mz-scene.is-simple {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: .5em 34px .55em 17px;
+    border-top: 1px solid var(--mz-accent-line);
+    border-bottom: 1px solid var(--mz-line);
+    border-radius: var(--mz-r-sm);
+    background: color-mix(in srgb, var(--mz-accent) 7%, transparent);
+    font-size: var(--mz-text-xs);
+    line-height: 1.35;
+    letter-spacing: .015em;
+    color: var(--mz-scene-soft);
+    text-shadow: 0 1px 2px rgba(22, 20, 18, .5);
+}
+
+.mz-scene.is-simple:first-child { margin-top: 0; }
+
+.mz-scene.is-simple .mz-scene-orn {
+    position: absolute;
+    top: .78em;
+    left: 1px;
+    width: 7px;
+    height: 7px;
+    border: 1px solid var(--mz-accent-line);
+    background: var(--mz-accent-soft);
+    transform: rotate(45deg);
+}
+
+.mz-scene.is-simple .mz-scene-main {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 3px 10px;
+    min-width: 0;
+}
+
+.mz-scene.is-simple .mz-scene-when {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 5px;
+    min-width: 0;
+}
+
+.mz-scene.is-simple .mz-scene-date {
+    color: var(--mz-scene-soft);
+    white-space: nowrap;
+}
+
+.mz-scene.is-simple .mz-scene-time {
+    font-family: var(--mz-font-prose);
+    font-size: calc(var(--mz-text-xs) + .5px);
+    font-weight: 400;
+    letter-spacing: .02em;
+    color: var(--mz-text);
+    white-space: nowrap;
+}
+
+.mz-scene.is-simple .mz-scene-dot {
+    margin: 0;
+    color: var(--mz-text-muted);
+    opacity: 1;
+}
+
+.mz-scene.is-simple .mz-scene-weather {
+    color: var(--mz-accent);
+    letter-spacing: .03em;
+}
+
+.mz-scene.is-simple .mz-scene-place {
+    color: var(--mz-text);
+}
+
+.mz-scene.is-simple .mz-scene-leaf { font-weight: 400; color: inherit; }
+
+.mz-scene.is-simple .mz-scene-cast {
+    min-width: 0;
+    font-size: var(--mz-text-2xs);
+    letter-spacing: .05em;
+    color: var(--mz-scene-soft);
+    overflow-wrap: anywhere;
+}
+
+/* the simple band seats its pencil in its top-right corner */
+.mz-scene.is-simple .mz-scene-tools {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    align-self: auto;
+}
 
 /* ---- the ribbon's own edit ----
    The seat takes the plan's small square; while editing it becomes save and
@@ -293,12 +387,16 @@
 /* date-first seats its pencil at the top, like the plan draws it */
 .mz-scene.is-date .mz-scene-tools { align-self: flex-start; }
 
+/* the quiet and simple bands keep a whisper of a seat, no dark square */
 .mz-scene.is-quiet .mz-scene-pencil,
 .mz-scene.is-quiet .mz-scene-save,
-.mz-scene.is-quiet .mz-scene-cancel {
+.mz-scene.is-quiet .mz-scene-cancel,
+.mz-scene.is-simple .mz-scene-pencil,
+.mz-scene.is-simple .mz-scene-save,
+.mz-scene.is-simple .mz-scene-cancel {
     background: transparent;
     border-color: rgba(255, 255, 255, .12);
-    color: var(--mz-text-muted);
+    color: var(--mz-scene-soft);
 }
 
 .mz-loc-edit {
@@ -325,7 +423,7 @@
     background: var(--mz-surface-2);
     color: var(--mz-prose-plain);
     font-family: var(--mz-font-ui);
-    font-size: calc(13.5px * var(--mz-ui-scale));
+    font-size: calc(11px * var(--mz-ui-scale));
 }
 
 .mz-loc-lvl:focus {
@@ -856,8 +954,8 @@
     /* the scene headers slim down: the clock and the date headline shrink so
        the date line and the date-first row wrap kindly at phone widths */
     .mz-scene.is-rule .mz-scene-time,
-    .mz-scene.is-quiet .mz-scene-time { font-size: calc(18px * var(--mz-ui-scale)); }
-    .mz-scene.is-date .mz-scene-date { font-size: calc(16.5px * var(--mz-ui-scale)); }
+    .mz-scene.is-quiet .mz-scene-time { font-size: calc(15px * var(--mz-ui-scale)); }
+    .mz-scene.is-date .mz-scene-date { font-size: calc(12px * var(--mz-ui-scale)); }
 }
 
 /* a touch screen has no hover: keep the tools reachable */

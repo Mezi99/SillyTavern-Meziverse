@@ -102,7 +102,7 @@ export function weatherGlyph(weatherTag, hour = null) {
     return glyph(WEATHER_GLYPHS[key]);
 }
 
-/** One scene as the header the plan drew - three wardrobes, one set of data. */
+/** One scene as the header the plan drew - four wardrobes, one set of data. */
 function sceneRow(tag, { compact, persona, at = -1 }) {
     if (!isUsableScene(tag)) return '';
 
@@ -164,7 +164,29 @@ function sceneRow(tag, { compact, persona, at = -1 }) {
             + '</aside>';
     }
 
-    // Chapter rule (default) and Quiet share the two-line skeleton: the clock
+    // Simple: the band Meziverse first drew - the diamond ornament, the
+    // when/weather/place run, the cast line - with the edit seat added.
+    if (style === 'simple') {
+        const when = [];
+
+        if (scene.date) when.push(`<span class="mz-scene-date">${escapeHtml(scene.date)}</span>`);
+        if (scene.time) when.push(`<b class="mz-scene-time">${escapeHtml(scene.time)}</b>`);
+
+        return `<aside class="mz-scene is-simple" data-mz-scene-at="${Number(at)}" aria-label="Scene">`
+            + '<span class="mz-scene-orn" aria-hidden="true"></span>'
+            + '<div class="mz-scene-main">'
+            + (when.length
+                ? `<span class="mz-scene-when">${when.join('<span class="mz-scene-dot" aria-hidden="true">\u00b7</span>')}</span>`
+                : '')
+            + (scene.weather ? `<span class="mz-scene-weather">${escapeHtml(scene.weather)}</span>` : '')
+            + (place ? `<span class="mz-scene-place">${place}</span>` : '')
+            + '</div>'
+            + (cast ? `<span class="mz-scene-cast">${cast}</span>` : '')
+            + tools
+            + '</aside>';
+    }
+
+    // Chapter rule and Quiet share the two-line skeleton: the clock
     // against the date/weather line over the breadcrumb, the cast below.
     const l1 = [];
     if (scene.date) l1.push(`<span class="mz-scene-date">${escapeHtml(scene.date)}</span>`);

@@ -33,7 +33,7 @@ import { mountMap, mapUiClosed, mapUiOpened, refreshMap, isMapWinOpen, openMapWi
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr, notify } from './notify.js';
 
-const VERSION = '2.9.3';
+const VERSION = '2.9.4';
 const PANE_DEFAULT = 300;
 const LOG_W_DEFAULT = 720;
 const LOG_H_SHARE = 0.7;
@@ -286,6 +286,19 @@ const FRAME_HTML = `
         </div>
 
         <div class="mz-set-group mz-set-group--fold" data-mz-pane="general">
+            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="sceneheader">Scene header ${svg('chevdown')}</button></h3>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Header style</b><small>How each scene tag reads in the reading pane: quiet, a chapter rule, the date first, or the simple band of old. The same fields, four wardrobes; the log keeps its own compact band.</small></span>
+                <div class="mz-seg" role="group" aria-label="Scene header style">
+                    <button type="button" data-mz-pick-scenehead="quiet">Quiet</button>
+                    <button type="button" data-mz-pick-scenehead="rule">Chapter rule</button>
+                    <button type="button" data-mz-pick-scenehead="date">Date-first</button>
+                    <button type="button" data-mz-pick-scenehead="simple">Simple</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="mz-set-group mz-set-group--fold" data-mz-pane="general">
             <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="motion">Motion ${svg('chevdown')}</button></h3>
             <div class="mz-set-row">
                 <span class="mz-set-label"><b>Reduced motion</b><small>Fades and slides become instant.</small></span>
@@ -367,17 +380,6 @@ const FRAME_HTML = `
             </div>
         </div>
 
-        <div class="mz-set-group mz-set-group--fold" data-mz-pane="image">
-            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="sceneheader">Scene header ${svg('chevdown')}</button></h3>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Header style</b><small>How each scene tag reads in the reading pane: a chapter rule, the quiet old look, or the date first. The same fields, three wardrobes; the log keeps its own compact band.</small></span>
-                <div class="mz-seg" role="group" aria-label="Scene header style">
-                    <button type="button" data-mz-pick-scenehead="rule">Chapter rule</button>
-                    <button type="button" data-mz-pick-scenehead="quiet">Quiet</button>
-                    <button type="button" data-mz-pick-scenehead="date">Date-first</button>
-                </div>
-            </div>
-        </div>
         <div class="mz-set-group mz-set-group--fold" data-mz-pane="image">
             <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="speech">Speech ${svg('chevdown')}</button></h3>
             <div class="mz-set-row">
@@ -1183,6 +1185,7 @@ function applySceneHeader() {
 
     root.querySelectorAll('[data-mz-pick-scenehead]').forEach(button => {
         const isOn = button.dataset.mzPickScenehead === style;
+        button.classList.toggle('is-on', isOn);
         button.setAttribute('aria-pressed', String(isOn));
     });
 }

@@ -374,7 +374,11 @@ export function createTranscript({
         const place = aside.querySelector('.mz-scene-place');
         if (place) {
             place.hidden = true;
-            place.insertAdjacentElement('afterend', sceneRowEditor());
+            // The simple band runs its fields in one flex row: the rows take
+            // a line of their own beneath it. The other wardrobes - column
+            // already - place them right where the place stood.
+            const host = aside.querySelector('.mz-scene-main') || place;
+            host.insertAdjacentElement('afterend', sceneRowEditor());
         }
 
         // the pencils stand down for save and cancel
