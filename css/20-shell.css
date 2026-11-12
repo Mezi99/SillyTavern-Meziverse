@@ -77,6 +77,18 @@ body.mz-open .popup { z-index: 9500 !important; }
     flex: none;
 }
 
+/* The ST-mirror buttons wear Font Awesome now: ST's own glyph classes, the
+   theme's colours through currentColor. The sizes mirror the sprite boxes
+   they replaced (an em reads a touch wider than the same svg box). */
+:where(#mz-root) .fa-solid,
+:where(#mz-root) .fa-regular { flex: none; line-height: 1; }
+.mz-ibtn .fa-solid, .mz-ibtn .fa-regular { font-size: 15px; }
+.mz-dlg-actions .mz-ibtn .fa-solid, .mz-dlg-actions .mz-ibtn .fa-regular { font-size: 14px; }
+.mz-swipebtn .fa-solid { font-size: 16px; }
+.mz-sendbtn .fa-solid { font-size: 17px; }
+.mz-menu-item .fa-solid { font-size: 16px; }
+.mz-log-branch .fa-solid, .mz-log-branch .fa-regular { font-size: 15px; }
+
 #mz-root ::-webkit-scrollbar { width: 8px; height: 8px; }
 #mz-root ::-webkit-scrollbar-thumb {
     border-radius: var(--mz-r-pill);
@@ -298,8 +310,9 @@ body.mz-open .popup { z-index: 9500 !important; }
     box-shadow: 0 0 6px color-mix(in srgb, var(--mz-accent) 55%, transparent);
 }
 
-/* The background switch and the brush ride with the mode switch: the same
-   pill, one more promise kept beside it. */
+/* The background switch rides with the mode switch: the same pill, one
+   more promise kept beside it. The brush moved to the pane head beside
+   the card name - position-neutral; only its state is styled here. */
 .mz-bgauto { margin-left: 6px; }
 
 .mz-brush {
@@ -618,11 +631,10 @@ body.mz-open .popup { z-index: 9500 !important; }
 }
 
 /* our turn-stepping, centred in the header so long speaker names cannot
-   push it around: the speaker and the actions flex, the cluster does not */
-.mz-speaker {
-    flex: 1 1 0;
-    min-width: 0;
-}
+   push it around: the speaker (and the brush hugging it) and the actions
+   flex, the cluster does not */
+.mz-dlg-who { flex: 1 1 0; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.mz-dlg-who .mz-speaker { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mz-dlg-actions { flex: 1 1 0; justify-content: flex-end; min-width: 0; }
 .mz-dlg-nav {
     display: flex;

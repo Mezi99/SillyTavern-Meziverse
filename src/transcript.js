@@ -13,7 +13,7 @@ import { reasoningHtml, reasoningOf, renderInto, thoughtLabel, toHtml } from './
 import { closePopover } from './cues.js';
 import { resolveScene } from './scene.js';
 import { reasoningOn } from './settings.js';
-import { icon } from './icons.js';
+import { fa } from './icons.js';
 
 const FOLLOW = null;
 
@@ -145,13 +145,13 @@ export function createTranscript({
         if (latestButton) latestButton.disabled = locked || selected === FOLLOW || at < 0;
         if (editButton) editButton.disabled = locked;
 
-        // the eye mirrors the shown turn's prompt state
+        // the eye mirrors the shown turn's prompt state, in ST's own glyphs
         const hidden = !!currentEntry()?.message?.is_system;
         if (togglePromptButton) {
             togglePromptButton.title = hidden
                 ? 'Include message in prompts' : 'Exclude message from prompts';
             togglePromptButton.setAttribute('aria-label', togglePromptButton.title);
-            togglePromptButton.replaceChildren(icon(hidden ? 'mz-i-eye-off' : 'mz-i-eye'));
+            togglePromptButton.replaceChildren(fa(hidden ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye'));
         }
 
         // the reasoning toggle mirrors the pane-wide display choice
@@ -432,7 +432,7 @@ export function createTranscript({
             branch.dataset.mzBranch = String(index);
             branch.title = 'Branch from this turn';
             branch.setAttribute('aria-label', `Branch from ${speakerOf(message)}, turn ${at + 1}`);
-            branch.append(icon('mz-i-branch'));
+            branch.append(fa('fa-regular fa-code-branch'));
 
             head.append(who, turn, jump, branch);
 
