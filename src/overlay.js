@@ -33,7 +33,7 @@ import { mountMap, mapUiClosed, mapUiOpened, refreshMap, isMapWinOpen, openMapWi
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr, notify } from './notify.js';
 
-const VERSION = '2.9.1';
+const VERSION = '2.9.2';
 const PANE_DEFAULT = 300;
 const LOG_W_DEFAULT = 720;
 const LOG_H_SHARE = 0.7;
