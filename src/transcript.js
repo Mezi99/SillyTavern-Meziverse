@@ -9,9 +9,10 @@
  */
 
 import { acceptEdit, branchChat, cancelEdit, chatMessages, copyMessage, ctx, currentChatId, deleteEditedMessage, editMessage, editorTextarea, on, personaName, setPromptHidden, swipeMessage, swipeSupported, swipingAllowed } from './st.js';
-import { renderInto, toHtml } from './prose.js';
+import { reasoningHtml, reasoningOf, renderInto, thoughtLabel, toHtml } from './prose.js';
 import { closePopover } from './cues.js';
 import { resolveScene } from './scene.js';
+import { reasoningOn } from './settings.js';
 import { icon } from './icons.js';
 
 const FOLLOW = null;
@@ -46,6 +47,7 @@ function speakerOf(message) {
  * @param {HTMLButtonElement} [parts.editButton] opens SillyTavern's editor on the shown turn
  * @param {HTMLElement} [parts.actionsRow] the message-action row, replaced by the edit bar while editing
  * @param {HTMLElement} [parts.editBar] the edit bar: accept, delete, discard
+ * @param {HTMLButtonElement} [parts.reasonButton] shows the reasoning block in the pane, or hides it
  * @param {HTMLButtonElement} [parts.editAccept]
  * @param {HTMLButtonElement} [parts.editDelete]
  * @param {HTMLButtonElement} [parts.editCancel]
@@ -59,7 +61,7 @@ function speakerOf(message) {
 export function createTranscript({
     frame, isOpen, speaker, meta, prose, logPanel, logList, logButton, logClose,
     prevButton, nextButton, latestButton, branchButton,
-    copyButton, togglePromptButton,
+    copyButton, togglePromptButton, reasonButton,
     editButton, actionsRow, editBar, editAccept, editDelete, editCancel, edit,
     swipeBar, swipePrev, swipeNext, swipeCount,
     onShown,
@@ -70,6 +72,10 @@ export function createTranscript({
     let chatId = currentChatId();
     let logDirty = true;
     let queued = false;
+    // The reasoning block's one open/closed state, shared by every turn the
+    // pane draws: stepping between turns and redrawing mid-stream follow it,
+    // so a block the reader opened never snaps shut on the next frame.
+    let reasoningOpen = false;
     // the message index SillyTavern's editor is open on, or null
     let editingIndex = null;
     // guard so our own textarea sync is not echoed back to SillyTavern's
@@ -86,13 +92,14 @@ export function createTranscript({
         return entry ? shown.indexOf(entry) : -1;
     }
 
-    function fillProse(element, message, index, { waiting = false, compact = false } = {}) {
+    function fillProse(element, message, index, { waiting = false, compact = false, streaming = false } = {}) {
         // The marks the popover hangs on are about to be replaced.
         closePopover();
 
         const html = toHtml(message, index, { compact, persona: personaName() });
         if (html) {
             renderInto(element, html);
+            prependReasoning(element, message, index, { compact, streaming });
             return;
         }
 
@@ -102,6 +109,24 @@ export function createTranscript({
             ? '\u2026'
             : (message ? 'This message has no text.' : 'The scene begins when you write.');
         element.replaceChildren(empty);
+        prependReasoning(element, message, index, { compact, streaming });
+    }
+
+    /**
+     * The reasoning block, above the turn's prose. The reading pane's own -
+     * the log never draws one - and only while the display says so. No
+     * reasoning, no block: a turn without one reads exactly as it always did.
+     */
+    function prependReasoning(element, message, index, { compact = false, streaming = false } = {}) {
+        if (compact || !reasoningOn()) return;
+
+        const text = reasoningOf(message);
+        if (!text) return;
+
+        element.insertAdjacentHTML('afterbegin', reasoningHtml(message, index, text, {
+            open: reasoningOpen,
+            label: thoughtLabel(message, streaming),
+        }));
     }
 
     /** A reply that has not started streaming yet is not an empty message. */
@@ -127,6 +152,15 @@ export function createTranscript({
                 ? 'Include message in prompts' : 'Exclude message from prompts';
             togglePromptButton.setAttribute('aria-label', togglePromptButton.title);
             togglePromptButton.replaceChildren(icon(hidden ? 'mz-i-eye-off' : 'mz-i-eye'));
+        }
+
+        // the reasoning toggle mirrors the pane-wide display choice
+        if (reasonButton) {
+            const display = reasoningOn();
+            reasonButton.setAttribute('aria-pressed', String(display));
+            reasonButton.classList.toggle('is-on', display);
+            reasonButton.title = display ? 'Hide reasoning from the pane' : 'Show reasoning in the pane';
+            reasonButton.setAttribute('aria-label', reasonButton.title);
         }
     }
 
@@ -326,7 +360,8 @@ export function createTranscript({
         } else {
             speaker.textContent = speakerOf(entry.message);
             meta.textContent = `turn ${position() + 1} of ${shown.length}`;
-            fillProse(prose, entry.message, entry.index, { waiting: isWaitingForFirstToken(entry) });
+            const streaming = entry === shown[shown.length - 1] && frame.classList.contains('is-generating');
+            fillProse(prose, entry.message, entry.index, { waiting: isWaitingForFirstToken(entry), streaming });
         }
 
         // a turn excluded from the prompts stays, dimmed, like ST's ghost
@@ -596,6 +631,20 @@ export function createTranscript({
         if (isOpen()) watchEdit();
     }, 400);
 
+    // The reasoning block opens and closes in the pane's one remembered
+    // state, so stepping between turns - and every redraw mid-stream -
+    // follows whatever the reader last chose.
+    prose.addEventListener('click', event => {
+        const head = event.target.closest('.mz-reason-head');
+        if (!head) return;
+
+        reasoningOpen = !reasoningOpen;
+        for (const block of prose.querySelectorAll('.mz-reason')) {
+            block.classList.toggle('is-open', reasoningOpen);
+            block.querySelector('.mz-reason-head')?.setAttribute('aria-expanded', String(reasoningOpen));
+        }
+    });
+
     logList.addEventListener('click', event => {
         // a link in the prose is a link, not a jump
         if (event.target.closest('a')) return;
@@ -628,6 +677,9 @@ export function createTranscript({
     on('STREAM_TOKEN_RECEIVED', () => {
         if (isOpen()) queueRefresh();
     });
+
+    // the parts carry their own state from the first moment
+    updateControls();
 
     return { refresh, openLog, closeLog, isLogOpen, isEditing, step, latest, show, branchHere, swipeShownTurn, copyShownTurn, togglePromptHidden, editShownTurn, acceptShownEdit, deleteShownEdit, cancelShownEdit };
 }

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseMessage, parseTags, scenesOf, speechesOf, splitCues, stripNonSceneTags, stripTags } from '../src/tags.js';
+import { parseMessage, parseTags, readInlineThink, scenesOf, speechesOf, splitCues, stripNonSceneTags, stripTags } from '../src/tags.js';
 
 const scene = attrs => `<scene ${attrs} />`;
 
@@ -272,4 +272,28 @@ test('stripNonSceneTags keeps scene tags and drops the rest like stripTags', () 
 test('stripNonSceneTags is streaming-safe', () => {
     assert.equal(stripNonSceneTags('tail <ledger>open'), 'tail ', 'an unclosed hidden tag hides its tail');
     assert.equal(stripNonSceneTags('<scene location="A"'), '', 'a half-written scene tag hides its tail');
+});
+
+// The model's thinking wrapper, assembled from char codes: the literal
+// delimiter is special to some tooling and never appears in this file.
+const LT = String.fromCharCode(60);
+const GT = String.fromCharCode(62);
+const OPEN_THINK = `${LT}think${GT}`;
+const CLOSE_THINK = `${LT}/think${GT}`;
+const HALF_OPEN = `${LT}think`;   // a half-written open tag: `>` never arrived
+const HALF_NAME = `${LT}thin`;    // not even a name yet
+
+test('readInlineThink finds the reasoning the model wrote in-band', () => {
+    assert.equal(readInlineThink(`${OPEN_THINK}[Genre] drama${CLOSE_THINK}The prose.`), '[Genre] drama');
+    assert.equal(readInlineThink(`Prose first. ${OPEN_THINK}secret${CLOSE_THINK} More.`), 'secret', 'the first block, wherever it stands');
+    assert.equal(readInlineThink('<THINK a="1">body</THINK>prose'), 'body', 'names are case-insensitive and attributes pass');
+    assert.equal(readInlineThink('plain prose'), '');
+    assert.equal(readInlineThink(`\`${OPEN_THINK}not a tag\``), '', 'code spans are not tags');
+});
+
+test('readInlineThink is streaming-safe', () => {
+    assert.equal(readInlineThink(`${OPEN_THINK}still thinking`), 'still thinking', 'an unclosed block grows live');
+    assert.equal(readInlineThink(HALF_OPEN), '', 'a half-written open tag yields nothing yet');
+    assert.equal(readInlineThink(HALF_NAME), '', 'not even a name');
+    assert.equal(readInlineThink('<think/>'), '', 'a self-closing tag has no body');
 });

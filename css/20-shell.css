@@ -675,6 +675,18 @@ body.mz-open .popup { z-index: 9500 !important; }
 .mz-log-entry.is-prompt-hidden .mz-log-prose { opacity: .55; }
 .mz-log-entry.is-prompt-hidden .mz-log-who { opacity: .55; }
 
+/* the reasoning display: a pane-wide choice, kept within reach at the
+   head's left, before the speaker name */
+.mz-reasonbtn {
+    width: 22px;
+    height: 22px;
+    color: var(--mz-text-dim);
+    transition: color var(--mz-dur-fast) var(--mz-ease);
+}
+.mz-reasonbtn .ico { width: 13px; height: 13px; }
+.mz-reasonbtn.is-on { color: var(--mz-accent); }
+.mz-reasonbtn:hover { color: var(--mz-text); }
+
 .mz-ibtn:disabled {
     opacity: .3;
     color: var(--mz-text-dim);

@@ -112,6 +112,7 @@ const FRAME_HTML = `
     <section class="mz-dlg" aria-label="Reading pane">
         <div class="mz-grip" role="separator" aria-orientation="horizontal" aria-label="Resize reading pane" tabindex="0"></div>
         <header class="mz-dlg-head">
+            <button class="mz-ibtn mz-reasonbtn" type="button" title="Hide reasoning from the pane" aria-label="Hide reasoning from the pane" aria-pressed="true" data-mz-action="toggle-reasoning">${svg('thought')}</button>
             <span class="mz-speaker" data-mz="speaker"></span>
             <span class="mz-dlg-nav">
                 <button class="mz-ibtn" type="button" title="Previous turn" aria-label="Previous turn" data-mz-action="prev">${svg('prev')}</button>
@@ -640,6 +641,7 @@ export function mount() {
         branchButton: root.querySelector('[data-mz-action="branch"]'),
         copyButton: root.querySelector('[data-mz-action="copy"]'),
         togglePromptButton: root.querySelector('[data-mz-action="toggle-prompt"]'),
+        reasonButton: root.querySelector('[data-mz-action="toggle-reasoning"]'),
         editButton: root.querySelector('[data-mz-action="edit"]'),
         actionsRow: root.querySelector('.mz-dlg-actions:not(.mz-dlg-editbar)'),
         editBar: root.querySelector('.mz-dlg-editbar'),
@@ -680,6 +682,7 @@ export function mount() {
         branchButton: els.branchButton,
         copyButton: els.copyButton,
         togglePromptButton: els.togglePromptButton,
+        reasonButton: els.reasonButton,
         editButton: els.editButton,
         actionsRow: els.actionsRow,
         editBar: els.editBar,
@@ -2333,6 +2336,11 @@ function wireActions() {
                 break;
             case 'toggle-prompt':
                 transcript.togglePromptHidden();
+                break;
+            case 'toggle-reasoning':
+                settings().showReasoning = !settings().showReasoning;
+                transcript?.refresh();
+                saveSettings();
                 break;
             case 'edit':
                 transcript.editShownTurn();

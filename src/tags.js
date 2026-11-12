@@ -41,7 +41,7 @@ const parseCache = new WeakMap();
  * Finds every catalogue tag in a raw message.
  *
  * @param {string} mes
- * @returns {Array<{name:string, attrs:Record<string,string>, body:string|null, selfClosing:boolean, closed:boolean, start:number, end:number}>}
+ * @returns {Array<{name:string, attrs:Record<string,string>, body:string|null, selfClosing:boolean, closed:boolean, openEnded:boolean, start:number, end:number}>}
  */
 export function parseTags(mes) {
     const text = typeof mes === 'string' ? mes : '';
@@ -184,6 +184,23 @@ export function scenesOf(tags) {
 export function speechesOf(tags) {
     if (!Array.isArray(tags)) return [];
     return tags.filter(tag => tag.name === 'speech' && tag.closed);
+}
+
+/**
+ * The body of the first `think` block - the reasoning the model wrote
+ * in-band, for the reading pane's reasoning block. SillyTavern usually moves
+ * this into the message's `extra.reasoning`; when it has not, the words are
+ * still in the text and this finds them.
+ *
+ * Streaming-safe: a complete but unclosed block yields the body written so
+ * far (it grows live), and a half-written open tag yields nothing yet - a
+ * half tag is never trusted. The body is trimmed at its edges.
+ */
+export function readInlineThink(mes) {
+    const text = typeof mes === 'string' ? mes : '';
+    const tag = parseTags(text).find(entry => entry.name === 'think' && !entry.selfClosing);
+    if (!tag || !tag.openEnded) return '';
+    return typeof tag.body === 'string' ? tag.body.trim() : '';
 }
 
 /**
@@ -363,18 +380,22 @@ function readTag(text, open, inCode) {
             body: null,
             selfClosing: true,
             closed: close >= 0,
+            openEnded: close >= 0,
             start: open.index,
             end: close >= 0 ? close + 1 : text.length,
         };
     }
 
     if (close < 0) {
+        // The open tag itself is half written - its `>` has not arrived yet -
+        // so the tail is raw text, not a body.
         return {
             name: open.name,
             attrs,
             body: text.slice(open.nameEnd),
             selfClosing: false,
             closed: false,
+            openEnded: false,
             start: open.index,
             end: text.length,
         };
@@ -398,6 +419,7 @@ function readTag(text, open, inCode) {
             body: text.slice(bodyStart, match.index),
             selfClosing: false,
             closed: true,
+            openEnded: true,
             start: open.index,
             end: match.index + match[0].length,
         };
@@ -409,6 +431,7 @@ function readTag(text, open, inCode) {
         body: text.slice(bodyStart),
         selfClosing: false,
         closed: false,
+        openEnded: true,
         start: open.index,
         end: text.length,
     };
