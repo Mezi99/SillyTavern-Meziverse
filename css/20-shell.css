@@ -82,12 +82,13 @@ body.mz-open .popup { z-index: 9500 !important; }
    they replaced (an em reads a touch wider than the same svg box). */
 :where(#mz-root) .fa-solid,
 :where(#mz-root) .fa-regular { flex: none; line-height: 1; }
-.mz-ibtn .fa-solid, .mz-ibtn .fa-regular { font-size: 15px; }
-.mz-dlg-actions .mz-ibtn .fa-solid, .mz-dlg-actions .mz-ibtn .fa-regular { font-size: 14px; }
-.mz-swipebtn .fa-solid { font-size: 16px; }
-.mz-sendbtn .fa-solid { font-size: 17px; }
-.mz-menu-item .fa-solid { font-size: 16px; }
-.mz-log-branch .fa-solid, .mz-log-branch .fa-regular { font-size: 15px; }
+/* ST-mirror icons kept small to match the tight head/composer */
+.mz-ibtn .fa-solid, .mz-ibtn .fa-regular { font-size: 11px; }
+.mz-dlg-actions .mz-ibtn .fa-solid, .mz-dlg-actions .mz-ibtn .fa-regular { font-size: 11px; }
+.mz-swipebtn .fa-solid { font-size: 11px; }
+.mz-sendbtn .fa-solid { font-size: 11px; }
+.mz-menu-item .fa-solid { font-size: 11px; }
+.mz-log-branch .fa-solid, .mz-log-branch .fa-regular { font-size: 11px; }
 
 #mz-root ::-webkit-scrollbar { width: 8px; height: 8px; }
 #mz-root ::-webkit-scrollbar-thumb {
@@ -696,7 +697,6 @@ body.mz-open .popup { z-index: 9500 !important; }
     transition: color var(--mz-dur-fast) var(--mz-ease);
 }
 .mz-reasonbtn .ico { width: 13px; height: 13px; }
-.mz-reasonbtn.is-on { color: var(--mz-accent); }
 .mz-reasonbtn:hover { color: var(--mz-text); }
 
 .mz-ibtn:disabled {
@@ -977,6 +977,7 @@ body.mz-open .popup { z-index: 9500 !important; }
     min-width: 0;
     min-height: 30px;
     max-height: 50dvh;
+    padding: 5px;
     font-family: var(--mz-font-ui);
     font-size: var(--mz-text-md);
     line-height: 1.4;
