@@ -1,5 +1,17 @@
 # Meziverse — version log
 
+## 2.9.2 - 2026-11-12
+
+The background watcher picks its own door.
+
+### The Background Agent
+- Settings > Connections gains a **Background Agent** section, above the Music Agent - the same component and the same engine: the **current ST API** (the default - nothing changes), any of SillyTavern's **Connection Manager profiles**, or a **custom OpenAI-compatible endpoint** (URL, key, model). A **Test** button sends one tiny call through the chosen door and answers inline.
+- The background watcher's one LLM call rides that door now - the auto watcher and the brush alike. The question it asks, the skip-gate, the pace and the template fallback are exactly as they were; only the door is chosen.
+- The image side is untouched: drawing keeps riding ST Image Generation. The map agent joins the tab in its own batch.
+
+### Notes
+- The Background Module keeps developing on its own `Background_Module` branch, kept alive for the next batches; `manifest.json` matches. The synthetic suite stands at 260 tests.
+
 ## 2.9.1 - 2026-11-11
 
 The player gets its design, and the watchers get their own doors.
