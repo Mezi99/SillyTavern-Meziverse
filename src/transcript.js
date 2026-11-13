@@ -95,6 +95,11 @@ export function createTranscript({
         return shown.find(entry => entry.index === selected) ?? shown[shown.length - 1];
     }
 
+    /** The turn on screen right now - the brush reads it at click time. */
+    function shownIndex() {
+        return currentEntry()?.index ?? null;
+    }
+
     function position() {
         const entry = currentEntry();
         return entry ? shown.indexOf(entry) : -1;
@@ -970,5 +975,5 @@ export function createTranscript({
     // the parts carry their own state from the first moment
     updateControls();
 
-    return { refresh, openLog, closeLog, isLogOpen, isEditing, step, latest, show, branchHere, swipeShownTurn, copyShownTurn, togglePromptHidden, editShownTurn, acceptShownEdit, deleteShownEdit, cancelShownEdit };
+    return { refresh, openLog, closeLog, isLogOpen, isEditing, shownIndex, step, latest, show, branchHere, swipeShownTurn, copyShownTurn, togglePromptHidden, editShownTurn, acceptShownEdit, deleteShownEdit, cancelShownEdit };
 }

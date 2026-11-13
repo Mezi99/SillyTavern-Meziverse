@@ -33,7 +33,7 @@ import { mountMap, mapUiClosed, mapUiOpened, refreshMap, isMapWinOpen, openMapWi
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr, notify } from './notify.js';
 
-const VERSION = '2.9.4';
+const VERSION = '2.9.5';
 const PANE_DEFAULT = 300;
 const LOG_W_DEFAULT = 720;
 const LOG_H_SHARE = 0.7;
@@ -1371,7 +1371,9 @@ async function drawBackgroundNow() {
 
     els.bgBrushButton?.classList.add('is-busy');
     try {
-        const result = await forceBackground();
+        // The pane says which turn is on screen AT THE CLICK - the brush
+        // redraws the response it was clicked on, never the chat's end.
+        const result = await forceBackground(transcript?.shownIndex?.() ?? null);
         if (result.status === 'error' || result.status === 'unavailable') {
             globalThis.toastr?.error?.(result.error || 'The background could not be drawn.');
         }
