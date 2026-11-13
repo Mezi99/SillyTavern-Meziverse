@@ -36,6 +36,7 @@
 .mzc-region { fill: var(--mzc-land); stroke: var(--mzc-edge); }
 .mzc-city { fill: var(--mzc-land-2); stroke: var(--mzc-edge); stroke-dasharray: 5 4; }
 .mzc-plot { fill: var(--mzc-land-3); stroke: color-mix(in srgb, var(--mz-accent) 30%, transparent); }
+.mzc-mobile { fill: color-mix(in srgb, var(--mz-accent) 7%, var(--mzc-land-3)); stroke: color-mix(in srgb, var(--mz-accent) 45%, transparent); stroke-dasharray: 9 6; }
 .mzc-terr:hover { stroke: var(--mz-accent); }
 .mzc-terr.is-sel { stroke: var(--mz-accent); stroke-width: 2; stroke-dasharray: none; }
 

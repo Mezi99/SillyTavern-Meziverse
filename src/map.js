@@ -501,7 +501,7 @@ function renderChart(mode) {
     const terr = [];
     containers.slice().sort((a, b) => b.r - a.r).forEach(item => {
         const level = item.n.level;
-        const cls = level === 0 ? 'region' : level === 1 ? 'city' : 'plot';
+        const cls = item.n.kind === 'mobile' ? 'mobile' : level === 0 ? 'region' : level === 1 ? 'city' : 'plot';
         const amp = level === 0 ? 0.12 : level === 1 ? 0.09 : 0.07;
         terr.push(`<path class="mzc-terr mzc-${cls}${sel === item.n.id ? ' is-sel' : ''}" data-node="${esc(item.n.key)}" d="${blob(item.ax, item.ay, item.r, hashFold(item.n.fold), amp)}"/>`);
     });
@@ -826,7 +826,7 @@ function renderIndex() {
     const isOpen = node => (twistState.has(node.key) ? twistState.get(node.key) : auto.has(node.key));
     const rows = [];
 
-    const walk = (node, depth) => {
+    const walk = (node, depth, out = rows) => {
         if (node.kind === 'mobile' || node.kind === 'transient') return;
         if (query && !auto.has(node.key)) return;
 
@@ -838,13 +838,27 @@ function renderIndex() {
             ? `<button class="mz-map-twist${open ? ' is-open' : ''}" type="button" data-mz-map-twist="${esc(node.key)}" aria-expanded="${open}" aria-label="${open ? 'Collapse' : 'Expand'} ${esc(node.name)}">${svg('chevdown')}</button>`
             : '<span class="mz-map-twist"></span>';
 
-        rows.push(`<div class="mz-map-row d${Math.min(depth, 3)}${selectedKey === node.key ? ' is-sel' : ''}${derived.nowId === node.id ? ' is-now' : ''}">${twist}<button class="mz-map-pick" type="button" data-mz-map-pick="${esc(node.key)}"><span>${esc(node.name)}</span></button></div>`);
-        if (open) kids.forEach(kid => walk(kid, depth + 1));
+        out.push(`<div class="mz-map-row d${Math.min(depth, 3)}${selectedKey === node.key ? ' is-sel' : ''}${derived.nowId === node.id ? ' is-now' : ''}">${twist}<button class="mz-map-pick" type="button" data-mz-map-pick="${esc(node.key)}"><span>${esc(node.name)}</span></button></div>`);
+        if (open) kids.forEach(kid => walk(kid, depth + 1, out));
     };
     atlas.roots.forEach(id => walk(atlas.nodes[id], 0));
 
+    /* Vehicles sit apart from places - and a vehicle with named spaces aboard
+       unfolds into them: the ship first, then its rooms. */
     const vehicles = Object.values(atlas.nodes).filter(node => node.kind === 'mobile');
-    els.index.innerHTML = `<h4>Places</h4>${rows.join('')}${vehicles.length ? `<h4>Vehicles</h4>${vehicles.map(node => `<div class="mz-map-row d0${selectedKey === node.key ? ' is-sel' : ''}"><span class="mz-map-twist"></span><button class="mz-map-pick" type="button" data-mz-map-pick="${esc(node.key)}">${svg(`m-${travelMode(node.name).glyph}`)}<span>${esc(node.name)}</span></button></div>`).join('')}` : ''}`;
+    const vehicleRows = vehicles.map(node => {
+        const kids = node.children
+            .map(id => atlas.nodes[id])
+            .filter(kid => kid && kid.kind !== 'mobile' && kid.kind !== 'transient');
+        const open = isOpen(node);
+        const twist = kids.length
+            ? `<button class="mz-map-twist${open ? ' is-open' : ''}" type="button" data-mz-map-twist="${esc(node.key)}" aria-expanded="${open}" aria-label="${open ? 'Collapse' : 'Expand'} ${esc(node.name)}">${svg('chevdown')}</button>`
+            : '<span class="mz-map-twist"></span>';
+        const rowsFor = [`<div class="mz-map-row d0${selectedKey === node.key ? ' is-sel' : ''}${derived.nowId === node.id ? ' is-now' : ''}">${twist}<button class="mz-map-pick" type="button" data-mz-map-pick="${esc(node.key)}">${svg(`m-${travelMode(node.name).glyph}`)}<span>${esc(node.name)}</span></button></div>`];
+        if (open) kids.forEach(kid => walk(kid, 1, rowsFor));
+        return rowsFor.join('');
+    });
+    els.index.innerHTML = `<h4>Places</h4>${rows.join('')}${vehicleRows.length ? `<h4>Vehicles</h4>${vehicleRows.join('')}` : ''}`;
 }
 
 /* The Seen block: when the place sat on the story's timeline, and the visits

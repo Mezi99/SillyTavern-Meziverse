@@ -34,6 +34,7 @@ import {
     decideTransport,
     fallbackLocationPrompt,
     fallbackTransportPrompt,
+    knownVehicles,
     locationKey,
     noteBaseline,
     parseWatcherReply,
@@ -440,7 +441,7 @@ async function runTarget({ index, swipeId, force, refresh, my, signal }) {
     // ride changed.
     const scene = resolveScene(messages, index, { persona })?.scene || null;
     const place = scene?.placeFull || '';
-    const ride = scene ? transportOf(place) : null;
+    const ride = scene ? transportOf(place, { vehicles: knownVehicles(store) }) : null;
 
     const carried = own ?? resolveStampId(messages, index)?.id ?? null;
     const baseline = (carried && store.records[carried]) || null;
@@ -455,7 +456,7 @@ async function runTarget({ index, swipeId, force, refresh, my, signal }) {
         globalThis.toastr?.warning?.('A reply carried no scene tag \u2014 the plain-prose fallback is handling it.', '', { timeOut: 6000 });
     }
     const step = !force && scene
-        ? (ride ? decideTransport(store, ride.vehicle, { baseline }) : decide(store, place, { baseline }))
+        ? (ride ? decideTransport(store, ride, { baseline }) : decide(store, place, { baseline }))
         : null;
 
     const plan = planResolution({ step, force, counter: repliesSinceWatch, every: settings().bgEveryN });
@@ -606,9 +607,9 @@ async function runWatcherChain({ store, messages, index, swipeId, place, scene, 
 }
 
 /**
- * The ride's watcher: asked only about vehicles the parking lot has never
- * seen (or a spelling drift it must recognise) - a parked vehicle answers
- * without a call at all. The lot is the only menu, "known" parks the
+ * The ride's watcher: asked only about vehicles and spaces the parking lot
+ * has never seen (or a spelling drift it must recognise) - a parked interior
+ * answers without a call at all. The lot is the only menu, "known" parks the
  * variant's name onto the interior it matched, "new" draws the interior once
  * and parks it, and "same" is never trusted: a reply boarding from a
  * location must never inherit the place it left.
@@ -620,14 +621,15 @@ async function runTransportChain({ store, messages, index, swipeId, ride, scene,
         at: index,
         persona,
         vehicle: ride.vehicle,
+        space: ride.space,
         place: scene?.placeFull || '',
         force,
         systemCore: settings().bgPromptTransport,
     });
     lastRequest = { systemPrompt: request.systemPrompt, prompt: request.prompt, at: Date.now() };
 
-    const plain = () => fallbackTransportPrompt(scene || ride.vehicle);
-    const thinking = stage(`Envisioning ${placeShortName(ride.vehicle)}\u2026`);
+    const plain = () => fallbackTransportPrompt(scene || `En Route | ${ride.vehicle}${ride.space ? ` | ${ride.space}` : ''}`, ride);
+    const thinking = stage(`Envisioning ${placeShortName(ride.space || ride.vehicle)}\u2026`);
     let answer = null;
     let failure = null;
     try {
@@ -668,7 +670,7 @@ async function runTransportChain({ store, messages, index, swipeId, ride, scene,
         // The spelling drift parks the variant's name onto the interior it
         // matched - the same record under one more name - so the next ride
         // needs no call at all.
-        const variantKey = locationKey(ride.vehicle);
+        const variantKey = ride.spaceKey;
         if (variantKey) store.transports[variantKey] = record.id;
         stampLanded(index, swipeId, record.id);
         globalThis.toastr?.success?.(`Background set: ${placeShortName(record.place)}`);
@@ -701,7 +703,7 @@ async function generateBackground({ store, index, swipeId, place, description, f
     console.debug(`${LOG} drawing`, { place, prompt });
 
     const painting = stage(ride
-        ? `Painting ${placeShortName(ride.vehicle)} interior\u2026`
+        ? `Painting ${placeShortName(ride.space || ride.vehicle)} interior\u2026`
         : place ? `Painting ${placeShortName(place)}\u2026` : 'Painting the location\u2026');
     let result;
     try {
@@ -725,11 +727,12 @@ async function generateBackground({ store, index, swipeId, place, description, f
     // in at draw time, so the library reads clean. When the place's old
     // record was a fold (shared with other places) the fresh picture takes a
     // record of its own and this place's replies follow it. A ride parks in
-    // the lot instead: one record per vehicle, replaced IN PLACE, so every
-    // ride of that vehicle repaints together.
+    // the lot instead: one record per vehicle-and-space, replaced IN PLACE,
+    // so every ride wearing that interior repaints together.
     if (ride) {
         const record = parkTransport(store, {
             vehicle: ride.vehicle,
+            space: ride.space,
             place,
             prompt: clean,
             path: result.path,
@@ -738,8 +741,8 @@ async function generateBackground({ store, index, swipeId, place, description, f
         if (!record) return { status: 'error', error: 'The background could not be remembered.' };
 
         stampLanded(index, swipeId, record.id);
-        console.debug(`${LOG} interior parked`, { vehicle: ride.vehicle, path: result.path });
-        globalThis.toastr?.success?.(`Background set: ${placeShortName(ride.vehicle)} interior`);
+        console.debug(`${LOG} interior parked`, { vehicle: ride.vehicle, space: ride.space, path: result.path });
+        globalThis.toastr?.success?.(`Background set: ${placeShortName(ride.space || ride.vehicle)} interior`);
         return { status: 'generated', record };
     }
 
@@ -822,8 +825,8 @@ export async function syncShownBackground() {
     // generation.
     const scene = resolveScene(messages, index, { persona: personaName() })?.scene || null;
     const place = scene?.placeFull || '';
-    const ride = scene ? transportOf(place) : null;
-    const step = ride ? decideTransport(store, ride.vehicle, { baseline: null }) : decide(store, place, { baseline: null });
+    const ride = scene ? transportOf(place, { vehicles: knownVehicles(store) }) : null;
+    const step = ride ? decideTransport(store, ride, { baseline: null }) : decide(store, place, { baseline: null });
     if (step.action === 'apply' && step.record) {
         await showRecord(store, step.record);
         return { status: 'cached', record: step.record };
