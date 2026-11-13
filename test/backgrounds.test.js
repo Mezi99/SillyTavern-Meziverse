@@ -6,6 +6,7 @@ import {
     BG_STORY_REPLIES,
     WATCHER_SCHEMA,
     aliasLocation,
+    brushTargetIndex,
     buildWatcherRequest,
     cleanPlaceText,
     compileBgPrompt,
@@ -22,9 +23,12 @@ import {
     normalizeStore,
     noteBaseline,
     parseWatcherReply,
+    placeLabel,
+    placeNamesLikelySame,
     placeShortName,
     planResolution,
     recoverCurrentKey,
+    reconcileRecordPlace,
     recordSrc,
     resolveRecordId,
     resolveStampId,
@@ -193,6 +197,47 @@ test('aliasLocation folds a spelling drift onto the matched record', () => {
     assert.equal(aliasLocation(store, 'Elsewhere', 'bg_404'), null, 'an unknown id is refused');
 });
 
+test('reconcileRecordPlace renames and re-keys the record an edit re-spelled', () => {
+    const store = normalizeStore();
+    const record = storeRecord(store, {
+        key: "Corporate Space | Mara's Rest | Transit Hub | Kaffe Station",
+        place: "Corporate Space | Mara's Rest | Transit Hub | Kaffe Station",
+        prompt: 'a space cafe',
+        path: '/images/kaffe.png',
+    });
+
+    // The edit dropped a level and re-spelled the leaf: same spot, new name.
+    const renamed = reconcileRecordPlace(store, 'bg_1', "Corporate Space | Transit Hub | Kaffe-Station");
+    assert.equal(renamed, record);
+    assert.equal(record.place, "Corporate Space | Transit Hub | Kaffe-Station");
+    assert.equal(store.keys[locationKey("Corporate Space | Transit Hub | Kaffe-Station")], 'bg_1');
+    assert.equal(store.keys[locationKey("Corporate Space | Mara's Rest | Transit Hub | Kaffe Station")], undefined, 'the old name is dropped - the edit says it was never that place');
+
+    assert.equal(reconcileRecordPlace(store, 'bg_1', record.place), record, 'an unchanged location is a no-op');
+    assert.equal(reconcileRecordPlace(store, 'bg_999', 'Somewhere'), null, 'a missing record is refused');
+    assert.equal(reconcileRecordPlace(store, 'bg_1', ''), null, 'a missing place is refused');
+});
+
+test('storeRecord replaces a place\u2019s own record in place but never a fold', () => {
+    const store = normalizeStore();
+    const first = storeRecord(store, { key: 'A', place: 'A', prompt: 'one', path: '/one.png' });
+
+    // The brush on the place: its own record is replaced in place, so every
+    // reply at that place repaints together.
+    const again = storeRecord(store, { key: 'A', place: 'A', prompt: 'two', path: '/two.png', overwrite: true });
+    assert.equal(again.id, first.id, 'the place keeps its record and the picture is replaced');
+    assert.equal(again.path, '/two.png');
+
+    // A fold: one record registered under two places. Overwriting it in
+    // place would repaint both places at once - the fresh picture takes the
+    // brushed key alone and the other place keeps the record it knew.
+    aliasLocation(store, 'B', first.id);
+    const fresh = storeRecord(store, { key: 'A', place: 'A', prompt: 'three', path: '/three.png', overwrite: true });
+    assert.notEqual(fresh.id, first.id, 'a shared record is never overwritten in place');
+    assert.equal(store.keys[locationKey('A')], fresh.id);
+    assert.equal(store.keys[locationKey('B')], first.id, 'the other place keeps the record it knew');
+});
+
 test('resolveRecordId tolerates every way the watcher writes an id', () => {
     const store = normalizeStore();
     storeRecord(store, { key: 'A', place: 'A', prompt: 'p', path: '/a.png' });
@@ -336,14 +381,14 @@ test('extractRecentPlaces walks the latest replies backwards, oldest first', () 
 test('formatLatestStory groups by scene when tagged and stays raw when not', () => {
     const messages = [msg('Pre. <scene location="A" weather="Rain" /> Post.')];
 
-    assert.equal(formatLatestStory(messages, { tagged: true, count: 2 }), 'Pre.\nSCENE: A (Rain)\nPost.');
+    assert.equal(formatLatestStory(messages, { tagged: true, count: 2 }), 'Pre.\nSCENE: A [World location: A] (Rain)\nPost.');
     assert.equal(formatLatestStory(messages, { tagged: false, count: 2 }), 'Pre. <scene location="A" weather="Rain" /> Post.');
     assert.equal(formatLatestStory([msg('one'), msg('two')], { tagged: false, count: 1 }), 'two', 'the window is the last count replies');
 
     const polluted = [msg('<scene date="[Friday]" location="[Metro City | Pier 9]" weather="[Cool]" /> x')];
     assert.equal(
         formatLatestStory(polluted, { tagged: true, count: 1 }),
-        'SCENE: Metro City | Pier 9 (Friday, Cool)\nx',
+        'SCENE: Pier 9 [World location: Metro City | Pier 9] (Friday, Cool)\nx',
         'the note example\'s bracket echo never reaches the story blocks');
 });
 
@@ -352,17 +397,17 @@ test('buildWatcherRequest serves the store and the story, and knows force', () =
     const messages = [msg('<scene location="A" /> x')];
 
     const empty = buildWatcherRequest({ store, messages, tagged: true, count: 2 });
-    assert.ok(empty.prompt.includes('CURRENT BACKGROUND\nnone yet'));
-    assert.ok(empty.prompt.includes('KNOWN BACKGROUNDS\nnone'));
-    assert.ok(empty.prompt.includes('RECENT PLACES\nA'));
-    assert.ok(empty.prompt.includes('LATEST STORY\n'));
+    assert.ok(empty.prompt.includes('<currentBackground>\nnone yet\n</currentBackground>'));
+    assert.ok(empty.prompt.includes('<knownBackgrounds>\nKNOWN BACKGROUNDS (IMAGE LIBRARY)\nnone\n</knownBackgrounds>'));
+    assert.ok(empty.prompt.includes('<recentPlaces>\nA [World location: A]\n</recentPlaces>'));
+    assert.ok(empty.prompt.includes('<latestStory>\n'));
     assert.equal(empty.jsonSchema, WATCHER_SCHEMA);
     assert.equal(empty.systemPrompt, watcherSystemPrompt());
 
     storeRecord(store, { key: 'A', place: 'A', prompt: 'a pier at dusk', path: '/a.png' });
     const full = buildWatcherRequest({ store, messages, tagged: true, count: 2 });
-    assert.ok(full.prompt.includes('CURRENT BACKGROUND\nA [Full/world/map location: A] - a pier at dusk'));
-    assert.ok(full.prompt.includes('KNOWN BACKGROUNDS\n- bg_1: A [Full/world/map location: A] - a pier at dusk'));
+    assert.ok(full.prompt.includes('<currentBackground>\nA [World location: A], Description: a pier at dusk\n</currentBackground>'));
+    assert.ok(full.prompt.includes('- bg_1: A [World location: A], Description: a pier at dusk'));
 
     assert.ok(watcherSystemPrompt({ force: true }).includes('fresh image'), 'force switches matching off');
 });
@@ -393,7 +438,7 @@ test('buildWatcherRequest reads only the last reply by default', () => {
 
     const request = buildWatcherRequest({ store, messages, tagged: false });
     assert.equal(BG_STORY_REPLIES, 1);
-    assert.ok(request.prompt.includes('LATEST STORY\nthe warehouse at midnight'));
+    assert.ok(request.prompt.includes('<latestStory>\nthe warehouse at midnight'));
     assert.ok(!request.prompt.includes('the pier at dawn'), 'story context is hardcoded to the last reply');
 });
 
@@ -469,6 +514,29 @@ test('cleanPlaceText and placeShortName read the location chain', () => {
     assert.equal(placeShortName('[Metro City | Docks | Pier 9]'), 'Pier 9', 'bracket pollution never rides the short name');
     assert.equal(placeShortName('The docks'), 'The docks', 'a place with no chain is its own short name');
     assert.equal(placeShortName(''), '');
+
+    assert.equal(placeLabel('Metro City | Docks | Pier 9'), 'Pier 9 [World location: Metro City | Docks | Pier 9]');
+    assert.equal(placeLabel(''), '', 'no place, no label');
+
+    assert.equal(cleanPlaceText('before </latestStory> after'), 'before after', 'the request\u2019s own block tags are scrubbed from story text');
+    assert.equal(cleanPlaceText('<recentPlaces>Metro City | Pier 9</recentPlaces>'), 'Metro City | Pier 9');
+});
+
+test('placeNamesLikelySame tells one place under two spellings from two places', () => {
+    // The same spot, spelled differently - fold.
+    assert.ok(placeNamesLikelySame('Metro City | Docks | Pier 9', 'Metro City | Docks | Pier No9'), 'Pier 9 is Pier No9');
+    assert.ok(placeNamesLikelySame('The Docks | Pier Nine', 'Metro City | Docks | Pier 9'), 'numbers may be spelled out');
+    assert.ok(placeNamesLikelySame('En Route | CV-7742 Shuttle', 'Docking Bay 7-C | CV-7742 Shuttle'), 'the same shuttle under different chains');
+    assert.ok(placeNamesLikelySame('Metro City | Unit 4B - Bedroom', 'Metro City | Unit 4B Bedroom'), 'punctuation is not spelling');
+    assert.ok(placeNamesLikelySame('The Transit Hub | Kaffe Station', 'Transit Hub | Kaffe-Station Cafe'), 'a naming variant of one spot');
+
+    // Two different spots - never fold, even when they rhyme.
+    assert.ok(!placeNamesLikelySame('Transit Hub | Kaffe Station', 'Transit Hub | Landing Pad'), 'a cafe is not a landing pad');
+    assert.ok(!placeNamesLikelySame('Lower Maintenance | Corridor C-12', 'Lower Maintenance | Corridor C-9'), 'the number is the place');
+    assert.ok(!placeNamesLikelySame('Lower Maintenance | Junction 7-B', 'Lower Maintenance | Corridor C-12'), 'a junction is not a corridor');
+    assert.ok(!placeNamesLikelySame('Docks | Pier 9', 'Docks | Pier 12'), 'two piers');
+    assert.ok(!placeNamesLikelySame('Docks | Pier Nine', 'Docks | Pier 12'), 'a spelled number decides too');
+    assert.ok(!placeNamesLikelySame('', ''), 'nothing is never something');
 });
 
 test('buildWatcherRequest labels the place and never truncates the description', () => {
@@ -477,18 +545,24 @@ test('buildWatcherRequest labels the place and never truncates the description',
     storeRecord(store, { key: 'Metro City | Unit 4B - Bedroom', place: '[Metro City | Unit 4B - Bedroom]', prompt: long, path: '/bed.png' });
 
     const request = buildWatcherRequest({ store, messages: [msg('<scene location="Metro City | Unit 4B - Bedroom" /> x')], tagged: true });
-    const line = `- bg_1: Unit 4B - Bedroom [Full/world/map location: Metro City | Unit 4B - Bedroom] - ${long}`;
+    const line = `- bg_1: Unit 4B - Bedroom [World location: Metro City | Unit 4B - Bedroom], Description: ${long}`;
     assert.ok(request.prompt.includes(line), 'the short name names the picture, the chain is context, the description arrives whole');
-    assert.ok(request.prompt.includes(`CURRENT BACKGROUND\nUnit 4B - Bedroom [Full/world/map location: Metro City | Unit 4B - Bedroom] - ${long}`));
+    assert.ok(request.prompt.includes(`<currentBackground>\nUnit 4B - Bedroom [World location: Metro City | Unit 4B - Bedroom], Description: ${long}`));
     assert.ok(!request.prompt.includes('...'), 'nothing is cut');
 });
 
 test('fallbackLocationPrompt describes the place plainly when the watcher fails', () => {
     assert.equal(
         fallbackLocationPrompt({ placeFull: 'The Docks', date: 'Tuesday, March 4', time: '9:40 PM', weather: 'Rain' }),
-        'The Docks, Tuesday, March 4 9:40 PM, Rain, wide establishing shot, empty place, detailed environment',
+        'The Docks, Rain, night, wide establishing shot, empty place, detailed environment',
     );
     assert.equal(fallbackLocationPrompt('Pier 9'), 'Pier 9, wide establishing shot, empty place, detailed environment');
+
+    const chain = fallbackLocationPrompt({ placeFull: 'Corporate Space | Core Systems | New Eden Station | Docking Bay 7-C | CV-7742 Shuttle', time: '09:58', weather: 'Controlled atmosphere, 21\u00b0C' });
+    assert.ok(chain.startsWith('CV-7742 Shuttle, Docking Bay 7-C, New Eden Station'), 'the specific spot first, its world as plain words after it');
+    assert.ok(!chain.includes('|'), 'a pipe chain is noise in a picture');
+    assert.ok(!chain.includes('2347') && !chain.includes('March'), 'no calendar stamp - the clock becomes a day-part');
+    assert.ok(chain.includes('morning light'));
 });
 
 /* ---------- per-response stamps ---------- */
@@ -547,6 +621,20 @@ test('resolveStampId finds the variant a fresh swipe was taken from', () => {
     assert.deepEqual(resolveStampId([message], 0), { id: 'bg_3', index: 0 }, 'its own stamp rules');
 });
 
+test('brushTargetIndex redraws the response it was clicked on', () => {
+    const user = { is_user: true };
+    const reply = { is_user: false };
+    const messages = [reply, user, reply, user, reply];
+
+    assert.equal(brushTargetIndex(messages, 4), 4, 'the shown reply is the target');
+    assert.equal(brushTargetIndex(messages, 3), 2, 'a user turn redraws the nearest reply before it');
+    assert.equal(brushTargetIndex(messages, 2), 2, 'never some earlier owner of the picture - the shown reply itself');
+    assert.equal(brushTargetIndex(messages, 0), 0);
+    assert.equal(brushTargetIndex(messages, 99), 4, 'a shown turn past the end clamps');
+    assert.equal(brushTargetIndex(messages, null), 4, 'with no shown turn at all, the chat\u2019s end');
+    assert.equal(brushTargetIndex([], 3), 0, 'an empty chat has no target');
+});
+
 test('decide carries what the reply already has, by meaning', () => {
     const store = normalizeStore();
     const pier = storeRecord(store, { place: 'The city | Docks | Pier 9', prompt: 'a pier', path: '/b/pier.png' });
@@ -578,10 +666,10 @@ test("buildWatcherRequest asks about its own reply, not the chat's end", () => {
     ];
 
     const request = buildWatcherRequest({ store, messages, at: 1, current: prior });
-    assert.ok(request.prompt.includes('CURRENT BACKGROUND\nPier 9 [Full/world/map location: Pier 9] - a pier at dusk'), 'the reply carried its own baseline in');
+    assert.ok(request.prompt.includes('<currentBackground>\nPier 9 [World location: Pier 9], Description: a pier at dusk'), 'the reply carried its own baseline in');
     assert.ok(request.prompt.includes('SCENE: Rooftop'), 'the story ends at the target reply');
     assert.ok(!request.prompt.includes('still on the roof'), 'later replies are not part of its story');
 
     const plain = buildWatcherRequest({ store, messages });
-    assert.ok(plain.prompt.includes('CURRENT BACKGROUND\nPier 9 [Full/world/map location: Pier 9] - a pier at dusk'), 'with no baseline given, the on-screen record stands in');
+    assert.ok(plain.prompt.includes('<currentBackground>\nPier 9 [World location: Pier 9], Description: a pier at dusk'), 'with no baseline given, the on-screen record stands in');
 });

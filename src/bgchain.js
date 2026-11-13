@@ -25,18 +25,24 @@
 
 import {
     aliasLocation,
+    brushTargetIndex,
     buildWatcherRequest,
     compileBgPrompt,
     decide,
     fallbackLocationPrompt,
+    locationKey,
     noteBaseline,
     parseWatcherReply,
+    placeNamesLikelySame,
+    placeShortName,
     planResolution,
     recoverCurrentKey,
+    reconcileRecordPlace,
     resolveRecordId,
     resolveStampId,
     resolveStampRecord,
     restorePlan,
+    setStamp,
     stampOf,
     storeRecord,
     LANDSCAPE_SIZE,
@@ -179,7 +185,28 @@ export function initBackgrounds({ isOpen } = {}) {
 
     on('MESSAGE_EDITED', mesId => {
         if (!uiIsOpen()) return;
-        requestBackground({ index: Number(mesId), refresh: true }).catch?.(error => {
+        const index = Number(mesId);
+
+        // A re-spelled location keeps its picture: the record the reply
+        // points at is renamed and re-keyed to the edited name, so the scene
+        // tag and the library never drift apart. A reply whose place really
+        // changed (another spot entirely) falls through to the ordinary
+        // re-resolution below - its old picture does not fit the new place.
+        const messages = chatMessages();
+        const message = messages[index];
+        if (message && !message.is_user) {
+            const own = stampOf(message, Number(message.swipe_id ?? 0));
+            const place = resolveScene(messages, index, { persona: personaName() })?.scene?.placeFull || '';
+            const record = own ? bgStore().records?.[own] : null;
+            if (record && place && placeNamesLikelySame(place, record.place)) {
+                reconcileRecordPlace(bgStore(), own, place);
+                saveChatMetadata();
+                void syncShownBackground();
+                return;
+            }
+        }
+
+        requestBackground({ index, refresh: true }).catch?.(error => {
             console.warn(`${LOG} chain failed`, error);
         });
     });
@@ -249,38 +276,25 @@ function lastMessageIndex() {
 }
 
 /**
- * The brush button: a fresh image for the place the shown turn carries -
- * the nearest reply at or before it that owns a picture. The response keeps
- * the new image (the place's record is redrawn in place, so the retry cleans
- * the place up everywhere it appears).
+ * The brush button: a fresh image for the place the shown turn carries. The
+ * response it was clicked on keeps the new image (the place's record is
+ * redrawn in place, so the retry cleans the place up everywhere it recurs).
+ * The shown turn arrives from the pane at click time - `at` - so no stale
+ * reading of "shown" can ever send the brush to the chat's end; only a click
+ * with no shown turn at all falls back to one.
  *
+ * @param {number|null} [at] the shown turn's index, straight from the pane
  * @returns {Promise<{status:string, record?:object, error?:string}>}
  */
-export async function forceBackground() {
+export async function forceBackground(at = null) {
     const messages = chatMessages();
     if (!currentChatId() || !messages.length) {
         return { status: 'unavailable', error: 'Open a chat first.' };
     }
 
-    const index = brushTargetIndex(messages);
+    const index = brushTargetIndex(messages, Number.isInteger(at) ? at : shownTarget());
     const swipeId = Number(messages[index]?.swipe_id ?? 0);
     return requestBackground({ index, swipeId, force: true });
-}
-
-/**
- * The reply the brush redraws: the owner of the shown turn's picture, else
- * the nearest reply at or before it, else the chat's end. User turns own no
- * picture, so the brush never stamps one.
- */
-function brushTargetIndex(messages) {
-    const at = Math.min(shownTarget(), messages.length - 1);
-    const hit = resolveStampId(messages, at);
-    if (hit) return hit.index;
-
-    for (let i = at; i >= 0; i -= 1) {
-        if (!messages[i]?.is_user) return i;
-    }
-    return Math.max(0, messages.length - 1);
 }
 
 /**
@@ -512,6 +526,22 @@ async function runWatcherChain({ store, messages, index, swipeId, place, scene, 
     // own naming, and only a nameless answer falls back to its first phrase.
     const target = place || answer.place || firstPhrase(answer.prompt) || 'the story';
 
+    // A "same" or "known" claims the place being drawn is the named record's
+    // place under another spelling. The claim is checked before anything
+    // folds: a careless answer must never merge two different spots onto one
+    // picture - the fold would stick in the keys map and one brush would then
+    // repaint both places at once. A rejected claim draws fresh, from the
+    // watcher's own description when it wrote one.
+    if (answer.state === 'same' && !placeNamesLikelySame(target, baseline?.place || '')) {
+        answer = { state: 'new', knownId: null, place: answer.place || place, prompt: answer.prompt || plain() };
+    } else if (answer.state === 'known') {
+        const claimed = resolveRecordId(store, answer.knownId);
+        const claimedRecord = claimed ? store.records[claimed] : null;
+        if (!claimedRecord || !placeNamesLikelySame(target, claimedRecord.place)) {
+            answer = { state: 'new', knownId: null, place: answer.place || place, prompt: answer.prompt || plain() };
+        }
+    }
+
     if (answer.state === 'same') {
         // The same place, spelled differently: fold the spelling onto the
         // picture the reply carried, so the next skip-gate compares equal.
@@ -525,7 +555,7 @@ async function runWatcherChain({ store, messages, index, swipeId, place, scene, 
         const record = id ? aliasLocation(store, target || store.records[id].place, id) : null;
         if (record) {
             stampLanded(index, swipeId, record.id);
-            globalThis.toastr?.success?.(`Background set: ${record.place}`);
+            globalThis.toastr?.success?.(`Background set: ${placeShortName(record.place)}`);
             return { status: 'cached', record };
         }
         // A stale id (hand-edited or pruned chat data): draw fresh instead,
@@ -550,12 +580,13 @@ async function generateBackground({ store, index, swipeId, place, description, f
     if (!ready.ok) return { status: 'unavailable', error: ready.text };
 
     const { bgStyle, bgNegative, bgSize } = settings();
-    const prompt = compileBgPrompt(description, bgStyle);
+    const clean = String(description ?? '').trim();
+    const prompt = compileBgPrompt(clean, bgStyle);
     const size = bgSize === 'landscape' ? LANDSCAPE_SIZE : null;
 
     console.debug(`${LOG} drawing`, { place, prompt });
 
-    const painting = stage(place ? `Painting ${place}\u2026` : 'Painting the location\u2026');
+    const painting = stage(place ? `Painting ${placeShortName(place)}\u2026` : 'Painting the location\u2026');
     let result;
     try {
         result = await imagine({
@@ -573,21 +604,51 @@ async function generateBackground({ store, index, swipeId, place, description, f
     if (my !== chainSeq) return { status: 'superseded' };
 
     // `overwrite` is the brush's "replace it" - the place has one canonical
-    // record and the retry redraws it everywhere it appears, newest wins.
+    // record and the retry redraws it everywhere it recurs, newest wins. The
+    // record keeps the description WITHOUT the style suffix: the style rides
+    // in at draw time, so the library reads clean. When the place's old
+    // record was a fold (shared with other places) the fresh picture takes a
+    // record of its own and this place's replies follow it.
+    const key = locationKey(place);
+    const priorId = store?.keys?.[key] || null;
     const record = storeRecord(store, {
         key: place,
         place,
-        prompt,
+        prompt: clean,
         path: result.path,
         overwrite: !!force,
     });
     if (!record) return { status: 'error', error: 'The background could not be remembered.' };
+    if (priorId && priorId !== record.id) retargetStamps(priorId, record, key);
 
     stampLanded(index, swipeId, record.id);
     console.debug(`${LOG} background set`, { place, path: result.path });
-    globalThis.toastr?.success?.(place ? `Background set: ${place}` : 'Background set');
+    globalThis.toastr?.success?.(place ? `Background set: ${placeShortName(place)}` : 'Background set');
 
     return { status: 'generated', record };
+}
+
+/**
+ * The fresh picture's half of the fold healing: every reply of THIS place
+ * still pointing at the displaced record follows the fresh picture - replies
+ * of other places keep the record they knew, folds dying one brush at a time.
+ */
+function retargetStamps(priorId, record, key) {
+    const messages = chatMessages();
+    const persona = personaName();
+
+    for (let index = 0; index < messages.length; index += 1) {
+        const message = messages[index];
+        if (!message || message.is_user) continue;
+        if (locationKey(resolveScene(messages, index, { persona })?.scene?.placeFull || '') !== key) continue;
+
+        const variants = Math.max(1, Array.isArray(message.swipe_info) ? message.swipe_info.length : 1);
+        for (let swipeId = 0; swipeId < variants; swipeId += 1) {
+            if (stampOf(message, swipeId) === priorId) setStamp(message, swipeId, record.id);
+        }
+    }
+
+    saveChatMetadata();
 }
 
 /**

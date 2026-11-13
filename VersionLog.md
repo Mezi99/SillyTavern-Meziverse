@@ -1,5 +1,25 @@
 # Meziverse — version log
 
+## 2.9.5 - 2026-11-13
+
+The pictures stop sharing beds - and the library learns to speak plainly.
+
+### One place, one picture - and never two places, one picture
+- A watcher answer of "same" or "known" claims two names are one spot. That claim is now **verified before anything folds**: names must look like variants of one place (numbers decide - "Corridor C-12" is never "Corridor C-9"; "Landing Pad" shares nothing with "Kaffe Station"; "Pier 9", "Pier No9" and "the ninth pier" are one pier). A careless answer used to merge two rooms onto one record forever, and the next brush then repainted both - "the last picture overwrites all previous". A rejected claim draws the new place its own picture instead.
+- The **brush repaints the response it was clicked on** - the shown reply, read from the pane at click time, never the chat's end behind the reader's back - and the place's picture is replaced everywhere that place recurs. A record still shared by several places (old fold) is never overwritten: the fresh picture takes the brushed key and that place's replies follow it, so old chats heal one brush at a time.
+- Shuffle-back keeps every reply's own picture: verified live, turn by turn.
+
+### Location edits keep the books
+- Editing a scene tag's location (the ribbon's level rows) now **renames and re-keys the record that reply points at**, picture kept - the tag and the library never drift apart. Adding or deleting a chain level is the same place; naming a genuinely different place falls through to the ordinary re-resolution (the cached picture of the new place, or a fresh draw). Works for chains of any length - 4, 5, 6 parts, the leaf is always the place.
+
+### The watcher's question, tidied
+- Every block of the request wears its own tags (`<currentBackground>`, `<knownBackgrounds>`, `<recentPlaces>`, `<latestStory>`) - look-alikes in story text are scrubbed, so the layout can't be spoofed - and every place reads **`short name [World location: chain]`** with the leaf first and the image description behind an explicit **`Description:`** marker. The library's title reads KNOWN BACKGROUNDS (IMAGE LIBRARY). The context is unchanged: environment-only, one reply, the same question every call.
+- The **image prompt** the fallback template writes speaks image-model now: the spot first, its world as plain words (never a pipe chain), the weather and a day-part for the light (never "Friday, March 16, 2347 09:58"). Records keep the description **raw** - the style suffix rides in at draw time - so the library reads clean.
+- Notices name the leaf: "Painting Junction 7-B...", never the whole chain.
+
+### Notes
+- `manifest.json` matches; the synthetic suite stands at 276 tests.
+
 ## 2.9.4 - 2026-11-13
 
 The scene ribbon gets its wardrobes — and its own pen.

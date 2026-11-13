@@ -193,6 +193,36 @@ export function aliasLocation(store, placeOrKey, targetId) {
 }
 
 /**
+ * The location edit's side of the books: a reply whose place was re-spelled
+ * (the scene editor rewrites the tag) keeps its picture and the record is
+ * renamed and re-keyed to match, so the tag and the library never drift
+ * apart. The old key is dropped when it belongs to this record - the edit
+ * says it was never that place's name.
+ *
+ * @param {object} store
+ * @param {string} recordId the record the edited reply points at
+ * @param {string} place the location as the edit spelled it
+ * @returns {object|null} the renamed record, or null for a missing record or place
+ */
+export function reconcileRecordPlace(store, recordId, place) {
+    const ensured = normalizeStore(store);
+    const record = ensured.records?.[String(recordId ?? '').trim()];
+    if (!record) return null;
+
+    const normKey = locationKey(place);
+    if (!normKey) return null;
+
+    const oldKey = locationKey(record.place);
+    if (normKey === oldKey) return record;
+
+    record.place = String(place ?? '').trim() || normKey;
+    ensured.keys[normKey] = record.id;
+    if (oldKey && ensured.keys[oldKey] === record.id) delete ensured.keys[oldKey];
+    if (ensured.currentKey === oldKey) ensured.currentKey = normKey;
+    return record;
+}
+
+/**
  * Stores a freshly generated background and marks its place current. With
  * `overwrite` the existing record for that place is replaced in place (the
  * brush button's "give me a new one"); without it every call adds a record,
@@ -218,7 +248,14 @@ export function storeRecord(store, {
     if (!normKey || !cleanPath) return null;
 
     const existingId = ensured.keys[normKey];
-    const reuse = overwrite && existingId && ensured.records[existingId] ? existingId : null;
+    // "Replace it" only holds when the record IS this place's picture. A
+    // record shared by several keys is a fold from the careless-matching
+    // days: overwriting it in place would repaint every folded place at
+    // once, so the fresh picture takes this key alone and the others keep
+    // the record they knew.
+    const shared = existingId
+        && Object.values(ensured.keys).filter(id => id === existingId).length > 1;
+    const reuse = overwrite && existingId && !shared && ensured.records[existingId] ? existingId : null;
     const id = reuse || `bg_${ensured.nextId}`;
     if (!reuse) ensured.nextId += 1;
 
@@ -417,15 +454,27 @@ export function recordSrc(record) {
 }
 
 /**
+ * The request's own block tags - a story that carries a look-alike never
+ * breaks the block layout (story text is another model's output and may say
+ * anything). Place text passes through the same scrub.
+ */
+const REQUEST_TAG_RE = /<\/?(?:currentBackground|knownBackgrounds|recentPlaces|latestStory)>/gi;
+
+/**
  * A place string as the watcher should see it. The bracket characters a
  * model's echo of the note's example leaves behind are stripped: they read as
- * placeholders and confuse more than they clarify.
+ * placeholders and confuse more than they clarify. The request's own block
+ * tags are stripped too - story text is untrusted and may carry look-alikes.
  *
  * @param {*} value
  * @returns {string}
  */
 export function cleanPlaceText(value) {
-    return String(value ?? '').replace(/[[\]]/g, ' ').replace(/\s+/g, ' ').trim();
+    return String(value ?? '')
+        .replace(REQUEST_TAG_RE, ' ')
+        .replace(/[[\]]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
 }
 
 /**
@@ -441,6 +490,89 @@ export function placeShortName(value) {
     const clean = cleanPlaceText(value);
     const at = clean.lastIndexOf('|');
     return (at >= 0 ? clean.slice(at + 1) : clean).trim();
+}
+
+/**
+ * A place as every prompt names it: the short name (the specific spot to
+ * paint) first, the chain as its world in brackets. One shape everywhere -
+ * the library lines, the story headers, the recent-places timeline - so the
+ * reader never mistakes the description for the name.
+ *
+ * @param {*} value
+ * @returns {string}
+ */
+export function placeLabel(value) {
+    const clean = cleanPlaceText(value);
+    const short = placeShortName(clean);
+    return short ? `${short} [World location: ${clean}]` : '';
+}
+
+/** Number words a place name may spell out ("Pier Nine" is "Pier 9"). */
+const NAME_NUMBERS = new Map(Object.entries({
+    zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9,
+    ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16,
+    seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20,
+    first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6, seventh: 7, eighth: 8,
+    ninth: 9, tenth: 10, eleventh: 11, twelfth: 12,
+}));
+
+const NAME_STOPWORDS = new Set(['the', 'of', 'a', 'an', 'at', 'in', 'on', 'and', 'or', 'no']);
+
+/** One short name reduced to its comparable parts. */
+function nameSignature(value) {
+    const text = placeShortName(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const tokens = new Set();
+    const numbers = new Set();
+
+    for (const word of text.split(' ').filter(Boolean)) {
+        for (const run of word.match(/\d+/g) || []) numbers.add(String(Number(run)));
+        const letters = word.replace(/\d+/g, '');
+        if (!letters) continue;
+        if (NAME_NUMBERS.has(letters)) {
+            numbers.add(String(NAME_NUMBERS.get(letters)));
+            continue;
+        }
+        if (letters.length >= 2 && !NAME_STOPWORDS.has(letters)) tokens.add(letters);
+    }
+
+    return { text, tokens, numbers };
+}
+
+function sameNumbers(first, second) {
+    if (first.size !== second.size) return false;
+    for (const number of first) if (!second.has(number)) return false;
+    return true;
+}
+
+/**
+ * Whether two place names could name the same spot under different spellings:
+ * "Pier No9", "Pier 9" and "the ninth pier" are one pier, while "Corridor
+ * C-12" and "Corridor C-9" are two corridors and "Landing Pad" and "Kaffe
+ * Station" share nothing. The watcher's "same"/"known" answers claim exactly
+ * that, so the claim is checked before it folds two locations onto one
+ * picture - a careless fold sticks in the keys map and one brush then
+ * repaints both places. The rule is deliberately strict: a rejected answer
+ * draws a fresh picture (recoverable), a wrong fold merges two places
+ * forever.
+ *
+ * @param {*} a one place, e.g. 'Metro City | Docks | Pier 9'
+ * @param {*} b the place it claims to be
+ * @returns {boolean}
+ */
+export function placeNamesLikelySame(a, b) {
+    const first = nameSignature(a);
+    const second = nameSignature(b);
+    if (!first.text || !second.text) return false;
+    if (first.text === second.text) return true;
+
+    // Numbers decide before words do: "C-12" and "C-9" share every word
+    // but the one that matters.
+    if (first.numbers.size && second.numbers.size && !sameNumbers(first.numbers, second.numbers)) return false;
+
+    if (first.text.includes(second.text) || second.text.includes(first.text)) return true;
+
+    for (const token of first.tokens) if (second.tokens.has(token)) return true;
+    return false;
 }
 
 /**
@@ -587,6 +719,29 @@ export function resolveStampRecord(store, messages, index) {
 }
 
 /**
+ * The reply the brush redraws: the shown turn when it is a reply, the nearest
+ * reply before it when it is a user turn (user turns own no picture), the
+ * chat's end only when nothing was shown. Never some earlier owner of the
+ * on-screen picture - the brush redraws the response it was clicked on, and
+ * that response keeps the new picture.
+ *
+ * @param {Array} messages
+ * @param {number|null} [at] the shown turn's index; the chat's end by default
+ * @returns {number}
+ */
+export function brushTargetIndex(messages, at = null) {
+    const list = Array.isArray(messages) ? messages : [];
+    if (!list.length) return 0;
+
+    const shown = Number.isInteger(at) ? at : list.length - 1;
+    const from = Math.min(shown, list.length - 1);
+    for (let i = from; i >= 0; i -= 1) {
+        if (!list[i]?.is_user) return i;
+    }
+    return Math.max(0, list.length - 1);
+}
+
+/**
  * What the chain should do about one reply's place: nothing (the reply keeps
  * the picture it carried), apply a cached image (the place was seen before),
  * or ask the watcher (a genuinely new place - or a spelling drift only the
@@ -693,7 +848,32 @@ export const WATCHER_SCHEMA = Object.freeze({
  * that structure; the plain-prose hand gets raw text, where the location may
  * change inside a single paragraph or hold for many messages.
  */
-export const DEFAULT_BG_PROMPT_ON = `You are a background-art assistant for a visual-novel style roleplay. You receive the CURRENT BACKGROUND (the place name and image description shown now), a list of KNOWN BACKGROUNDS, a RECENT PLACES timeline, and the LATEST STORY grouped by scene blocks - each block's header names the place, time and weather its narration happens in. The LAST block is where the story is now.
+export const DEFAULT_BG_PROMPT_ON = `You are a background-art assistant for a visual-novel style roleplay. You receive <currentBackground> (the place name and image description shown now), <knownBackgrounds> (the image library this chat has drawn), a <recentPlaces> timeline, and <latestStory> grouped by scene blocks - each block's header names the place, time and weather its narration happens in. The LAST block is where the story is now.
+
+Every place arrives as "short name [World location: ...]": a location chain like Metro City | Downtown District | Fifth Street Walk-Up | Unit 4B - Bedroom. The short name - the part after the last "|" - is the specific place to paint; the chain before it (region, city, district, street) is the world the place lives in: the short name decides what to paint, the chain decides how it looks - architecture, materials, vegetation, cultural details, era and climate follow the world named first. A suburb of Las Vegas, a street in Pyongyang and a village in a high-fantasy realm must never share the same buildings.
+
+VERIFY first: is the place at the end of <latestStory> the same place as <currentBackground>? Place names are free text written by another model: "Pier No9", "Pier 9" and "the ninth pier" may all be the same place. Judge by meaning, not by spelling. If it is the same place, answer state "same".
+
+If the place is genuinely different but clearly equals one of the <knownBackgrounds>, answer state "known" with that background's id.
+
+Otherwise answer state "new" and write an image prompt that describes ONLY the current place as an establishing shot for a visual-novel background. You write prompts for a text-to-image model: describe what a camera would see at that place - the space, architecture, objects, materials, weather, time of day, lighting, mood, and a clear vantage point. Rules: 40 to 90 words of comma-separated visual phrases; the place is the subject - no characters, no people, no silhouettes, no names, no actions, no emotions, no sounds; anchor lighting and sky on the block's time of day and weather when stated; anchor the place's style on the location chain's world - buildings, materials, colors, vegetation and signage follow the region, and invented worlds take their visual identity from the names and the story's own words; the prompt is always a visual description - never a location chain, a place name, or any text you received verbatim; style and quality words are appended for you - never include them; never mention "background" or anything about prompts. Output only the description in "prompt".`;
+
+export const DEFAULT_BG_PROMPT_OFF = `You are a background-art assistant for a visual-novel style roleplay. You receive <currentBackground> (the place name and image description shown now), <knownBackgrounds> (the image library this chat has drawn), a <recentPlaces> timeline, and <latestStory> as plain story text. There are no scene markers here: the location may change abruptly inside a paragraph or stay put for many messages. Read the whole excerpt for where the characters are at its END.
+
+Every place arrives as "short name [World location: ...]": a location chain like Metro City | Downtown District | Fifth Street Walk-Up | Unit 4B - Bedroom. The short name - the part after the last "|" - is the specific place to paint; the chain before it (region, city, district, street) is the world the place lives in: the short name decides what to paint, the chain decides how it looks - architecture, materials, vegetation, cultural details, era and climate follow the world named first. A suburb of Las Vegas, a street in Pyongyang and a village in a high-fantasy realm must never share the same buildings.
+
+VERIFY first: is the place at the end of <latestStory> the same place as <currentBackground>? Place names are free text written by another model: "Pier No9", "Pier 9" and "the ninth pier" may all be the same place. Judge by meaning, not by spelling. If it is the same place, answer state "same".
+
+If the place is genuinely different but clearly equals one of the <knownBackgrounds>, answer state "known" with that background's id.
+
+Otherwise answer state "new" and write an image prompt that describes ONLY the current place as an establishing shot for a visual-novel background. You write prompts for a text-to-image model: describe what a camera would see at that place - the space, architecture, objects, materials, weather, time of day, lighting, mood, and a clear vantage point. Rules: 40 to 90 words of comma-separated visual phrases; the place is the subject - no characters, no people, no silhouettes, no names, no actions, no emotions, no sounds; anchor lighting and sky on the story's time of day and weather when stated; anchor the place's style on the location chain's world - buildings, materials, colors, vegetation and signage follow the region, and invented worlds take their visual identity from the names and the story's own words; the prompt is always a visual description - never a location chain, a place name, or any text you received verbatim; style and quality words are appended for you - never include them; never mention "background" or anything about prompts. Output only the description in "prompt".`;
+
+/**
+ * The prompt cores before the request blocks wore their tags (v2.9.4) - kept
+ * only so a saved settings copy that followed the default forward can follow
+ * the default back (see settings.js).
+ */
+export const PRIOR_DEFAULT_BG_PROMPT_ON = `You are a background-art assistant for a visual-novel style roleplay. You receive the CURRENT BACKGROUND (the place name and image description shown now), a list of KNOWN BACKGROUNDS, a RECENT PLACES timeline, and the LATEST STORY grouped by scene blocks - each block's header names the place, time and weather its narration happens in. The LAST block is where the story is now.
 
 Every place arrives as "short name [Full/world/map location: ...]": a location chain like Metro City | Downtown District | Fifth Street Walk-Up | Unit 4B - Bedroom. The short name - the part after the last "|" - is the specific place to paint; the chain before it (region, city, district, street) is the world the place lives in: the short name decides what to paint, the chain decides how it looks - architecture, materials, vegetation, cultural details, era and climate follow the world named first. A suburb of Las Vegas, a street in Pyongyang and a village in a high-fantasy realm must never share the same buildings.
 
@@ -703,7 +883,7 @@ If the place is genuinely different but clearly equals one of the KNOWN BACKGROU
 
 Otherwise answer state "new" and write an image prompt that describes ONLY the current place as an establishing shot for a visual-novel background. You write prompts for a text-to-image model: describe what a camera would see at that place - the space, architecture, objects, materials, weather, time of day, lighting, mood, and a clear vantage point. Rules: 40 to 90 words of comma-separated visual phrases; the place is the subject - no characters, no people, no silhouettes, no names, no actions, no emotions, no sounds; anchor lighting and sky on the block's time of day and weather when stated; anchor the place's style on the location chain's world - buildings, materials, colors, vegetation and signage follow the region, and invented worlds take their visual identity from the names and the story's own words; the prompt is always a visual description - never a location chain, a place name, or any text you received verbatim; style and quality words are appended for you - never include them; never mention "background" or anything about prompts. Output only the description in "prompt".`;
 
-export const DEFAULT_BG_PROMPT_OFF = `You are a background-art assistant for a visual-novel style roleplay. You receive the CURRENT BACKGROUND (the place name and image description shown now), a list of KNOWN BACKGROUNDS, a RECENT PLACES timeline, and the LATEST STORY as plain story text. There are no scene markers here: the location may change abruptly inside a paragraph or stay put for many messages. Read the whole excerpt for where the characters are at its END.
+export const PRIOR_DEFAULT_BG_PROMPT_OFF = `You are a background-art assistant for a visual-novel style roleplay. You receive the CURRENT BACKGROUND (the place name and image description shown now), a list of KNOWN BACKGROUNDS, a RECENT PLACES timeline, and the LATEST STORY as plain story text. There are no scene markers here: the location may change abruptly inside a paragraph or stay put for many messages. Read the whole excerpt for where the characters are at its END.
 
 Every place arrives as "short name [Full/world/map location: ...]": a location chain like Metro City | Downtown District | Fifth Street Walk-Up | Unit 4B - Bedroom. The short name - the part after the last "|" - is the specific place to paint; the chain before it (region, city, district, street) is the world the place lives in: the short name decides what to paint, the chain decides how it looks - architecture, materials, vegetation, cultural details, era and climate follow the world named first. A suburb of Las Vegas, a street in Pyongyang and a village in a high-fantasy realm must never share the same buildings.
 
@@ -871,7 +1051,7 @@ export function formatLatestStory(messages, { tagged = true, count = BG_STORY_RE
                 .map(cleanPlaceText)
                 .filter(Boolean)
                 .join(', ');
-            const header = group.place ? `SCENE: ${cleanPlaceText(group.place)}${when ? ` (${when})` : ''}` : '';
+            const header = group.place ? `SCENE: ${placeLabel(group.place)}${when ? ` (${when})` : ''}` : '';
             blocks.push([header, group.text].filter(Boolean).join('\n'));
         }
         if (blocks.length) turns.push(blocks.join('\n'));
@@ -899,26 +1079,25 @@ export const BG_STORY_REPLIES = 1;
 export function buildWatcherRequest({ store, messages, tagged = true, count = BG_STORY_REPLIES, at, persona = '', force = false, systemCore = '', current } = {}) {
     const blocks = [];
 
-    // A place reads "short name [Full/world/map location: ...]" everywhere it
-    // names an image: the short name is what the picture is of, the chain is
-    // context for a better prompt - so the watcher never mistakes one for the
-    // other or answers with a location string.
-    const label = place => `${placeShortName(place)} [Full/world/map location: ${cleanPlaceText(place)}]`;
-
+    // Every block wears its own tags and every place reads "short name
+    // [World location: ...]", with the image description behind an explicit
+    // "Description:" - so the watcher never mistakes the description for the
+    // name (or answers with a location string), and the leaf it must paint is
+    // always the first thing it reads.
     const shown = current !== undefined ? current : currentRecord(store);
-    blocks.push(`CURRENT BACKGROUND\n${shown ? `${label(shown.place)} - ${shown.prompt}` : 'none yet'}`);
+    blocks.push(`<currentBackground>\n${shown ? `${placeLabel(shown.place)}, Description: ${shown.prompt}` : 'none yet'}\n</currentBackground>`);
 
     const known = knownBackgroundsList(store, { limit: 12 });
-    blocks.push(`KNOWN BACKGROUNDS\n${known.length
-        ? known.map(entry => `- ${entry.id}: ${label(entry.place)} - ${entry.prompt}`).join('\n')
-        : 'none'}`);
+    blocks.push(`<knownBackgrounds>\nKNOWN BACKGROUNDS (IMAGE LIBRARY)\n${known.length
+        ? known.map(entry => `- ${entry.id}: ${placeLabel(entry.place)}, Description: ${entry.prompt}`).join('\n')
+        : 'none'}\n</knownBackgrounds>`);
 
     const places = tagged
         ? extractRecentPlaces(messages, { limit: 6, at, persona })
         : knownBackgroundsList(store, { limit: 6 }).map(entry => entry.place).reverse();
-    blocks.push(`RECENT PLACES\n${places.length ? places.map(cleanPlaceText).join(' -> ') : 'unknown'}`);
+    blocks.push(`<recentPlaces>\n${places.length ? places.map(placeLabel).join(' -> ') : 'unknown'}\n</recentPlaces>`);
 
-    blocks.push(`LATEST STORY\n${formatLatestStory(messages, { tagged, count, at, persona }) || 'empty'}`);
+    blocks.push(`<latestStory>\n${formatLatestStory(messages, { tagged, count, at, persona }) || 'empty'}\n</latestStory>`);
 
     return {
         systemPrompt: watcherSystemPrompt({ tagged, force, core: systemCore }),
@@ -949,9 +1128,30 @@ export function compileBgPrompt(description, style = '') {
 }
 
 /**
+ * The clock as an image model wants it: a day-part for the lighting, never a
+ * calendar stamp ("Friday, March 16, 2347 09:58" is noise in a picture).
+ */
+function dayPart(time) {
+    const match = /(\d{1,2}):(\d{2})\s*(am|pm)?/i.exec(String(time ?? ''));
+    if (!match) return '';
+
+    let hour = Number(match[1]) % 24;
+    const suffix = (match[3] || '').toLowerCase();
+    if (suffix === 'pm' && hour < 12) hour += 12;
+    if (suffix === 'am' && hour === 12) hour = 0;
+
+    if (hour >= 5 && hour <= 9) return 'morning light';
+    if (hour >= 10 && hour <= 15) return 'daylight';
+    if (hour >= 16 && hour <= 19) return 'evening light';
+    return 'night';
+}
+
+/**
  * The deterministic description used when the watcher call fails but the tags
  * still know where the story is: better a plain picture of the place than no
- * picture at all.
+ * picture at all. The shape is the image model's, not the map's: the specific
+ * spot first, its world as plain words after it (a "|" chain is noise in a
+ * picture), the weather and the day-part for the light, then the shot tags.
  *
  * @param {object|string} scene a scene record, or a place name
  * @returns {string}
@@ -959,10 +1159,19 @@ export function compileBgPrompt(description, style = '') {
 export function fallbackLocationPrompt(scene) {
     const record = scene && typeof scene === 'object' ? scene : { placeFull: String(scene ?? '') };
     const place = String(record.placeFull || record.place || '').trim();
-    const when = [record.date || '', record.time || ''].filter(Boolean).join(' ');
-    return [place, when, record.weather || '', 'wide establishing shot', 'empty place, detailed environment']
-        .filter(Boolean)
-        .join(', ');
+
+    const levels = cleanPlaceText(place).split('|').map(level => level.trim()).filter(Boolean);
+    const leaf = levels.length ? levels[levels.length - 1] : place;
+    const world = levels.slice(0, -1).reverse();
+
+    return [
+        leaf,
+        ...world,
+        cleanPlaceText(record.weather || ''),
+        dayPart(record.time),
+        'wide establishing shot',
+        'empty place, detailed environment',
+    ].filter(Boolean).join(', ');
 }
 
 /**
