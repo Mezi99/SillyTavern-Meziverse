@@ -88,6 +88,24 @@ export function iconHtml(name, className = 'ico') {
     return `<svg class="${className}" aria-hidden="true"><use href="#${name}"/></svg>`;
 }
 
+/**
+ * Builds one Font Awesome node wearing the glyph class SillyTavern itself
+ * wears on the same button - the mirror buttons show ST's exact icons, and
+ * the theme colours them through `currentColor`. The sprite stays for
+ * Meziverse's own glyphs.
+ */
+export function fa(classes) {
+    const node = document.createElement('i');
+    node.className = classes;
+    node.setAttribute('aria-hidden', 'true');
+    return node;
+}
+
+/** The same Font Awesome icon as markup, for the strings that build HTML. */
+export function faHtml(classes) {
+    return `<i class="${classes}" aria-hidden="true"></i>`;
+}
+
 /** Puts the sprite into the root once. */
 export function injectSprite(root) {
     if (root.querySelector('.mz-sprite')) return;

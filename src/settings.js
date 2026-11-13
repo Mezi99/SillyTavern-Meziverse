@@ -53,6 +53,15 @@ const DEFAULTS = {
     // Speech bubbles in the reading pane: the speaker's label, the words in
     // a quiet bubble, the tone said in after. Off leaves the prose plain.
     speechFx: true,
+    // The reasoning block in the reading pane: the model's thinking as an
+    // expandable block above the turn's prose. Off leaves the pane exactly
+    // as it was - and the log drawer never shows reasoning either way.
+    showReasoning: true,
+    // The scene header's wardrobe in the reading pane: 'quiet' (the default),
+    // 'rule' (chapter rule), 'date' (date-first, for fast-paced stories) or
+    // 'simple' (the first band Meziverse ever drew). One ribbon, four
+    // wardrobes; the log drawer keeps its own compact band whatever this says.
+    sceneHeaderStyle: 'quiet',
     // The music player: the scene's soundtrack, a compact YouTube player in
     // the header. Off hides it whole and nothing plays.
     music: true,
@@ -216,6 +225,19 @@ export function indoorFxOn() {
 /** Whether the speech bubbles play in the reading pane. */
 export function speechFxOn() {
     return settings().speechFx !== false;
+}
+
+/** Whether the reasoning block shows above the reading pane's prose. */
+export function reasoningOn() {
+    return settings().showReasoning !== false;
+}
+
+const SCENE_HEADER_STYLES = ['quiet', 'rule', 'date', 'simple'];
+
+/** The scene header's wardrobe: 'quiet', 'rule', 'date' or 'simple'. */
+export function sceneHeaderStyle() {
+    const value = settings().sceneHeaderStyle;
+    return SCENE_HEADER_STYLES.includes(value) ? value : 'quiet';
 }
 
 /** Whether the music player exists at all - the master switch. */

@@ -1,6 +1,6 @@
 # Meziverse — how it works
 
-Technical notes for version 2.9.2. Written for whoever picks this up next — including future us.
+Technical notes for version 2.9.4. Written for whoever picks this up next — including future us.
 
 ## The one rule: Ride SillyTavern
 
@@ -43,7 +43,7 @@ src/
   bgchain.js        the background chain: targets, queue, decide, ask, draw, stamp; stage notices, triggers
   mapdata.js        the map's pure core: scene tags → place atlas, journeys, layout (pure)
   map.js            the map on screen: the minimap window, the full map window, the chart renderer
-  icons.js          inline SVG sprite (mz-i-* symbols)
+  icons.js          inline SVG sprite (mz-i-* symbols) + fa()/faHtml() Font Awesome helpers for the ST-mirror glyphs
 test/
   tags.test.js      synthetic tokenizer tests
   scene.test.js     synthetic scene tests
@@ -71,9 +71,10 @@ style.css            @imports the sheets (manifest points here)
 ## The scene
 
 - **Mount once, open/close by class.** `#mz-root` is built at boot and hidden; `open()` adds `is-open` (and `body.mz-open`), `close()` removes them. Exit always returns to ST.
-- **Two headers.** Meziverse header (34 px): "Meziverse" + the version, the background pill and the brush, chat file name, settings + exit. Chat header (48 px): the scene cluster (date, time, place, weather chip) + log button; the cast strip rides just below it, flush on the reading pane (Settings > Images > Avatars switches it off; the pane's height never depends on it).
+- **Two headers.** Meziverse header (34 px): "Meziverse" + the version, the background pill, chat file name, settings + exit. Chat header (48 px): the scene cluster (date, time, place, weather chip) + log button; the cast strip rides just below it, flush on the reading pane (Settings > Images > Avatars switches it off; the pane's height never depends on it).
 - **Reading pane** shows the newest message as prose; a drag handle resizes it (persisted in settings). The **log** is a floating, stretchable window listing earlier turns, with per-turn actions and its own remembered size.
-- **Message actions** replicate ST's message-header menu as flat icon buttons — no dropdowns — on ALL turns: copy, branch, hide-from-prompt (eye), edit, swipe, download-earlier. Edit opens ST's own `.mes_edit` editor (the pane mirrors `#curEditTextarea` one-way) with an edit bar ✓ / 🗑 / ✕; a 400 ms watch owns edit-state exit, and Esc defers to ST while its editor is open.
+- **Message actions** replicate ST's message-header menu as flat icon buttons — no dropdowns — on ALL turns: copy, branch, hide-from-prompt (eye), edit, swipe, download-earlier. Edit opens ST's own `.mes_edit` editor (the pane mirrors `#curEditTextarea` one-way) with an edit bar ✓ / 🗑 / ✕; a 400 ms watch owns edit-state exit, and Esc defers to ST while its editor is open. The **ST-mirror buttons wear ST's own FontAwesome glyph classes**, rendered by `fa()`/`faHtml()` at 11px with the theme's colours through `currentColor` — the eye flips exclude/include (`fa-eye`/`fa-eye-slash`) and send flips to `fa-circle-stop` while generating. The **brush** rides the pane head, right of the card name (ST's `fa-solid fa-paintbrush`), keeping its `bg-generate` action and states unchanged.
+- **Reasoning is pane-only.** A head toggle left of the card name (default on, `settings().showReasoning`) reveals the model's thinking as an ST-style expandable above the prose — collapsed on arrival, one open/closed state per pane kept across turn steps and streaming redraws. The read (`prose.js` `reasoningOf`) takes `extra.reasoning_display_text ?? extra.reasoning`, per swipe from `swipe_info[swipe_id].extra`, falling back to an inline `think` body (`tags.js` `readInlineThink`, streaming-safe). The log renders `compact: true` and never draws one.
 
 ## Scene info (the first feature family)
 
@@ -81,6 +82,8 @@ The model already emits the state of the story as in-band tags (`scene`, `LEDGER
 
 - **Parsing.** `tags.js` tokenizes a copy of `message.mes` with a tolerant grammar: tag names case-insensitive, attribute order free, single or double quotes, optional closing slash, unknown names are not tags (so card-written HTML passes through). `stripTags()` yields clean prose, and `prose.js` hands that to ST's formatter — so regex scripts, Markdown, quotes and every display extension behave exactly as in native ST. Tags are stripped in both modes; only decoration is gated.
 - **The last-usable rule.** `scene.js` resolves the governing scene: the last complete `scene` with at least one of date / location / present; a turn without one inherits the latest earlier scene, walking backwards through the chat. Every complete scene still renders as an inline row at its place in the prose — rows live in the pane and the log only, never in ST's native chat (the chat file is never touched).
+- **The ribbon has four wardrobes.** One setting (`sceneHeaderStyle`, Settings > General > Scene header) dresses every pane ribbon: **quiet** (the default), **rule** (chapter rule), **date** (date-first) and **simple** (the first band Meziverse ever drew). Same fields, four layouts; the second and later tags look exactly like the first (the divider is structural only). The log drawer keeps its own compact band whatever the setting says. The insets ride `--mz-scene-key/ink/soft/line` per theme with one shared soft dark-grey scrim (`--mz-scene-scrim` — deliberately not black) and a text shadow, so the header holds on any stamped background; the grey-free rule holds — soft is a dimmer white, never grey. Each size is `calc(px * var(--mz-ui-scale))`. Weather follows `weatherTag` alone as a 24×24 stroke glyph (`weatherGlyph` in `prose.js`): unknown or missing draws nothing, and "clear" reads as the sun by day and the crescent at night (hour ≥ 19 or < 6). The free-text weather is never parsed — it prints beside the glyph.
+- **The ribbon edits its own place.** The pencil in a ribbon's seat (reading pane only; the compact log band never carries one) turns that ribbon into an editor: the breadcrumb becomes one input per level with add/remove, and the date, time, weather and cast stay read-only. Nothing is written until Save (Esc and Cancel discard; Enter steps through the levels and saves on the last; an all-empty chain disables Save). Saving rewrites **only the `location` attribute of that one scene tag** (`editSceneAttrs` in `tags.js`, entity-safe so quotes round-trip; current swipe only) and the write goes through **ST's own editor** (`editMessage` → textarea → `acceptEdit`), so ST saves, re-renders and fires `MESSAGE_EDITED` — and the map and the background chain re-derive from the corrected location by themselves. Scene edit and message edit are mutually exclusive, and the watch keeps its hands off an ST editor a scene save is driving.
 - **Cast.** Names come from `present`, minus the persona, deduped case-insensitively in order. Portraits are per chat — paths in `chatMetadata.meziverse.cast`, keyed by normalised name — uploaded through ST's own `/api/images/upload` as a small WebP. Nothing is auto-deleted. A loaded portrait is clean (no plate, halo or scrim — the name rides a text shadow); those appear only on an empty or broken image.
 - **Chat bar and header** read the same scene: date and time (the last time-like piece splits from the date), the whole location string as written, a weather chip when present.
 

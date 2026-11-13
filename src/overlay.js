@@ -7,7 +7,7 @@
  */
 
 import { chatMessages, currentChatId, errorText, imageGenerationStatus, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer, stDefaultBackground } from './st.js';
-import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, bgImagesOn, weatherFxOn, indoorFxOn, speechFxOn, musicOn, musicAutoOn, musicDjOn, musicKey, musicPickMode, mapOn, mapMiniOn, DEV_EXTRAS } from './settings.js';
+import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, bgImagesOn, weatherFxOn, indoorFxOn, sceneHeaderStyle, speechFxOn, musicOn, musicAutoOn, musicDjOn, musicKey, musicPickMode, mapOn, mapMiniOn, DEV_EXTRAS } from './settings.js';
 import { DEFAULT_DJ_PROMPT, getLastDjRequest } from './musicdj.js';
 import {
     forceBackground,
@@ -18,7 +18,7 @@ import {
     uiOpened,
 } from './bgchain.js';
 import { DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_OFF, sceneUrl, isNoPicture } from './backgrounds.js';
-import { injectSprite } from './icons.js';
+import { faHtml, injectSprite } from './icons.js';
 import { createTranscript } from './transcript.js';
 import { mountCast, refreshCastSizing, renderCast, renderThoughts, renderTells, clearCascade, redrawCast } from './cast.js';
 import { resolveLedger } from './ledger.js';
@@ -33,7 +33,7 @@ import { mountMap, mapUiClosed, mapUiOpened, refreshMap, isMapWinOpen, openMapWi
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr, notify } from './notify.js';
 
-const VERSION = '2.9.2';
+const VERSION = '2.9.4';
 const PANE_DEFAULT = 300;
 const LOG_W_DEFAULT = 720;
 const LOG_H_SHARE = 0.7;
@@ -71,7 +71,7 @@ const FRAME_HTML = `
     <div class="mz-scrim" aria-hidden="true"></div>
 
     <header class="mz-header">
-        <div class="mz-brand"><b>Meziverse</b><small class="mz-version">v${VERSION}</small><button class="mz-mode mz-bgauto" type="button" role="switch" aria-checked="false" title="Backgrounds follow the story" aria-label="Automatic location backgrounds" data-mz-action="bg-auto"><i aria-hidden="true"></i><span data-mz="bg-auto-label">Auto BG: Off</span></button><button class="mz-ibtn mz-brush" type="button" title="Draw a background for this place" aria-label="Draw a background for this place" data-mz-action="bg-generate">${svg('brush')}</button></div>
+        <div class="mz-brand"><b>Meziverse</b><small class="mz-version">v${VERSION}</small><button class="mz-mode mz-bgauto" type="button" role="switch" aria-checked="false" title="Backgrounds follow the story" aria-label="Automatic location backgrounds" data-mz-action="bg-auto"><i aria-hidden="true"></i><span data-mz="bg-auto-label">Auto BG: Off</span></button></div>
         <div class="mz-chatname" data-mz="chatname"><b class="is-empty">No chat open</b></div>
         <div class="mz-header-tools">
             <div class="mz-music-slot" data-mz="music-slot"></div>
@@ -112,7 +112,11 @@ const FRAME_HTML = `
     <section class="mz-dlg" aria-label="Reading pane">
         <div class="mz-grip" role="separator" aria-orientation="horizontal" aria-label="Resize reading pane" tabindex="0"></div>
         <header class="mz-dlg-head">
-            <span class="mz-speaker" data-mz="speaker"></span>
+            <button class="mz-ibtn mz-reasonbtn" type="button" title="Hide reasoning from the pane" aria-label="Hide reasoning from the pane" aria-pressed="true" data-mz-action="toggle-reasoning">${svg('thought')}</button>
+            <span class="mz-dlg-who">
+                <span class="mz-speaker" data-mz="speaker"></span>
+                <button class="mz-ibtn mz-brush" type="button" title="Draw a background for this place" aria-label="Draw a background for this place" data-mz-action="bg-generate">${faHtml('fa-solid fa-paintbrush')}</button>
+            </span>
             <span class="mz-dlg-nav">
                 <button class="mz-ibtn" type="button" title="Previous turn" aria-label="Previous turn" data-mz-action="prev">${svg('prev')}</button>
                 <span class="mz-dlg-meta" data-mz="meta"></span>
@@ -120,15 +124,15 @@ const FRAME_HTML = `
                 <button class="mz-ibtn" type="button" title="Latest turn" aria-label="Latest turn" data-mz-action="latest">${svg('latest')}</button>
             </span>
             <span class="mz-dlg-actions">
-                <button class="mz-ibtn" type="button" title="Copy" aria-label="Copy" data-mz-action="copy">${svg('copy')}</button>
-                <button class="mz-ibtn" type="button" title="Branch from this turn" aria-label="Branch from this turn" data-mz-action="branch">${svg('branch')}</button>
-                <button class="mz-ibtn" type="button" title="Exclude message from prompts" aria-label="Exclude message from prompts" data-mz-action="toggle-prompt">${svg('eye')}</button>
-                <button class="mz-ibtn" type="button" title="Edit this turn" aria-label="Edit this turn" data-mz-action="edit">${svg('pencil')}</button>
+                <button class="mz-ibtn" type="button" title="Copy" aria-label="Copy" data-mz-action="copy">${faHtml('fa-solid fa-copy')}</button>
+                <button class="mz-ibtn" type="button" title="Branch from this turn" aria-label="Branch from this turn" data-mz-action="branch">${faHtml('fa-regular fa-code-branch')}</button>
+                <button class="mz-ibtn" type="button" title="Exclude message from prompts" aria-label="Exclude message from prompts" data-mz-action="toggle-prompt">${faHtml('fa-solid fa-eye')}</button>
+                <button class="mz-ibtn" type="button" title="Edit this turn" aria-label="Edit this turn" data-mz-action="edit">${faHtml('fa-solid fa-pencil')}</button>
             </span>
             <span class="mz-dlg-actions mz-dlg-editbar" hidden>
-                <button class="mz-ibtn" type="button" title="Accept changes" aria-label="Accept changes" data-mz-action="edit-accept">${svg('check')}</button>
-                <button class="mz-ibtn" type="button" title="Delete message" aria-label="Delete message" data-mz-action="edit-delete">${svg('trash')}</button>
-                <button class="mz-ibtn" type="button" title="Discard changes" aria-label="Discard changes" data-mz-action="edit-cancel">${svg('close')}</button>
+                <button class="mz-ibtn" type="button" title="Accept changes" aria-label="Accept changes" data-mz-action="edit-accept">${faHtml('fa-solid fa-check')}</button>
+                <button class="mz-ibtn" type="button" title="Delete message" aria-label="Delete message" data-mz-action="edit-delete">${faHtml('fa-solid fa-trash-can')}</button>
+                <button class="mz-ibtn" type="button" title="Discard changes" aria-label="Discard changes" data-mz-action="edit-cancel">${faHtml('fa-solid fa-xmark')}</button>
             </span>
         </header>
         <div class="mz-prose" data-mz="prose">
@@ -136,23 +140,23 @@ const FRAME_HTML = `
         </div>
         <textarea class="mz-edit" data-mz="edit" hidden spellcheck="true" aria-label="Edit this turn"></textarea>
         <div class="mz-swipebar" data-mz="swipebar" hidden>
-            <button class="mz-swipebtn" type="button" title="Previous swipe" aria-label="Previous swipe" data-mz-action="swipe-prev">${svg('prev')}</button>
+            <button class="mz-swipebtn" type="button" title="Previous swipe" aria-label="Previous swipe" data-mz-action="swipe-prev">${faHtml('fa-solid fa-chevron-left')}</button>
             <span class="mz-swipe-count" data-mz="swipe-count"></span>
-            <button class="mz-swipebtn" type="button" title="Next swipe" aria-label="Next swipe" data-mz-action="swipe-next">${svg('next')}</button>
+            <button class="mz-swipebtn" type="button" title="Next swipe" aria-label="Next swipe" data-mz-action="swipe-next">${faHtml('fa-solid fa-chevron-right')}</button>
         </div>
         <div class="mz-composer">
             <div class="mz-composer-box">
-                <button class="mz-ibtn mz-menu-btn" type="button" title="Chat options" aria-label="Chat options" aria-haspopup="true" aria-expanded="false" data-mz-action="menu">${svg('menu')}</button>
+                <button class="mz-ibtn mz-menu-btn" type="button" title="Chat options" aria-label="Chat options" aria-haspopup="true" aria-expanded="false" data-mz-action="menu">${faHtml('fa-solid fa-bars')}</button>
                 <div class="mz-menu" role="menu" aria-label="Chat options" hidden>
-                    <button class="mz-menu-item" type="button" role="menuitem" data-mz-action="new-chat">${svg('chat-new')}<span>Start new chat</span></button>
-                    <button class="mz-menu-item" type="button" role="menuitem" data-mz-action="back-to-parent">${svg('chat-parent')}<span>Back to parent chat</span></button>
+                    <button class="mz-menu-item" type="button" role="menuitem" data-mz-action="new-chat">${faHtml('fa-solid fa-comments')}<span>Start new chat</span></button>
+                    <button class="mz-menu-item" type="button" role="menuitem" data-mz-action="back-to-parent">${faHtml('fa-solid fa-left-long')}<span>Back to parent chat</span></button>
                 </div>
                 <textarea class="mz-input" data-mz="input" rows="1" placeholder="Write your line\u2026" autocomplete="off" spellcheck="true" aria-label="Your line"></textarea>
             </div>
             <span class="mz-composer-tools">
-                <button class="mz-ibtn mz-sendbtn" type="button" title="Impersonate" aria-label="Impersonate" data-mz-action="impersonate">${svg('impersonate')}</button>
-                <button class="mz-ibtn mz-sendbtn" type="button" title="Continue" aria-label="Continue" data-mz-action="continue">${svg('continue')}</button>
-                <button class="mz-ibtn mz-sendbtn" type="button" title="Send" aria-label="Send" data-mz-action="send">${svg('send')}</button>
+                <button class="mz-ibtn mz-sendbtn" type="button" title="Impersonate" aria-label="Impersonate" data-mz-action="impersonate">${faHtml('fa-solid fa-user-secret')}</button>
+                <button class="mz-ibtn mz-sendbtn" type="button" title="Continue" aria-label="Continue" data-mz-action="continue">${faHtml('fa-solid fa-arrow-right')}</button>
+                <button class="mz-ibtn mz-sendbtn" type="button" title="Send" aria-label="Send" data-mz-action="send">${faHtml('fa-solid fa-paper-plane')}</button>
             </span>
         </div>
     </section>
@@ -277,6 +281,19 @@ const FRAME_HTML = `
                     <label class="mz-color"><input type="color" data-mz-color="q" aria-label="Speech color"><span>Speech</span></label>
                     <label class="mz-color"><input type="color" data-mz-color="em" aria-label="Emphasis color"><span>Emphasis</span></label>
                     <label class="mz-color"><input type="color" data-mz-color="strong" aria-label="Strong color"><span>Strong</span></label>
+                </div>
+            </div>
+        </div>
+
+        <div class="mz-set-group mz-set-group--fold" data-mz-pane="general">
+            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="sceneheader">Scene header ${svg('chevdown')}</button></h3>
+            <div class="mz-set-row">
+                <span class="mz-set-label"><b>Header style</b><small>How each scene tag reads in the reading pane: quiet, a chapter rule, the date first, or the simple band of old. The same fields, four wardrobes; the log keeps its own compact band.</small></span>
+                <div class="mz-seg" role="group" aria-label="Scene header style">
+                    <button type="button" data-mz-pick-scenehead="quiet">Quiet</button>
+                    <button type="button" data-mz-pick-scenehead="rule">Chapter rule</button>
+                    <button type="button" data-mz-pick-scenehead="date">Date-first</button>
+                    <button type="button" data-mz-pick-scenehead="simple">Simple</button>
                 </div>
             </div>
         </div>
@@ -640,6 +657,7 @@ export function mount() {
         branchButton: root.querySelector('[data-mz-action="branch"]'),
         copyButton: root.querySelector('[data-mz-action="copy"]'),
         togglePromptButton: root.querySelector('[data-mz-action="toggle-prompt"]'),
+        reasonButton: root.querySelector('[data-mz-action="toggle-reasoning"]'),
         editButton: root.querySelector('[data-mz-action="edit"]'),
         actionsRow: root.querySelector('.mz-dlg-actions:not(.mz-dlg-editbar)'),
         editBar: root.querySelector('.mz-dlg-editbar'),
@@ -680,6 +698,7 @@ export function mount() {
         branchButton: els.branchButton,
         copyButton: els.copyButton,
         togglePromptButton: els.togglePromptButton,
+        reasonButton: els.reasonButton,
         editButton: els.editButton,
         actionsRow: els.actionsRow,
         editBar: els.editBar,
@@ -712,6 +731,7 @@ export function mount() {
     applyWeatherFx();
     applyIndoorFx();
     applySpeechFx();
+    applySceneHeader();
     applyMusic();
     applyMap();
     applyEntries();
@@ -1159,6 +1179,17 @@ function requestText(request) {
  * settings, and hands the player its own re-read. Off: the widget hides and
  * whatever was playing stops.
  */
+/** Marks the scene header style segment's pressed button. */
+function applySceneHeader() {
+    const style = sceneHeaderStyle();
+
+    root.querySelectorAll('[data-mz-pick-scenehead]').forEach(button => {
+        const isOn = button.dataset.mzPickScenehead === style;
+        button.classList.toggle('is-on', isOn);
+        button.setAttribute('aria-pressed', String(isOn));
+    });
+}
+
 function applyMusic() {
     for (const button of root.querySelectorAll('[data-mz-action="music"]')) {
         button.classList.toggle('is-on', musicOn());
@@ -1859,7 +1890,7 @@ function setGenerating(on, { force = false } = {}) {
     if (busy === frame.classList.contains('is-generating') && !force) return;
 
     frame.classList.toggle('is-generating', busy);
-    els.sendButton.innerHTML = svg(busy ? 'stop' : 'send');
+    els.sendButton.innerHTML = faHtml(busy ? 'fa-solid fa-circle-stop' : 'fa-solid fa-paper-plane');
 
     const label = busy ? 'Stop generating' : 'Send';
     els.sendButton.title = label;
@@ -2202,6 +2233,15 @@ function wireActions() {
             return;
         }
 
+        const sceneHead = event.target.closest('[data-mz-pick-scenehead]');
+        if (sceneHead) {
+            settings().sceneHeaderStyle = sceneHead.dataset.mzPickScenehead;
+            saveSettings();
+            applySceneHeader();
+            transcript?.refresh();
+            return;
+        }
+
         const cuePop = event.target.closest('[data-mz-pick-cuepop]');
         if (cuePop) {
             settings().cuePopovers = cuePop.dataset.mzPickCuepop;
@@ -2333,6 +2373,11 @@ function wireActions() {
                 break;
             case 'toggle-prompt':
                 transcript.togglePromptHidden();
+                break;
+            case 'toggle-reasoning':
+                settings().showReasoning = !settings().showReasoning;
+                transcript?.refresh();
+                saveSettings();
                 break;
             case 'edit':
                 transcript.editShownTurn();

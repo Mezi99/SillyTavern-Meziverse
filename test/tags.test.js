@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseMessage, parseTags, scenesOf, speechesOf, splitCues, stripNonSceneTags, stripTags } from '../src/tags.js';
+import { editSceneAttrs, parseMessage, parseTags, readInlineThink, sceneTagAt, scenesOf, speechesOf, splitCues, stripNonSceneTags, stripTags } from '../src/tags.js';
 
 const scene = attrs => `<scene ${attrs} />`;
 
@@ -272,4 +272,70 @@ test('stripNonSceneTags keeps scene tags and drops the rest like stripTags', () 
 test('stripNonSceneTags is streaming-safe', () => {
     assert.equal(stripNonSceneTags('tail <ledger>open'), 'tail ', 'an unclosed hidden tag hides its tail');
     assert.equal(stripNonSceneTags('<scene location="A"'), '', 'a half-written scene tag hides its tail');
+});
+
+// The model's thinking wrapper, assembled from char codes: the literal
+// delimiter is special to some tooling and never appears in this file.
+const LT = String.fromCharCode(60);
+const GT = String.fromCharCode(62);
+const OPEN_THINK = `${LT}think${GT}`;
+const CLOSE_THINK = `${LT}/think${GT}`;
+const HALF_OPEN = `${LT}think`;   // a half-written open tag: `>` never arrived
+const HALF_NAME = `${LT}thin`;    // not even a name yet
+
+test('readInlineThink finds the reasoning the model wrote in-band', () => {
+    assert.equal(readInlineThink(`${OPEN_THINK}[Genre] drama${CLOSE_THINK}The prose.`), '[Genre] drama');
+    assert.equal(readInlineThink(`Prose first. ${OPEN_THINK}secret${CLOSE_THINK} More.`), 'secret', 'the first block, wherever it stands');
+    assert.equal(readInlineThink('<THINK a="1">body</THINK>prose'), 'body', 'names are case-insensitive and attributes pass');
+    assert.equal(readInlineThink('plain prose'), '');
+    assert.equal(readInlineThink(`\`${OPEN_THINK}not a tag\``), '', 'code spans are not tags');
+});
+
+test('readInlineThink is streaming-safe', () => {
+    assert.equal(readInlineThink(`${OPEN_THINK}still thinking`), 'still thinking', 'an unclosed block grows live');
+    assert.equal(readInlineThink(HALF_OPEN), '', 'a half-written open tag yields nothing yet');
+    assert.equal(readInlineThink(HALF_NAME), '', 'not even a name');
+    assert.equal(readInlineThink('<think/>'), '', 'a self-closing tag has no body');
+});
+
+test("editSceneAttrs writes one scene's location alone", () => {
+    const mes = 'intro <scene location="Old Town | Pier 9" date="Day 1" /> mid <scene location="Docks" /> end';
+    const next = editSceneAttrs(mes, 1, { location: 'Castle | Keep' });
+
+    assert.equal(next, 'intro <scene location="Old Town | Pier 9" date="Day 1" /> mid <scene location="Castle | Keep" /> end',
+        'the other scene, and every word, stay exactly as written');
+});
+
+test('a scene edit leaves trackers and speech byte for byte', () => {
+    const mes = '<LEDGER gold="12" />\n<scene location="Docks" />\n<speech character="Mara">"Anchor\'s out"</speech>';
+    const next = editSceneAttrs(mes, 0, { location: 'Pier | East' });
+
+    assert.equal(next, '<LEDGER gold="12" />\n<scene location="Pier | East" />\n<speech character="Mara">"Anchor\'s out"</speech>');
+});
+
+test('a missing attribute is written before the tag closes', () => {
+    assert.equal(editSceneAttrs('<scene date="Day 1" />', 0, { location: 'Docks' }), '<scene date="Day 1" location="Docks" />');
+    assert.equal(editSceneAttrs('<scene>', 0, { location: 'Docks' }), '<scene location="Docks">');
+    assert.equal(editSceneAttrs('<scene date="Day 1">', 0, { location: 'Docks' }), '<scene date="Day 1" location="Docks">');
+});
+
+test('escaped values round-trip through an edit', () => {
+    const next = editSceneAttrs('<scene location="Plain" />', 0, { location: 'The "Eagle" & Owl' });
+
+    assert.equal(next, '<scene location="The &quot;Eagle&quot; &amp; Owl" />');
+    assert.equal(parseTags(next)[0].attrs.location, 'The "Eagle" & Owl', 'the reader decodes what the edit encodes');
+});
+
+test('a scene edit off the end changes nothing', () => {
+    const mes = '<scene location="Docks" />';
+    assert.equal(editSceneAttrs(mes, 3, { location: 'Nowhere' }), mes);
+    assert.equal(editSceneAttrs('no tags at all', 0, { location: 'Nowhere' }), 'no tags at all');
+});
+
+test('sceneTagAt counts scenes like the ribbons do', () => {
+    const mes = 'a <scene date="1" /> b <scene date="2"> c';
+
+    assert.equal(sceneTagAt(mes, 1)?.attrs.date, '2');
+    assert.equal(sceneTagAt(mes, 2), null);
+    assert.equal(sceneTagAt('no tags', 0), null);
 });
