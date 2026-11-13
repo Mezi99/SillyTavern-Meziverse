@@ -58,6 +58,7 @@ function speakerOf(message) {
  * @param {HTMLButtonElement} [parts.swipeNext]
  * @param {HTMLElement} [parts.swipeCount]
  * @param {(state: {entry: object|null, scene: object|null}) => void} [parts.onShown] tells the chrome which turn, and which scene, is on screen
+ * @param {() => void} [parts.onBranched] a branch was created and opened - the library may prune to it
  */
 export function createTranscript({
     frame, isOpen, speaker, meta, prose, logPanel, logList, logButton, logClose,
@@ -65,7 +66,7 @@ export function createTranscript({
     copyButton, togglePromptButton, reasonButton,
     editButton, actionsRow, editBar, editAccept, editDelete, editCancel, edit,
     swipeBar, swipePrev, swipeNext, swipeCount,
-    onShown,
+    onShown, onBranched,
 }) {
     // null follows the newest message; a number pins that index in the chat.
     let selected = FOLLOW;
@@ -810,7 +811,12 @@ export function createTranscript({
         if (frame.classList.contains('is-generating')) return null;
 
         const name = await branchChat(index);
-        if (name) closeLog(false);
+        if (name) {
+            closeLog(false);
+            // The branched chat is open: its library prunes to its own
+            // messages.
+            onBranched?.();
+        }
         return name;
     }
 

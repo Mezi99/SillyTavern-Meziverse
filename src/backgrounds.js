@@ -90,6 +90,9 @@ export function normalizeStore(raw) {
     if (!store.keys || typeof store.keys !== 'object' || Array.isArray(store.keys)) {
         store.keys = {};
     }
+    if (!store.transports || typeof store.transports !== 'object' || Array.isArray(store.transports)) {
+        store.transports = {};
+    }
     if (!store.records || typeof store.records !== 'object' || Array.isArray(store.records)) {
         store.records = {};
     }
@@ -110,6 +113,18 @@ export function normalizeStore(raw) {
         if (normKey !== key) {
             delete store.keys[key];
             store.keys[normKey] = id;
+        }
+    }
+
+    for (const [key, id] of Object.entries(store.transports)) {
+        const normKey = locationKey(key);
+        if (!normKey || typeof id !== 'string' || !store.records[id]) {
+            delete store.transports[key];
+            continue;
+        }
+        if (normKey !== key) {
+            delete store.transports[key];
+            store.transports[normKey] = id;
         }
     }
 
@@ -458,7 +473,7 @@ export function recordSrc(record) {
  * breaks the block layout (story text is another model's output and may say
  * anything). Place text passes through the same scrub.
  */
-const REQUEST_TAG_RE = /<\/?(?:currentBackground|knownBackgrounds|recentPlaces|latestStory)>/gi;
+const REQUEST_TAG_RE = /<\/?(?:currentBackground|knownBackgrounds|recentPlaces|latestStory|parkingLot|transportInterior)>/gi;
 
 /**
  * A place string as the watcher should see it. The bracket characters a
@@ -577,15 +592,20 @@ export function placeNamesLikelySame(a, b) {
 
 /**
  * The watcher's menu of images this chat already has: newest first, so it can
- * answer "known" instead of inventing a near-duplicate place.
+ * answer "known" instead of inventing a near-duplicate place. `kind` splits
+ * the menu the way the two hands read it: 'place' for the location library,
+ * 'transport' for the parking lot - the pools never see each other, so a
+ * docking bay can never fold onto a shuttle interior.
  *
  * @param {object} store
- * @param {{limit?:number}} [options]
+ * @param {{limit?:number, kind?:'place'|'transport'}} [options]
  * @returns {Array<{id:string, place:string, prompt:string}>}
  */
-export function knownBackgroundsList(store, { limit = 12 } = {}) {
+export function knownBackgroundsList(store, { limit = 12, kind = '' } = {}) {
     if (!store || typeof store !== 'object') return [];
-    const records = Object.values(store.records || {}).filter(record => record && typeof record === 'object');
+    const records = Object.values(store.records || {})
+        .filter(record => record && typeof record === 'object')
+        .filter(record => (kind === 'transport' ? !!record.vehicle : kind === 'place' ? !record.vehicle : true));
     records.sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
     return records.slice(0, Math.max(0, limit)).map(record => ({
         id: record.id,
@@ -820,6 +840,237 @@ function matchesBgUrl(record, customBgUrl) {
     return false;
 }
 
+/* ---------- the parking lot: transport interiors ---------- */
+
+const EN_ROUTE_RE = /^en[\s-]?route$/i;
+
+/**
+ * The vehicle a location chain rides, or null for a place on the ground. The
+ * chain grammar puts the vehicle last and its position before it -
+ * "... | En Route | CV-7742 Shuttle" is that shuttle on the move - but the
+ * read is deliberately loose about where "En Route" sits (the chat LLM
+ * misbehaves sometimes): any level naming it turns the scene into a ride, and
+ * the level right after it is the vehicle. A chain ending at "En Route" names
+ * no vehicle and stays a place.
+ *
+ * @param {*} value a location chain, e.g. 'Space | Mars | En Route | CV-7742 Shuttle'
+ * @returns {{vehicle:string, key:string}|null}
+ */
+export function transportOf(value) {
+    const levels = cleanPlaceText(value).split('|').map(level => level.trim()).filter(Boolean);
+    const at = levels.findIndex(level => EN_ROUTE_RE.test(level));
+    if (at < 0 || at >= levels.length - 1) return null;
+
+    const vehicle = levels[at + 1];
+    const key = locationKey(vehicle);
+    return key ? { vehicle, key } : null;
+}
+
+/**
+ * The parked interior of one vehicle, or null. The parking lot is keyed by
+ * the VEHICLE's name - never the travel chain, which changes as the vehicle
+ * moves - so every ride of that vehicle shares one interior whatever the
+ * chain spelled.
+ *
+ * @param {object} store
+ * @param {string} vehicle e.g. 'CV-7742 Shuttle'
+ * @returns {object|null}
+ */
+export function lookupTransport(store, vehicle) {
+    if (!store || typeof store !== 'object') return null;
+    const key = locationKey(vehicle);
+    if (!key) return null;
+    const id = store.transports?.[key];
+    return (id && store.records?.[id]) || null;
+}
+
+/**
+ * Parks one vehicle's interior in the lot. One record per vehicle, always:
+ * `overwrite` (the brush) replaces the parked record IN PLACE, so every ride
+ * of that vehicle repaints together - change the interior on one response and
+ * it changes everywhere. Without it a first parking adds a record.
+ *
+ * @param {object} store
+ * @param {{vehicle:string, place?:string, prompt:string, path:string, overwrite?:boolean, createdAt?:number}} entry
+ * @returns {object|null}
+ */
+export function parkTransport(store, { vehicle, place, prompt, path, overwrite = false, createdAt = Date.now() } = {}) {
+    const ensured = normalizeStore(store);
+    const name = String(vehicle ?? '').trim();
+    const key = locationKey(name);
+    const cleanPath = String(path ?? '').trim();
+    if (!key || !cleanPath) return null;
+
+    const existingId = ensured.transports[key];
+    const reuse = overwrite && existingId && ensured.records[existingId] ? existingId : null;
+    const id = reuse || `bg_${ensured.nextId}`;
+    if (!reuse) ensured.nextId += 1;
+
+    const record = {
+        id,
+        vehicle: name,
+        place: String(place ?? '').trim() || `En Route | ${name}`,
+        prompt: String(prompt ?? '').trim(),
+        path: cleanPath,
+        url: toCssBgUrl(cleanPath),
+        createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
+    };
+
+    ensured.records[id] = record;
+    ensured.transports[key] = id;
+    return record;
+}
+
+/**
+ * What the chain should do about one reply's ride: nothing (it already shows
+ * this vehicle's interior), apply the parked interior, or ask the watcher
+ * (an unparked vehicle - or a spelling drift only the LLM can recognise,
+ * which parks the variant's name onto the interior it matched). The ride is
+ * decided HERE, by code: the watcher is never asked whether a ride changed.
+ *
+ * @param {object} store
+ * @param {string} vehicle
+ * @param {{baseline?:object|null}} [options]
+ * @returns {{action:'none'|'apply'|'watch', record:object|null}}
+ */
+export function decideTransport(store, vehicle, { baseline } = {}) {
+    const ensured = normalizeStore(store);
+    const record = lookupTransport(ensured, vehicle);
+    if (!record) return { action: 'watch', record: null };
+
+    const prior = baseline !== undefined ? baseline : currentRecord(ensured);
+    if (prior && record.id === prior.id) return { action: 'none', record: prior };
+    return { action: 'apply', record };
+}
+
+/**
+ * The one-interior-per-vehicle fold, run over the library and the stamps:
+ * legacy chats parked a separate interior per travel chain ("Mara's Rest |
+ * En Route | X", "Outer Rim | En Route | X"), and every ride must show the
+ * one interior - the newest parked wins, the rest leave the library and
+ * their stamps follow the winner. Chain keys of rides are dropped outright:
+ * the parking lot owns them now. Returns whether anything changed.
+ *
+ * @param {object} store
+ * @param {Array} messages the chat, for the stamps to re-point
+ * @returns {boolean}
+ */
+export function collapseTransports(store, messages) {
+    const ensured = normalizeStore(store);
+    const list = Array.isArray(messages) ? messages : [];
+
+    const groups = new Map();
+    for (const record of Object.values(ensured.records)) {
+        const ride = record && typeof record === 'object' ? transportOf(record.place || '') : null;
+        if (!ride) continue;
+        const group = groups.get(ride.key) || [];
+        group.push(record);
+        groups.set(ride.key, group);
+    }
+    if (!groups.size) return false;
+
+    let changed = false;
+    const losers = new Map();
+    for (const [key, group] of groups) {
+        group.sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
+        const [winner, ...rest] = group;
+        if (!winner.vehicle) winner.vehicle = transportOf(winner.place)?.vehicle || winner.place;
+        if (ensured.transports[key] !== winner.id) {
+            ensured.transports[key] = winner.id;
+            changed = true;
+        }
+        for (const loser of rest) losers.set(loser.id, winner.id);
+    }
+
+    for (const key of Object.keys(ensured.keys)) {
+        if (transportOf(key)) {
+            delete ensured.keys[key];
+            changed = true;
+        }
+    }
+
+    if (losers.size) {
+        for (const message of list) {
+            if (!message) continue;
+            const variants = Math.max(1, Array.isArray(message.swipe_info) ? message.swipe_info.length : 1);
+            for (let swipeId = 0; swipeId < variants; swipeId += 1) {
+                const id = stampOf(message, swipeId);
+                const winner = id && losers.get(id);
+                if (winner && setStamp(message, swipeId, winner)) changed = true;
+            }
+        }
+        for (const loserId of losers.keys()) {
+            delete ensured.records[loserId];
+            changed = true;
+        }
+    }
+
+    // Every ride reply wears its vehicle's parked interior - a legacy stamp
+    // of anything else (a location it passed through, a stale fold) follows
+    // the lot, so the parking lot answers "what does this show" everywhere.
+    for (const message of list) {
+        if (!message || message.is_user) continue;
+        const scenes = groupMessageByScene(typeof message.mes === 'string' ? message.mes : '');
+        const last = scenes.length ? scenes[scenes.length - 1] : null;
+        const ride = last ? transportOf(last.place || '') : null;
+        if (!ride) continue;
+
+        const winner = ensured.transports[ride.key];
+        if (!winner) continue;
+
+        const variants = Math.max(1, Array.isArray(message.swipe_info) ? message.swipe_info.length : 1);
+        for (let swipeId = 0; swipeId < variants; swipeId += 1) {
+            if (stampOf(message, swipeId) !== winner && setStamp(message, swipeId, winner)) changed = true;
+        }
+    }
+
+    return changed;
+}
+
+/**
+ * The library reduced to what the chat still refers to: every record behind a
+ * stamp (any swipe variant) or on screen stays, everything else leaves - the
+ * branched-away pictures, the deleted replies', the folds' losers. Ids are
+ * never recycled. Image files stay on disk: they live in SillyTavern's shared
+ * gallery and another chat may still wear one.
+ *
+ * @param {object} store
+ * @param {Array} messages the branched chat
+ * @returns {boolean} whether anything was pruned
+ */
+export function pruneStore(store, messages) {
+    const ensured = normalizeStore(store);
+    const list = Array.isArray(messages) ? messages : [];
+
+    const referenced = new Set();
+    for (const message of list) {
+        if (!message) continue;
+        const variants = Math.max(1, Array.isArray(message.swipe_info) ? message.swipe_info.length : 1);
+        for (let swipeId = 0; swipeId < variants; swipeId += 1) {
+            const id = stampOf(message, swipeId);
+            if (id) referenced.add(id);
+        }
+    }
+    const onScreen = ensured.currentKey && ensured.keys[ensured.currentKey];
+    if (onScreen) referenced.add(onScreen);
+
+    let changed = false;
+    for (const id of Object.keys(ensured.records)) {
+        if (referenced.has(id)) continue;
+        delete ensured.records[id];
+        changed = true;
+    }
+    if (!changed) return false;
+
+    for (const [key, id] of Object.entries(ensured.keys)) {
+        if (!ensured.records[id]) delete ensured.keys[key];
+    }
+    for (const [key, id] of Object.entries(ensured.transports)) {
+        if (!ensured.records[id]) delete ensured.transports[key];
+    }
+    return true;
+}
+
 /* ---------- the watcher's question and answer ---------- */
 
 /**
@@ -940,6 +1191,69 @@ export function watcherSystemPrompt({ tagged = true, force = false, core = '' } 
     return force
         ? `${base}\n\n${WATCHER_FORMAT}\n\n${WATCHER_FORCE}`
         : `${base}\n\n${WATCHER_FORMAT}`;
+}
+
+/**
+ * The transport hand's core: the scene is INSIDE a vehicle on the move. The
+ * creative part is tunable like the others; the interior rule below it is
+ * protocol and appended by code - it must never be edited away, or the same
+ * shuttle gets a different cabin in every town it passes.
+ */
+export const DEFAULT_BG_TRANSPORT_PROMPT = `You are a background-art assistant for a visual-novel style roleplay. The scene happens inside a transport medium - a vehicle or moving space named at the end of the location chain ("... | En Route | CV-7742 Shuttle"). You receive the TRANSPORT TO PAINT, the PARKING LOT (the transport interiors this chat has already drawn), and the LATEST STORY grouped by scene blocks.
+
+VERIFY first: is the transport to paint one of the parked vehicles? Vehicle names are free text written by another model: judge by meaning, not by spelling. If it is the same vehicle, answer state "known" with that vehicle's id.
+
+Otherwise answer state "new" and write an image prompt describing ONLY the vehicle's interior as an establishing shot for a visual-novel background. You write prompts for a text-to-image model: describe what a camera would see inside - the space, materials, seats or fittings, instruments, lighting, mood, and a clear vantage point. Rules: 40 to 90 words of comma-separated visual phrases; the interior is the subject - no characters, no people, no silhouettes, no names, no actions, no emotions, no sounds; anchor lighting on the block's time of day when stated; anchor the vehicle's style on the world named first in its location chain; the prompt is always a visual description - never a location chain, a place name, or any text you received verbatim; style and quality words are appended for you - never include them; never mention "background" or anything about prompts. Output only the description in "prompt".`;
+
+const WATCHER_TRANSPORT_FORMAT = `Answer with one JSON object and nothing else:
+{"state":"known|new","knownId":null,"place":"vehicle name","prompt":"interior description or empty"}`;
+
+const TRANSPORT_INTERIOR = 'This scene takes place INSIDE a transport medium while it moves - the interior is all there is. The description must be the vehicle\'s INTERIOR and nothing else: it must never change wherever the vehicle travels, never show the outside, the scenery, or any location. Vehicle identity is decided by meaning: "CV 7742", "CV-7742" and "CV-7742 Shuttle" may all be one vehicle.';
+
+const WATCHER_TRANSPORT_FORCE = 'The user asked for a fresh image of this vehicle\u2019s interior: answer "new" with a fresh interior description even when it matches a parked vehicle.';
+
+/**
+ * The transport hand's system prompt: the editable core with the interior
+ * rule and the answer format appended by code. `force` (the brush) switches
+ * matching off - the retry must paint.
+ *
+ * @param {{force?:boolean, core?:string}} [options]
+ * @returns {string}
+ */
+export function watcherTransportSystemPrompt({ force = false, core = '' } = {}) {
+    const base = String(core ?? '').trim() || DEFAULT_BG_TRANSPORT_PROMPT;
+    return force
+        ? `${base}\n\n${TRANSPORT_INTERIOR}\n\n${WATCHER_TRANSPORT_FORMAT}\n\n${WATCHER_TRANSPORT_FORCE}`
+        : `${base}\n\n${TRANSPORT_INTERIOR}\n\n${WATCHER_TRANSPORT_FORMAT}`;
+}
+
+/**
+ * The transport hand's question: the vehicle to paint, the parking lot (the
+ * interiors this chat already holds - the menu it matches names against),
+ * and the story, for the world the interior lives in. The location library
+ * never appears here, and this hand never asks "same": a reply boarding from
+ * a location must never inherit the place it left.
+ *
+ * @param {{store:object, messages:Array, at?:number, persona?:string, vehicle:string, place?:string, force?:boolean, systemCore?:string}} options
+ * @returns {{systemPrompt:string, prompt:string, jsonSchema:object}}
+ */
+export function buildTransportRequest({ store, messages, at, persona = '', vehicle, place = '', force = false, systemCore = '' } = {}) {
+    const blocks = [];
+
+    blocks.push(`<transportInterior>\n${placeLabel(place || vehicle)} - paint its INTERIOR\n</transportInterior>`);
+
+    const known = knownBackgroundsList(store, { limit: 12, kind: 'transport' });
+    blocks.push(`<parkingLot>\nPARKING LOT (TRANSPORT INTERIORS)\n${known.length
+        ? known.map(entry => `- ${entry.id}: ${placeLabel(entry.place)}, Description: ${entry.prompt}`).join('\n')
+        : 'none'}\n</parkingLot>`);
+
+    blocks.push(`<latestStory>\n${formatLatestStory(messages, { tagged: true, count: BG_STORY_REPLIES, at, persona }) || 'empty'}\n</latestStory>`);
+
+    return {
+        systemPrompt: watcherTransportSystemPrompt({ force, core: systemCore }),
+        prompt: blocks.join('\n\n'),
+        jsonSchema: WATCHER_SCHEMA,
+    };
 }
 
 /**
@@ -1087,14 +1401,14 @@ export function buildWatcherRequest({ store, messages, tagged = true, count = BG
     const shown = current !== undefined ? current : currentRecord(store);
     blocks.push(`<currentBackground>\n${shown ? `${placeLabel(shown.place)}, Description: ${shown.prompt}` : 'none yet'}\n</currentBackground>`);
 
-    const known = knownBackgroundsList(store, { limit: 12 });
+    const known = knownBackgroundsList(store, { limit: 12, kind: 'place' });
     blocks.push(`<knownBackgrounds>\nKNOWN BACKGROUNDS (IMAGE LIBRARY)\n${known.length
         ? known.map(entry => `- ${entry.id}: ${placeLabel(entry.place)}, Description: ${entry.prompt}`).join('\n')
         : 'none'}\n</knownBackgrounds>`);
 
     const places = tagged
         ? extractRecentPlaces(messages, { limit: 6, at, persona })
-        : knownBackgroundsList(store, { limit: 6 }).map(entry => entry.place).reverse();
+        : knownBackgroundsList(store, { limit: 6, kind: 'place' }).map(entry => entry.place).reverse();
     blocks.push(`<recentPlaces>\n${places.length ? places.map(placeLabel).join(' -> ') : 'unknown'}\n</recentPlaces>`);
 
     blocks.push(`<latestStory>\n${formatLatestStory(messages, { tagged, count, at, persona }) || 'empty'}\n</latestStory>`);
@@ -1166,6 +1480,37 @@ export function fallbackLocationPrompt(scene) {
 
     return [
         leaf,
+        ...world,
+        cleanPlaceText(record.weather || ''),
+        dayPart(record.time),
+        'wide establishing shot',
+        'empty place, detailed environment',
+    ].filter(Boolean).join(', ');
+}
+
+/**
+ * The transport hand's deterministic description - the same job as
+ * `fallbackLocationPrompt`, for a ride whose watcher call failed: the
+ * INTERIOR first and always (it must not change wherever the vehicle
+ * travels), its world as plain words after it, then the light and the shot
+ * tags.
+ *
+ * @param {object|string} scene a scene record, or a place name
+ * @returns {string}
+ */
+export function fallbackTransportPrompt(scene) {
+    const record = scene && typeof scene === 'object' ? scene : { placeFull: String(scene ?? '') };
+    const place = String(record.placeFull || record.place || '').trim();
+
+    const ride = transportOf(place);
+    const vehicle = ride?.vehicle || placeShortName(place);
+    const levels = cleanPlaceText(place).split('|').map(level => level.trim()).filter(Boolean);
+    const at = levels.findIndex(level => EN_ROUTE_RE.test(level));
+    const world = (at >= 0 ? levels.slice(0, at) : levels.slice(0, -1)).reverse();
+
+    return [
+        `interior of ${vehicle}`,
+        'vehicle interior',
         ...world,
         cleanPlaceText(record.weather || ''),
         dayPart(record.time),
