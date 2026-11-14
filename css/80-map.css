@@ -36,6 +36,28 @@
 .mzc-region { fill: var(--mzc-land); stroke: var(--mzc-edge); }
 .mzc-city { fill: var(--mzc-land-2); stroke: var(--mzc-edge); stroke-dasharray: 5 4; }
 .mzc-plot { fill: var(--mzc-land-3); stroke: color-mix(in srgb, var(--mz-accent) 30%, transparent); }
+.mzc-mobile { fill: color-mix(in srgb, var(--mz-accent) 7%, var(--mzc-land-3)); stroke: color-mix(in srgb, var(--mz-accent) 45%, transparent); stroke-dasharray: 9 6; }
+
+/* the ship: an entity on the world map - its picture, its glyph, its rooms */
+.mzc-ship { cursor: pointer; }
+.mzc-ship .mzc-pin-label { opacity: 1; }
+.mzc-ship:hover .mzc-pin-ring, .mzc-ship.is-sel .mzc-pin-ring { stroke: var(--mz-accent); stroke-width: 2; }
+.mzc-shipglyph { color: var(--mz-accent); pointer-events: none; }
+.mzc-shipglyph circle { fill: var(--mz-surface-solid); stroke: var(--mz-accent); stroke-opacity: .7; stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+
+/* the trail's past stops: small vehicle icons where the turns happened */
+.mzc-stopmark { cursor: pointer; }
+.mzc-stopmark .mzc-pin-label { opacity: .9; font-size: 9.5px; }
+.mzc-stopmark:hover .mzc-pin-ring, .mzc-stopmark.is-sel .mzc-pin-ring { stroke: var(--mz-accent); stroke-width: 2; }
+.mzc-stopmark .mzc-count text { font-size: 8px; }
+.mzc-ship.is-plain { color: var(--mz-accent); }
+.mzc-ship.is-plain use { color: var(--mz-accent); }
+
+/* the deck bar: which ship we're inside, and the way back */
+.mzc-deckbar { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); z-index: 3; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 10px; background: color-mix(in srgb, var(--mz-surface-solid) 88%, transparent); border: 1px solid color-mix(in srgb, var(--mz-accent) 35%, transparent); font-size: 12px; }
+.mzc-deckbar b { font-weight: 600; }
+.mzc-deckbar span { opacity: .6; }
+.mz-map-lookinside { margin: 2px 0 12px; }
 .mzc-terr:hover { stroke: var(--mz-accent); }
 .mzc-terr.is-sel { stroke: var(--mz-accent); stroke-width: 2; stroke-dasharray: none; }
 
@@ -179,8 +201,7 @@
 .mz-mapwin-search input::placeholder { color: var(--mz-text-dim); }
 .mz-mapwin-lab { font-size: var(--mz-text-2xs); letter-spacing: .1em; text-transform: uppercase; color: var(--mz-text-dim); }
 
-.mz-mapwin-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 200px minmax(0, 1fr); }
-.mz-mapwin-body.has-card { grid-template-columns: 200px minmax(0, 1fr) 300px; }
+.mz-mapwin-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 200px minmax(0, 1fr) 300px; position: relative; }
 
 /* the index: the same places as text, folded into a tree */
 .mz-map-index { min-height: 0; overflow: auto; padding: 10px 8px 12px; border-right: 1px solid var(--mz-line); background: var(--mz-surface-2); font-size: var(--mz-text-xs); }
@@ -277,8 +298,7 @@
 /* ---------- small screens: chart first, index and card as sheets ---------- */
 @media (max-width: 760px) {
     .mz-mapwin { margin: 8px; width: auto; height: auto; inset: 0; }
-    .mz-mapwin-body, .mz-mapwin-body.has-card { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
-    .mz-map-index { display: none; }
+    .mz-mapwin-body, .mz-mapwin-body.has-card { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }    .mz-map-index { display: none; }
     .mz-map-detail { border-left: 0; border-top: 1px solid var(--mz-line); max-height: 46vh; }
     .mz-mapwin-search { width: 120px; }
     .mz-mapwin-grip { display: none; }

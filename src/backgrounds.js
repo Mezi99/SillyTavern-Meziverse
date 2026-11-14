@@ -90,6 +90,9 @@ export function normalizeStore(raw) {
     if (!store.keys || typeof store.keys !== 'object' || Array.isArray(store.keys)) {
         store.keys = {};
     }
+    if (!store.transports || typeof store.transports !== 'object' || Array.isArray(store.transports)) {
+        store.transports = {};
+    }
     if (!store.records || typeof store.records !== 'object' || Array.isArray(store.records)) {
         store.records = {};
     }
@@ -110,6 +113,18 @@ export function normalizeStore(raw) {
         if (normKey !== key) {
             delete store.keys[key];
             store.keys[normKey] = id;
+        }
+    }
+
+    for (const [key, id] of Object.entries(store.transports)) {
+        const normKey = locationKey(key);
+        if (!normKey || typeof id !== 'string' || !store.records[id]) {
+            delete store.transports[key];
+            continue;
+        }
+        if (normKey !== key) {
+            delete store.transports[key];
+            store.transports[normKey] = id;
         }
     }
 
@@ -193,6 +208,36 @@ export function aliasLocation(store, placeOrKey, targetId) {
 }
 
 /**
+ * The location edit's side of the books: a reply whose place was re-spelled
+ * (the scene editor rewrites the tag) keeps its picture and the record is
+ * renamed and re-keyed to match, so the tag and the library never drift
+ * apart. The old key is dropped when it belongs to this record - the edit
+ * says it was never that place's name.
+ *
+ * @param {object} store
+ * @param {string} recordId the record the edited reply points at
+ * @param {string} place the location as the edit spelled it
+ * @returns {object|null} the renamed record, or null for a missing record or place
+ */
+export function reconcileRecordPlace(store, recordId, place) {
+    const ensured = normalizeStore(store);
+    const record = ensured.records?.[String(recordId ?? '').trim()];
+    if (!record) return null;
+
+    const normKey = locationKey(place);
+    if (!normKey) return null;
+
+    const oldKey = locationKey(record.place);
+    if (normKey === oldKey) return record;
+
+    record.place = String(place ?? '').trim() || normKey;
+    ensured.keys[normKey] = record.id;
+    if (oldKey && ensured.keys[oldKey] === record.id) delete ensured.keys[oldKey];
+    if (ensured.currentKey === oldKey) ensured.currentKey = normKey;
+    return record;
+}
+
+/**
  * Stores a freshly generated background and marks its place current. With
  * `overwrite` the existing record for that place is replaced in place (the
  * brush button's "give me a new one"); without it every call adds a record,
@@ -218,7 +263,14 @@ export function storeRecord(store, {
     if (!normKey || !cleanPath) return null;
 
     const existingId = ensured.keys[normKey];
-    const reuse = overwrite && existingId && ensured.records[existingId] ? existingId : null;
+    // "Replace it" only holds when the record IS this place's picture. A
+    // record shared by several keys is a fold from the careless-matching
+    // days: overwriting it in place would repaint every folded place at
+    // once, so the fresh picture takes this key alone and the others keep
+    // the record they knew.
+    const shared = existingId
+        && Object.values(ensured.keys).filter(id => id === existingId).length > 1;
+    const reuse = overwrite && existingId && !shared && ensured.records[existingId] ? existingId : null;
     const id = reuse || `bg_${ensured.nextId}`;
     if (!reuse) ensured.nextId += 1;
 
@@ -417,15 +469,27 @@ export function recordSrc(record) {
 }
 
 /**
+ * The request's own block tags - a story that carries a look-alike never
+ * breaks the block layout (story text is another model's output and may say
+ * anything). Place text passes through the same scrub.
+ */
+const REQUEST_TAG_RE = /<\/?(?:currentBackground|knownBackgrounds|recentPlaces|latestStory|parkingLot|transportInterior)>/gi;
+
+/**
  * A place string as the watcher should see it. The bracket characters a
  * model's echo of the note's example leaves behind are stripped: they read as
- * placeholders and confuse more than they clarify.
+ * placeholders and confuse more than they clarify. The request's own block
+ * tags are stripped too - story text is untrusted and may carry look-alikes.
  *
  * @param {*} value
  * @returns {string}
  */
 export function cleanPlaceText(value) {
-    return String(value ?? '').replace(/[[\]]/g, ' ').replace(/\s+/g, ' ').trim();
+    return String(value ?? '')
+        .replace(REQUEST_TAG_RE, ' ')
+        .replace(/[[\]]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
 }
 
 /**
@@ -444,21 +508,111 @@ export function placeShortName(value) {
 }
 
 /**
+ * A place as every prompt names it: the short name (the specific spot to
+ * paint) first, the chain as its world in brackets. One shape everywhere -
+ * the library lines, the story headers, the recent-places timeline - so the
+ * reader never mistakes the description for the name.
+ *
+ * @param {*} value
+ * @returns {string}
+ */
+export function placeLabel(value) {
+    const clean = cleanPlaceText(value);
+    const short = placeShortName(clean);
+    return short ? `${short} [World location: ${clean}]` : '';
+}
+
+/** Number words a place name may spell out ("Pier Nine" is "Pier 9"). */
+const NAME_NUMBERS = new Map(Object.entries({
+    zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9,
+    ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16,
+    seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20,
+    first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6, seventh: 7, eighth: 8,
+    ninth: 9, tenth: 10, eleventh: 11, twelfth: 12,
+}));
+
+const NAME_STOPWORDS = new Set(['the', 'of', 'a', 'an', 'at', 'in', 'on', 'and', 'or', 'no']);
+
+/** One short name reduced to its comparable parts. */
+function nameSignature(value) {
+    const text = placeShortName(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const tokens = new Set();
+    const numbers = new Set();
+
+    for (const word of text.split(' ').filter(Boolean)) {
+        for (const run of word.match(/\d+/g) || []) numbers.add(String(Number(run)));
+        const letters = word.replace(/\d+/g, '');
+        if (!letters) continue;
+        if (NAME_NUMBERS.has(letters)) {
+            numbers.add(String(NAME_NUMBERS.get(letters)));
+            continue;
+        }
+        if (letters.length >= 2 && !NAME_STOPWORDS.has(letters)) tokens.add(letters);
+    }
+
+    return { text, tokens, numbers };
+}
+
+function sameNumbers(first, second) {
+    if (first.size !== second.size) return false;
+    for (const number of first) if (!second.has(number)) return false;
+    return true;
+}
+
+/**
+ * Whether two place names could name the same spot under different spellings:
+ * "Pier No9", "Pier 9" and "the ninth pier" are one pier, while "Corridor
+ * C-12" and "Corridor C-9" are two corridors and "Landing Pad" and "Kaffe
+ * Station" share nothing. The watcher's "same"/"known" answers claim exactly
+ * that, so the claim is checked before it folds two locations onto one
+ * picture - a careless fold sticks in the keys map and one brush then
+ * repaints both places. The rule is deliberately strict: a rejected answer
+ * draws a fresh picture (recoverable), a wrong fold merges two places
+ * forever.
+ *
+ * @param {*} a one place, e.g. 'Metro City | Docks | Pier 9'
+ * @param {*} b the place it claims to be
+ * @returns {boolean}
+ */
+export function placeNamesLikelySame(a, b) {
+    const first = nameSignature(a);
+    const second = nameSignature(b);
+    if (!first.text || !second.text) return false;
+    if (first.text === second.text) return true;
+
+    // Numbers decide before words do: "C-12" and "C-9" share every word
+    // but the one that matters.
+    if (first.numbers.size && second.numbers.size && !sameNumbers(first.numbers, second.numbers)) return false;
+
+    if (first.text.includes(second.text) || second.text.includes(first.text)) return true;
+
+    for (const token of first.tokens) if (second.tokens.has(token)) return true;
+    return false;
+}
+
+/**
  * The watcher's menu of images this chat already has: newest first, so it can
- * answer "known" instead of inventing a near-duplicate place.
+ * answer "known" instead of inventing a near-duplicate place. `kind` splits
+ * the menu the way the two hands read it: 'place' for the location library,
+ * 'transport' for the parking lot - the pools never see each other, so a
+ * docking bay can never fold onto a shuttle interior.
  *
  * @param {object} store
- * @param {{limit?:number}} [options]
+ * @param {{limit?:number, kind?:'place'|'transport'}} [options]
  * @returns {Array<{id:string, place:string, prompt:string}>}
  */
-export function knownBackgroundsList(store, { limit = 12 } = {}) {
+export function knownBackgroundsList(store, { limit = 12, kind = '' } = {}) {
     if (!store || typeof store !== 'object') return [];
-    const records = Object.values(store.records || {}).filter(record => record && typeof record === 'object');
+    const records = Object.values(store.records || {})
+        .filter(record => record && typeof record === 'object')
+        .filter(record => (kind === 'transport' ? !!record.vehicle : kind === 'place' ? !record.vehicle : true));
     records.sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
     return records.slice(0, Math.max(0, limit)).map(record => ({
         id: record.id,
         place: record.place || '',
         prompt: record.prompt || '',
+        vehicle: record.vehicle || '',
+        space: record.space || '',
     }));
 }
 
@@ -587,6 +741,29 @@ export function resolveStampRecord(store, messages, index) {
 }
 
 /**
+ * The reply the brush redraws: the shown turn when it is a reply, the nearest
+ * reply before it when it is a user turn (user turns own no picture), the
+ * chat's end only when nothing was shown. Never some earlier owner of the
+ * on-screen picture - the brush redraws the response it was clicked on, and
+ * that response keeps the new picture.
+ *
+ * @param {Array} messages
+ * @param {number|null} [at] the shown turn's index; the chat's end by default
+ * @returns {number}
+ */
+export function brushTargetIndex(messages, at = null) {
+    const list = Array.isArray(messages) ? messages : [];
+    if (!list.length) return 0;
+
+    const shown = Number.isInteger(at) ? at : list.length - 1;
+    const from = Math.min(shown, list.length - 1);
+    for (let i = from; i >= 0; i -= 1) {
+        if (!list[i]?.is_user) return i;
+    }
+    return Math.max(0, list.length - 1);
+}
+
+/**
  * What the chain should do about one reply's place: nothing (the reply keeps
  * the picture it carried), apply a cached image (the place was seen before),
  * or ask the watcher (a genuinely new place - or a spelling drift only the
@@ -665,6 +842,326 @@ function matchesBgUrl(record, customBgUrl) {
     return false;
 }
 
+/* ---------- the parking lot: transport interiors ---------- */
+
+const EN_ROUTE_RE = /^en[\s-]?route$/i;
+
+/**
+ * The lot key of one ride's picture: the vehicle's own name for its bare
+ * interior ("cv-7742 shuttle"), vehicle plus space for one named space aboard
+ * it ("cv-7742 shuttle::cockpit"). The travel chain never keys anything - it
+ * changes as the vehicle moves - so every ride of one interior shares it
+ * whatever the chain spelled.
+ *
+ * @param {string} vehicle e.g. 'CV-7742 Shuttle'
+ * @param {string} [space] e.g. 'Cockpit'
+ * @returns {string}
+ */
+export function transportKey(vehicle, space = '') {
+    const key = locationKey(vehicle);
+    if (!key) return '';
+    const room = locationKey(space);
+    return room ? `${key}::${room}` : key;
+}
+
+/**
+ * The vehicle folds this chat already rides - every vehicle the parking lot
+ * or the library has ever named. Parked chains are only read as rides for
+ * these: "Docking Bay 7-C | CV-7742 Shuttle | Cockpit" is the known shuttle's
+ * cockpit, while "Metro City | Grand Ferry | Gift Shop" is a place - a name
+ * alone never proves a vehicle (the map's rule too: false splits are
+ * cosmetic, false merges corrupt the map).
+ *
+ * @param {object} store
+ * @returns {Set<string>}
+ */
+export function knownVehicles(store) {
+    const out = new Set();
+    if (!store || typeof store !== 'object') return out;
+    for (const key of Object.keys(store.transports || {})) {
+        const fold = String(key).split('::')[0];
+        if (fold) out.add(fold);
+    }
+    for (const record of Object.values(store.records || {})) {
+        const fold = record && typeof record === 'object' ? locationKey(record.vehicle || '') : '';
+        if (fold) out.add(fold);
+    }
+    return out;
+}
+
+/**
+ * The vehicle a location chain rides - and the named space aboard it - or
+ * null for a place on the ground. The chain grammar puts the vehicle after
+ * the position level and any spaces aboard after the vehicle:
+ * "... | En Route | CV-7742 Shuttle" is that shuttle on the move,
+ * "... | En Route | CV-7742 Shuttle | Cockpit" is its cockpit - the SAME
+ * rooms whether the shuttle moves or sits docked ("... | Docking Bay 7-C |
+ * CV-7742 Shuttle | Cockpit"). The read is deliberately loose about where
+ * "En Route" sits (the chat LLM misbehaves sometimes): any level naming it
+ * turns the scene into a ride, and the level right after it is the vehicle.
+ * Without the keyword only a KNOWN vehicle counts (see `knownVehicles`) - a
+ * bare parked chain ("... | Docking Bay 7-C | CV-7742 Shuttle") is a place
+ * on the ground: the scene is the bay.
+ *
+ * @param {*} value a location chain, e.g. 'Space | Mars | En Route | CV-7742 Shuttle | Cockpit'
+ * @param {{vehicles?:Set<string>}} [options] the vehicle folds this chat knows
+ * @returns {{vehicle:string, key:string, space:string, spaceKey:string}|null}
+ */
+export function transportOf(value, { vehicles } = {}) {
+    const levels = cleanPlaceText(value).split('|').map(level => level.trim()).filter(Boolean);
+    if (!levels.length) return null;
+
+    let at = levels.findIndex(level => EN_ROUTE_RE.test(level));
+    if (at >= 0) {
+        if (at >= levels.length - 1) return null;
+        at += 1;
+    } else if (vehicles && vehicles.size) {
+        at = -1;
+        for (let i = levels.length - 2; i > 0; i -= 1) {
+            if (vehicles.has(locationKey(levels[i]))) {
+                at = i;
+                break;
+            }
+        }
+        if (at < 0) return null;
+    } else {
+        return null;
+    }
+
+    const vehicle = levels[at];
+    const key = locationKey(vehicle);
+    if (!key) return null;
+    const space = levels.slice(at + 1).join(' | ');
+    return { vehicle, key, space, spaceKey: transportKey(vehicle, space) };
+}
+
+/**
+ * The parked interior of one vehicle - or of one named space aboard it - or
+ * null. Lookup is exact: a space never borrows the vehicle's bare interior
+ * (a cockpit is not a cabin); a space the lot has never seen asks the
+ * watcher, whose "known" may still merge it onto an interior it matches.
+ *
+ * @param {object} store
+ * @param {string} vehicle e.g. 'CV-7742 Shuttle'
+ * @param {string} [space] e.g. 'Cockpit'
+ * @returns {object|null}
+ */
+export function lookupTransport(store, vehicle, space = '') {
+    if (!store || typeof store !== 'object') return null;
+    const key = transportKey(vehicle, space);
+    if (!key) return null;
+    const id = store.transports?.[key];
+    return (id && store.records?.[id]) || null;
+}
+
+/**
+ * Parks one ride's interior in the lot. One record per vehicle-and-space,
+ * always: `overwrite` (the brush) replaces the parked record IN PLACE, so
+ * every ride wearing that interior repaints together - change it on one
+ * response and it changes everywhere it recurs. Without it a first parking
+ * adds a record.
+ *
+ * @param {object} store
+ * @param {{vehicle:string, space?:string, place?:string, prompt:string, path:string, overwrite?:boolean, createdAt?:number}} entry
+ * @returns {object|null}
+ */
+export function parkTransport(store, { vehicle, space = '', place, prompt, path, overwrite = false, createdAt = Date.now() } = {}) {
+    const ensured = normalizeStore(store);
+    const name = String(vehicle ?? '').trim();
+    const room = String(space ?? '').trim();
+    const key = transportKey(name, room);
+    const cleanPath = String(path ?? '').trim();
+    if (!key || !cleanPath) return null;
+
+    const existingId = ensured.transports[key];
+    const reuse = overwrite && existingId && ensured.records[existingId] ? existingId : null;
+    const id = reuse || `bg_${ensured.nextId}`;
+    if (!reuse) ensured.nextId += 1;
+
+    const record = {
+        id,
+        vehicle: name,
+        space: room,
+        place: String(place ?? '').trim() || `En Route | ${name}${room ? ` | ${room}` : ''}`,
+        prompt: String(prompt ?? '').trim(),
+        path: cleanPath,
+        url: toCssBgUrl(cleanPath),
+        createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
+    };
+
+    ensured.records[id] = record;
+    ensured.transports[key] = id;
+    return record;
+}
+
+/**
+ * What the chain should do about one reply's ride: nothing (it already shows
+ * this vehicle's - or this space's - interior), apply the parked interior, or
+ * ask the watcher (an unparked vehicle or space - or a spelling drift only
+ * the LLM can recognise, which parks the variant's name onto the interior it
+ * matched). The ride is decided HERE, by code: the watcher is never asked
+ * whether a ride changed.
+ *
+ * @param {object} store
+ * @param {{vehicle:string, space?:string}} ride the `transportOf` shape
+ * @param {{baseline?:object|null}} [options]
+ * @returns {{action:'none'|'apply'|'watch', record:object|null}}
+ */
+export function decideTransport(store, ride, { baseline } = {}) {
+    const ensured = normalizeStore(store);
+    const record = lookupTransport(ensured, ride?.vehicle ?? '', ride?.space ?? '');
+    if (!record) return { action: 'watch', record: null };
+
+    const prior = baseline !== undefined ? baseline : currentRecord(ensured);
+    if (prior && record.id === prior.id) return { action: 'none', record: prior };
+    return { action: 'apply', record };
+}
+
+/**
+ * The one-interior-per-vehicle-and-space fold, run over the library and the
+ * stamps: legacy chats parked a separate interior per travel chain ("Mara's
+ * Rest | En Route | X", "Outer Rim | En Route | X"), and every ride must show
+ * the one interior - the newest parked wins, the rest leave the library and
+ * their stamps follow the winner. One record per NAMED SPACE too: "X | En
+ * Route | Ship | Cockpit" and "X | En Route | Ship | Bunk Room" are different
+ * interiors. Chain keys of rides are dropped outright: the parking lot owns
+ * them now. Returns whether anything changed.
+ *
+ * @param {object} store
+ * @param {Array} messages the chat, for the stamps to re-point
+ * @returns {boolean}
+ */
+export function collapseTransports(store, messages) {
+    const ensured = normalizeStore(store);
+    const list = Array.isArray(messages) ? messages : [];
+
+    // What this chat rides: seeded by every en-route chain in the library and
+    // every record's own vehicle field - parked chains count as rides only
+    // for these (see `knownVehicles`).
+    const vehicles = knownVehicles(ensured);
+    for (const record of Object.values(ensured.records)) {
+        const ride = record && typeof record === 'object' ? transportOf(record.place || '') : null;
+        if (ride) vehicles.add(ride.key);
+    }
+
+    const groups = new Map();
+    for (const record of Object.values(ensured.records)) {
+        if (!record || typeof record !== 'object') continue;
+        const ride = record.vehicle
+            ? { vehicle: record.vehicle, space: record.space || '', spaceKey: transportKey(record.vehicle, record.space || '') }
+            : transportOf(record.place || '', { vehicles });
+        if (!ride) continue;
+        const group = groups.get(ride.spaceKey) || [];
+        group.push(record);
+        groups.set(ride.spaceKey, group);
+    }
+    if (!groups.size) return false;
+
+    let changed = false;
+    const losers = new Map();
+    for (const [key, group] of groups) {
+        group.sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
+        const [winner, ...rest] = group;
+        const ride = transportOf(winner.place || '', { vehicles }) || {};
+        if (!winner.vehicle) winner.vehicle = ride.vehicle || winner.place;
+        if (!winner.space) winner.space = ride.space || '';
+        if (ensured.transports[key] !== winner.id) {
+            ensured.transports[key] = winner.id;
+            changed = true;
+        }
+        for (const loser of rest) losers.set(loser.id, winner.id);
+    }
+
+    for (const key of Object.keys(ensured.keys)) {
+        if (transportOf(key, { vehicles })) {
+            delete ensured.keys[key];
+            changed = true;
+        }
+    }
+
+    if (losers.size) {
+        for (const message of list) {
+            if (!message) continue;
+            const variants = Math.max(1, Array.isArray(message.swipe_info) ? message.swipe_info.length : 1);
+            for (let swipeId = 0; swipeId < variants; swipeId += 1) {
+                const id = stampOf(message, swipeId);
+                const winner = id && losers.get(id);
+                if (winner && setStamp(message, swipeId, winner)) changed = true;
+            }
+        }
+        for (const loserId of losers.keys()) {
+            delete ensured.records[loserId];
+            changed = true;
+        }
+    }
+
+    // Every ride reply wears the interior its exact ride parks - the space's
+    // own record, or the vehicle's bare one - so the lot answers "what does
+    // this show" everywhere. A reply naming a space the lot has never parked
+    // keeps whatever it wore: the next draw of that space takes over.
+    for (const message of list) {
+        if (!message || message.is_user) continue;
+        const scenes = groupMessageByScene(typeof message.mes === 'string' ? message.mes : '');
+        const last = scenes.length ? scenes[scenes.length - 1] : null;
+        const ride = last ? transportOf(last.place || '', { vehicles }) : null;
+        if (!ride) continue;
+
+        const winner = ensured.transports[ride.spaceKey];
+        if (!winner) continue;
+
+        const variants = Math.max(1, Array.isArray(message.swipe_info) ? message.swipe_info.length : 1);
+        for (let swipeId = 0; swipeId < variants; swipeId += 1) {
+            if (stampOf(message, swipeId) !== winner && setStamp(message, swipeId, winner)) changed = true;
+        }
+    }
+
+    return changed;
+}
+
+/**
+ * The library reduced to what the chat still refers to: every record behind a
+ * stamp (any swipe variant) or on screen stays, everything else leaves - the
+ * branched-away pictures, the deleted replies', the folds' losers. Ids are
+ * never recycled. Image files stay on disk: they live in SillyTavern's shared
+ * gallery and another chat may still wear one.
+ *
+ * @param {object} store
+ * @param {Array} messages the branched chat
+ * @returns {boolean} whether anything was pruned
+ */
+export function pruneStore(store, messages) {
+    const ensured = normalizeStore(store);
+    const list = Array.isArray(messages) ? messages : [];
+
+    const referenced = new Set();
+    for (const message of list) {
+        if (!message) continue;
+        const variants = Math.max(1, Array.isArray(message.swipe_info) ? message.swipe_info.length : 1);
+        for (let swipeId = 0; swipeId < variants; swipeId += 1) {
+            const id = stampOf(message, swipeId);
+            if (id) referenced.add(id);
+        }
+    }
+    const onScreen = ensured.currentKey && ensured.keys[ensured.currentKey];
+    if (onScreen) referenced.add(onScreen);
+
+    let changed = false;
+    for (const id of Object.keys(ensured.records)) {
+        if (referenced.has(id)) continue;
+        delete ensured.records[id];
+        changed = true;
+    }
+    if (!changed) return false;
+
+    for (const [key, id] of Object.entries(ensured.keys)) {
+        if (!ensured.records[id]) delete ensured.keys[key];
+    }
+    for (const [key, id] of Object.entries(ensured.transports)) {
+        if (!ensured.records[id]) delete ensured.transports[key];
+    }
+    return true;
+}
+
 /* ---------- the watcher's question and answer ---------- */
 
 /**
@@ -693,7 +1190,32 @@ export const WATCHER_SCHEMA = Object.freeze({
  * that structure; the plain-prose hand gets raw text, where the location may
  * change inside a single paragraph or hold for many messages.
  */
-export const DEFAULT_BG_PROMPT_ON = `You are a background-art assistant for a visual-novel style roleplay. You receive the CURRENT BACKGROUND (the place name and image description shown now), a list of KNOWN BACKGROUNDS, a RECENT PLACES timeline, and the LATEST STORY grouped by scene blocks - each block's header names the place, time and weather its narration happens in. The LAST block is where the story is now.
+export const DEFAULT_BG_PROMPT_ON = `You are a background-art assistant for a visual-novel style roleplay. You receive <currentBackground> (the place name and image description shown now), <knownBackgrounds> (the image library this chat has drawn), a <recentPlaces> timeline, and <latestStory> grouped by scene blocks - each block's header names the place, time and weather its narration happens in. The LAST block is where the story is now.
+
+Every place arrives as "short name [World location: ...]": a location chain like Metro City | Downtown District | Fifth Street Walk-Up | Unit 4B - Bedroom. The short name - the part after the last "|" - is the specific place to paint; the chain before it (region, city, district, street) is the world the place lives in: the short name decides what to paint, the chain decides how it looks - architecture, materials, vegetation, cultural details, era and climate follow the world named first. A suburb of Las Vegas, a street in Pyongyang and a village in a high-fantasy realm must never share the same buildings.
+
+VERIFY first: is the place at the end of <latestStory> the same place as <currentBackground>? Place names are free text written by another model: "Pier No9", "Pier 9" and "the ninth pier" may all be the same place. Judge by meaning, not by spelling. If it is the same place, answer state "same".
+
+If the place is genuinely different but clearly equals one of the <knownBackgrounds>, answer state "known" with that background's id.
+
+Otherwise answer state "new" and write an image prompt that describes ONLY the current place as an establishing shot for a visual-novel background. You write prompts for a text-to-image model: describe what a camera would see at that place - the space, architecture, objects, materials, weather, time of day, lighting, mood, and a clear vantage point. Rules: 40 to 90 words of comma-separated visual phrases; the place is the subject - no characters, no people, no silhouettes, no names, no actions, no emotions, no sounds; anchor lighting and sky on the block's time of day and weather when stated; anchor the place's style on the location chain's world - buildings, materials, colors, vegetation and signage follow the region, and invented worlds take their visual identity from the names and the story's own words; the prompt is always a visual description - never a location chain, a place name, or any text you received verbatim; style and quality words are appended for you - never include them; never mention "background" or anything about prompts. Output only the description in "prompt".`;
+
+export const DEFAULT_BG_PROMPT_OFF = `You are a background-art assistant for a visual-novel style roleplay. You receive <currentBackground> (the place name and image description shown now), <knownBackgrounds> (the image library this chat has drawn), a <recentPlaces> timeline, and <latestStory> as plain story text. There are no scene markers here: the location may change abruptly inside a paragraph or stay put for many messages. Read the whole excerpt for where the characters are at its END.
+
+Every place arrives as "short name [World location: ...]": a location chain like Metro City | Downtown District | Fifth Street Walk-Up | Unit 4B - Bedroom. The short name - the part after the last "|" - is the specific place to paint; the chain before it (region, city, district, street) is the world the place lives in: the short name decides what to paint, the chain decides how it looks - architecture, materials, vegetation, cultural details, era and climate follow the world named first. A suburb of Las Vegas, a street in Pyongyang and a village in a high-fantasy realm must never share the same buildings.
+
+VERIFY first: is the place at the end of <latestStory> the same place as <currentBackground>? Place names are free text written by another model: "Pier No9", "Pier 9" and "the ninth pier" may all be the same place. Judge by meaning, not by spelling. If it is the same place, answer state "same".
+
+If the place is genuinely different but clearly equals one of the <knownBackgrounds>, answer state "known" with that background's id.
+
+Otherwise answer state "new" and write an image prompt that describes ONLY the current place as an establishing shot for a visual-novel background. You write prompts for a text-to-image model: describe what a camera would see at that place - the space, architecture, objects, materials, weather, time of day, lighting, mood, and a clear vantage point. Rules: 40 to 90 words of comma-separated visual phrases; the place is the subject - no characters, no people, no silhouettes, no names, no actions, no emotions, no sounds; anchor lighting and sky on the story's time of day and weather when stated; anchor the place's style on the location chain's world - buildings, materials, colors, vegetation and signage follow the region, and invented worlds take their visual identity from the names and the story's own words; the prompt is always a visual description - never a location chain, a place name, or any text you received verbatim; style and quality words are appended for you - never include them; never mention "background" or anything about prompts. Output only the description in "prompt".`;
+
+/**
+ * The prompt cores before the request blocks wore their tags (v2.9.4) - kept
+ * only so a saved settings copy that followed the default forward can follow
+ * the default back (see settings.js).
+ */
+export const PRIOR_DEFAULT_BG_PROMPT_ON = `You are a background-art assistant for a visual-novel style roleplay. You receive the CURRENT BACKGROUND (the place name and image description shown now), a list of KNOWN BACKGROUNDS, a RECENT PLACES timeline, and the LATEST STORY grouped by scene blocks - each block's header names the place, time and weather its narration happens in. The LAST block is where the story is now.
 
 Every place arrives as "short name [Full/world/map location: ...]": a location chain like Metro City | Downtown District | Fifth Street Walk-Up | Unit 4B - Bedroom. The short name - the part after the last "|" - is the specific place to paint; the chain before it (region, city, district, street) is the world the place lives in: the short name decides what to paint, the chain decides how it looks - architecture, materials, vegetation, cultural details, era and climate follow the world named first. A suburb of Las Vegas, a street in Pyongyang and a village in a high-fantasy realm must never share the same buildings.
 
@@ -703,7 +1225,7 @@ If the place is genuinely different but clearly equals one of the KNOWN BACKGROU
 
 Otherwise answer state "new" and write an image prompt that describes ONLY the current place as an establishing shot for a visual-novel background. You write prompts for a text-to-image model: describe what a camera would see at that place - the space, architecture, objects, materials, weather, time of day, lighting, mood, and a clear vantage point. Rules: 40 to 90 words of comma-separated visual phrases; the place is the subject - no characters, no people, no silhouettes, no names, no actions, no emotions, no sounds; anchor lighting and sky on the block's time of day and weather when stated; anchor the place's style on the location chain's world - buildings, materials, colors, vegetation and signage follow the region, and invented worlds take their visual identity from the names and the story's own words; the prompt is always a visual description - never a location chain, a place name, or any text you received verbatim; style and quality words are appended for you - never include them; never mention "background" or anything about prompts. Output only the description in "prompt".`;
 
-export const DEFAULT_BG_PROMPT_OFF = `You are a background-art assistant for a visual-novel style roleplay. You receive the CURRENT BACKGROUND (the place name and image description shown now), a list of KNOWN BACKGROUNDS, a RECENT PLACES timeline, and the LATEST STORY as plain story text. There are no scene markers here: the location may change abruptly inside a paragraph or stay put for many messages. Read the whole excerpt for where the characters are at its END.
+export const PRIOR_DEFAULT_BG_PROMPT_OFF = `You are a background-art assistant for a visual-novel style roleplay. You receive the CURRENT BACKGROUND (the place name and image description shown now), a list of KNOWN BACKGROUNDS, a RECENT PLACES timeline, and the LATEST STORY as plain story text. There are no scene markers here: the location may change abruptly inside a paragraph or stay put for many messages. Read the whole excerpt for where the characters are at its END.
 
 Every place arrives as "short name [Full/world/map location: ...]": a location chain like Metro City | Downtown District | Fifth Street Walk-Up | Unit 4B - Bedroom. The short name - the part after the last "|" - is the specific place to paint; the chain before it (region, city, district, street) is the world the place lives in: the short name decides what to paint, the chain decides how it looks - architecture, materials, vegetation, cultural details, era and climate follow the world named first. A suburb of Las Vegas, a street in Pyongyang and a village in a high-fantasy realm must never share the same buildings.
 
@@ -760,6 +1282,97 @@ export function watcherSystemPrompt({ tagged = true, force = false, core = '' } 
     return force
         ? `${base}\n\n${WATCHER_FORMAT}\n\n${WATCHER_FORCE}`
         : `${base}\n\n${WATCHER_FORMAT}`;
+}
+
+/**
+ * The transport hand's core: the scene is INSIDE a vehicle on the move. The
+ * creative part is tunable like the others; the interior rule below it is
+ * protocol and appended by code - it must never be edited away, or the same
+ * shuttle gets a different cabin in every town it passes.
+ */
+/**
+ * The transport hand's core: the scene is INSIDE a vehicle - one named space
+ * of it when the chain says so. The creative part is tunable like the others;
+ * the interior rule below it is protocol and appended by code - it must never
+ * be edited away, or the same shuttle gets a different cabin in every town it
+ * passes.
+ */
+export const DEFAULT_BG_TRANSPORT_PROMPT = `You are a background-art assistant for a visual-novel style roleplay. The scene happens inside a transport medium - a vehicle or moving space named at the end of the location chain ("... | En Route | CV-7742 Shuttle"), sometimes with one named space aboard it ("... | En Route | CV-7742 Shuttle | Bunk Room"). You receive the TRANSPORT TO PAINT, the PARKING LOT (the transport interiors this chat has already drawn), and the LATEST STORY grouped by scene blocks.
+
+VERIFY first: is the transport to paint one of the parked vehicles or spaces? Names are free text written by another model: judge by meaning, not by spelling. If it is the same interior, answer state "known" with that id.
+
+Otherwise answer state "new" and write an image prompt describing ONLY the interior asked for - the vehicle's interior, or that one space's interior when a space is named - as an establishing shot for a visual-novel background. You write prompts for a text-to-image model: describe what a camera would see inside - the space, materials, seats or fittings, instruments, lighting, mood, and a clear vantage point. Rules: 40 to 90 words of comma-separated visual phrases; the interior is the subject - no characters, no people, no silhouettes, no names, no actions, no emotions, no sounds; anchor lighting on the block's time of day when stated; anchor the vehicle's style on the world named first in its location chain; the prompt is always a visual description - never a location chain, a place name, or any text you received verbatim; style and quality words are appended for you - never include them; never mention "background" or anything about prompts. Output only the description in "prompt".`;
+
+/** The core shipped before spaces aboard vehicles were read - the settings
+ * migration's "still the default" twin. */
+export const PRIOR_DEFAULT_BG_TRANSPORT_PROMPT = `You are a background-art assistant for a visual-novel style roleplay. The scene happens inside a transport medium - a vehicle or moving space named at the end of the location chain ("... | En Route | CV-7742 Shuttle"). You receive the TRANSPORT TO PAINT, the PARKING LOT (the transport interiors this chat has already drawn), and the LATEST STORY grouped by scene blocks.
+
+VERIFY first: is the transport to paint one of the parked vehicles? Vehicle names are free text written by another model: judge by meaning, not by spelling. If it is the same vehicle, answer state "known" with that vehicle's id.
+
+Otherwise answer state "new" and write an image prompt describing ONLY the vehicle's interior as an establishing shot for a visual-novel background. You write prompts for a text-to-image model: describe what a camera would see inside - the space, materials, seats or fittings, instruments, lighting, mood, and a clear vantage point. Rules: 40 to 90 words of comma-separated visual phrases; the interior is the subject - no characters, no people, no silhouettes, no names, no actions, no emotions, no sounds; anchor lighting on the block's time of day when stated; anchor the vehicle's style on the world named first in its location chain; the prompt is always a visual description - never a location chain, a place name, or any text you received verbatim; style and quality words are appended for you - never include them; never mention "background" or anything about prompts. Output only the description in "prompt".`;
+
+const WATCHER_TRANSPORT_FORMAT = `Answer with one JSON object and nothing else:
+{"state":"known|new","knownId":null,"place":"vehicle or space name","prompt":"interior description or empty"}`;
+
+/**
+ * The interior rule, appended by code and never editable: with a named space
+ * aboard, the SPACE is the subject - and it must hold still wherever the
+ * vehicle goes.
+ */
+function transportInteriorRule(space) {
+    const room = String(space ?? '').trim();
+    const identity = 'Vehicle identity is decided by meaning: "CV 7742", "CV-7742" and "CV-7742 Shuttle" may all be one vehicle.';
+    return room
+        ? `This scene takes place INSIDE one named space of a transport medium - the vehicle's ${room} - whatever the vehicle is doing (moving, parked or docked). The description must be that ${room}'s INTERIOR and nothing else: it must never change wherever the vehicle travels, never show the outside, the scenery, or any location. ${identity} Space identity too: two genuinely different spaces ("Cockpit", "Bunk Room") are different interiors, but a spelling drift ("Bridge", "the bridge") is one.`
+        : `This scene takes place INSIDE a transport medium - the interior is all there is. The description must be the vehicle's INTERIOR and nothing else: it must never change wherever the vehicle travels, never show the outside, the scenery, or any location. ${identity}`;
+}
+
+const WATCHER_TRANSPORT_FORCE = 'The user asked for a fresh image of this interior: answer "new" with a fresh interior description even when it matches a parked vehicle or space.';
+
+/**
+ * The transport hand's system prompt: the editable core with the interior
+ * rule and the answer format appended by code. `force` (the brush) switches
+ * matching off - the retry must paint.
+ *
+ * @param {{force?:boolean, core?:string, space?:string}} [options]
+ * @returns {string}
+ */
+export function watcherTransportSystemPrompt({ force = false, core = '', space = '' } = {}) {
+    const base = String(core ?? '').trim() || DEFAULT_BG_TRANSPORT_PROMPT;
+    const rule = transportInteriorRule(space);
+    return force
+        ? `${base}\n\n${rule}\n\n${WATCHER_TRANSPORT_FORMAT}\n\n${WATCHER_TRANSPORT_FORCE}`
+        : `${base}\n\n${rule}\n\n${WATCHER_TRANSPORT_FORMAT}`;
+}
+
+/**
+ * The transport hand's question: the ride to paint (vehicle, and the named
+ * space aboard it when there is one), the parking lot (the interiors this
+ * chat already holds - the menu it matches names against), and the story, for
+ * the world the interior lives in. The location library never appears here,
+ * and this hand never asks "same": a reply boarding from a location must
+ * never inherit the place it left.
+ *
+ * @param {{store:object, messages:Array, at?:number, persona?:string, vehicle:string, space?:string, place?:string, force?:boolean, systemCore?:string}} options
+ * @returns {{systemPrompt:string, prompt:string, jsonSchema:object}}
+ */
+export function buildTransportRequest({ store, messages, at, persona = '', vehicle, space = '', place = '', force = false, systemCore = '' } = {}) {
+    const blocks = [];
+
+    blocks.push(`<transportInterior>\n${placeLabel(place || vehicle)} - paint its ${space ? `${space} ` : ''}INTERIOR\n</transportInterior>`);
+
+    const known = knownBackgroundsList(store, { limit: 12, kind: 'transport' });
+    blocks.push(`<parkingLot>\nPARKING LOT (TRANSPORT INTERIORS)\n${known.length
+        ? known.map(entry => `- ${entry.id}: ${entry.vehicle || placeLabel(entry.place)}${entry.space ? ` \u00b7 ${entry.space}` : ''}, Description: ${entry.prompt}`).join('\n')
+        : 'none'}\n</parkingLot>`);
+
+    blocks.push(`<latestStory>\n${formatLatestStory(messages, { tagged: true, count: BG_STORY_REPLIES, at, persona }) || 'empty'}\n</latestStory>`);
+
+    return {
+        systemPrompt: watcherTransportSystemPrompt({ force, core: systemCore, space }),
+        prompt: blocks.join('\n\n'),
+        jsonSchema: WATCHER_SCHEMA,
+    };
 }
 
 /**
@@ -871,7 +1484,7 @@ export function formatLatestStory(messages, { tagged = true, count = BG_STORY_RE
                 .map(cleanPlaceText)
                 .filter(Boolean)
                 .join(', ');
-            const header = group.place ? `SCENE: ${cleanPlaceText(group.place)}${when ? ` (${when})` : ''}` : '';
+            const header = group.place ? `SCENE: ${placeLabel(group.place)}${when ? ` (${when})` : ''}` : '';
             blocks.push([header, group.text].filter(Boolean).join('\n'));
         }
         if (blocks.length) turns.push(blocks.join('\n'));
@@ -899,26 +1512,25 @@ export const BG_STORY_REPLIES = 1;
 export function buildWatcherRequest({ store, messages, tagged = true, count = BG_STORY_REPLIES, at, persona = '', force = false, systemCore = '', current } = {}) {
     const blocks = [];
 
-    // A place reads "short name [Full/world/map location: ...]" everywhere it
-    // names an image: the short name is what the picture is of, the chain is
-    // context for a better prompt - so the watcher never mistakes one for the
-    // other or answers with a location string.
-    const label = place => `${placeShortName(place)} [Full/world/map location: ${cleanPlaceText(place)}]`;
-
+    // Every block wears its own tags and every place reads "short name
+    // [World location: ...]", with the image description behind an explicit
+    // "Description:" - so the watcher never mistakes the description for the
+    // name (or answers with a location string), and the leaf it must paint is
+    // always the first thing it reads.
     const shown = current !== undefined ? current : currentRecord(store);
-    blocks.push(`CURRENT BACKGROUND\n${shown ? `${label(shown.place)} - ${shown.prompt}` : 'none yet'}`);
+    blocks.push(`<currentBackground>\n${shown ? `${placeLabel(shown.place)}, Description: ${shown.prompt}` : 'none yet'}\n</currentBackground>`);
 
-    const known = knownBackgroundsList(store, { limit: 12 });
-    blocks.push(`KNOWN BACKGROUNDS\n${known.length
-        ? known.map(entry => `- ${entry.id}: ${label(entry.place)} - ${entry.prompt}`).join('\n')
-        : 'none'}`);
+    const known = knownBackgroundsList(store, { limit: 12, kind: 'place' });
+    blocks.push(`<knownBackgrounds>\nKNOWN BACKGROUNDS (IMAGE LIBRARY)\n${known.length
+        ? known.map(entry => `- ${entry.id}: ${placeLabel(entry.place)}, Description: ${entry.prompt}`).join('\n')
+        : 'none'}\n</knownBackgrounds>`);
 
     const places = tagged
         ? extractRecentPlaces(messages, { limit: 6, at, persona })
-        : knownBackgroundsList(store, { limit: 6 }).map(entry => entry.place).reverse();
-    blocks.push(`RECENT PLACES\n${places.length ? places.map(cleanPlaceText).join(' -> ') : 'unknown'}`);
+        : knownBackgroundsList(store, { limit: 6, kind: 'place' }).map(entry => entry.place).reverse();
+    blocks.push(`<recentPlaces>\n${places.length ? places.map(placeLabel).join(' -> ') : 'unknown'}\n</recentPlaces>`);
 
-    blocks.push(`LATEST STORY\n${formatLatestStory(messages, { tagged, count, at, persona }) || 'empty'}`);
+    blocks.push(`<latestStory>\n${formatLatestStory(messages, { tagged, count, at, persona }) || 'empty'}\n</latestStory>`);
 
     return {
         systemPrompt: watcherSystemPrompt({ tagged, force, core: systemCore }),
@@ -949,9 +1561,30 @@ export function compileBgPrompt(description, style = '') {
 }
 
 /**
+ * The clock as an image model wants it: a day-part for the lighting, never a
+ * calendar stamp ("Friday, March 16, 2347 09:58" is noise in a picture).
+ */
+function dayPart(time) {
+    const match = /(\d{1,2}):(\d{2})\s*(am|pm)?/i.exec(String(time ?? ''));
+    if (!match) return '';
+
+    let hour = Number(match[1]) % 24;
+    const suffix = (match[3] || '').toLowerCase();
+    if (suffix === 'pm' && hour < 12) hour += 12;
+    if (suffix === 'am' && hour === 12) hour = 0;
+
+    if (hour >= 5 && hour <= 9) return 'morning light';
+    if (hour >= 10 && hour <= 15) return 'daylight';
+    if (hour >= 16 && hour <= 19) return 'evening light';
+    return 'night';
+}
+
+/**
  * The deterministic description used when the watcher call fails but the tags
  * still know where the story is: better a plain picture of the place than no
- * picture at all.
+ * picture at all. The shape is the image model's, not the map's: the specific
+ * spot first, its world as plain words after it (a "|" chain is noise in a
+ * picture), the weather and the day-part for the light, then the shot tags.
  *
  * @param {object|string} scene a scene record, or a place name
  * @returns {string}
@@ -959,10 +1592,54 @@ export function compileBgPrompt(description, style = '') {
 export function fallbackLocationPrompt(scene) {
     const record = scene && typeof scene === 'object' ? scene : { placeFull: String(scene ?? '') };
     const place = String(record.placeFull || record.place || '').trim();
-    const when = [record.date || '', record.time || ''].filter(Boolean).join(' ');
-    return [place, when, record.weather || '', 'wide establishing shot', 'empty place, detailed environment']
-        .filter(Boolean)
-        .join(', ');
+
+    const levels = cleanPlaceText(place).split('|').map(level => level.trim()).filter(Boolean);
+    const leaf = levels.length ? levels[levels.length - 1] : place;
+    const world = levels.slice(0, -1).reverse();
+
+    return [
+        leaf,
+        ...world,
+        cleanPlaceText(record.weather || ''),
+        dayPart(record.time),
+        'wide establishing shot',
+        'empty place, detailed environment',
+    ].filter(Boolean).join(', ');
+}
+
+/**
+ * The transport hand's deterministic description - the same job as
+ * `fallbackLocationPrompt`, for a ride whose watcher call failed: the
+ * INTERIOR first and always (it must not change wherever the vehicle
+ * travels), its world as plain words after it, then the light and the shot
+ * tags.
+ *
+ * @param {object|string} scene a scene record, or a place name
+ * @param {{vehicle:string, key:string, space:string}|null} [ride] the ride the
+ *   chain hand already decided - parked chains only read as rides with the
+ *   store's evidence, which the fallback has none of
+ * @returns {string}
+ */
+export function fallbackTransportPrompt(scene, ride = null) {
+    const record = scene && typeof scene === 'object' ? scene : { placeFull: String(scene ?? '') };
+    const place = String(record.placeFull || record.place || '').trim();
+
+    const on = ride || transportOf(place);
+    const levels = cleanPlaceText(place).split('|').map(level => level.trim()).filter(Boolean);
+    const at = on ? levels.findIndex(level => locationKey(level) === on.key) : -1;
+    const world = (at >= 0 ? levels.slice(0, at) : levels.slice(0, -1)).reverse();
+
+    return [
+        on
+            ? (on.space ? `interior of the ${on.space} of ${on.vehicle}` : `interior of ${on.vehicle}`)
+            : `interior of ${placeShortName(place)}`,
+        'vehicle interior',
+        ...world,
+        cleanPlaceText(record.weather || ''),
+        dayPart(record.time),
+        'wide establishing shot',
+        'empty place, detailed environment',
+    ].filter(Boolean).join(', ');
 }
 
 /**

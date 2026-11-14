@@ -58,6 +58,7 @@ function speakerOf(message) {
  * @param {HTMLButtonElement} [parts.swipeNext]
  * @param {HTMLElement} [parts.swipeCount]
  * @param {(state: {entry: object|null, scene: object|null}) => void} [parts.onShown] tells the chrome which turn, and which scene, is on screen
+ * @param {() => void} [parts.onBranched] a branch was created and opened - the library may prune to it
  */
 export function createTranscript({
     frame, isOpen, speaker, meta, prose, logPanel, logList, logButton, logClose,
@@ -65,7 +66,7 @@ export function createTranscript({
     copyButton, togglePromptButton, reasonButton,
     editButton, actionsRow, editBar, editAccept, editDelete, editCancel, edit,
     swipeBar, swipePrev, swipeNext, swipeCount,
-    onShown,
+    onShown, onBranched,
 }) {
     // null follows the newest message; a number pins that index in the chat.
     let selected = FOLLOW;
@@ -93,6 +94,11 @@ export function createTranscript({
         if (!shown.length) return null;
         if (selected === FOLLOW) return shown[shown.length - 1];
         return shown.find(entry => entry.index === selected) ?? shown[shown.length - 1];
+    }
+
+    /** The turn on screen right now - the brush reads it at click time. */
+    function shownIndex() {
+        return currentEntry()?.index ?? null;
     }
 
     function position() {
@@ -805,7 +811,12 @@ export function createTranscript({
         if (frame.classList.contains('is-generating')) return null;
 
         const name = await branchChat(index);
-        if (name) closeLog(false);
+        if (name) {
+            closeLog(false);
+            // The branched chat is open: its library prunes to its own
+            // messages.
+            onBranched?.();
+        }
         return name;
     }
 
@@ -970,5 +981,5 @@ export function createTranscript({
     // the parts carry their own state from the first moment
     updateControls();
 
-    return { refresh, openLog, closeLog, isLogOpen, isEditing, step, latest, show, branchHere, swipeShownTurn, copyShownTurn, togglePromptHidden, editShownTurn, acceptShownEdit, deleteShownEdit, cancelShownEdit };
+    return { refresh, openLog, closeLog, isLogOpen, isEditing, shownIndex, step, latest, show, branchHere, swipeShownTurn, copyShownTurn, togglePromptHidden, editShownTurn, acceptShownEdit, deleteShownEdit, cancelShownEdit };
 }

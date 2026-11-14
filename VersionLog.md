@@ -1,5 +1,48 @@
 # Meziverse — version log
 
+## 2.9.6 - 2026-11-14
+
+The parking lot opens — and the map learns to travel.
+
+### Rides are decided by code, never by the LLM
+- A chain carrying **En Route** at any level is a ride; the level after it names the vehicle, and the levels after THAT are **spaces aboard it** ("... | En Route | CV-7742 Shuttle | Bunk Room") — a cockpit is not a cabin. One interior per vehicle-and-space lives in the parking lot, whatever the travel chain spelled: found = shown with **no call at all**; missed = one watcher call whose only menu is **PARKING LOT (TRANSPORT INTERIORS)** and whose fixed, code-appended rule demands that interior ("it must never change wherever the vehicle travels"). A bare parked chain stays a normal location (the docking bay draws its own scene); a parked chain naming a space aboard shares the moving room's picture — same room, same picture. "same" is never trusted on a ride; "known" parks the spelling variant onto the interior it matched; the brush repaints the interior **in place**, so every ride wearing it repaints together.
+- **Legacy chats fold at load**: the per-chain interiors of old chats become one per vehicle-and-space (the newest wins, stale ones leave the library, stamps follow, every ride reply wears its exact interior) and ride chain keys leave the location library for good. The **branch button prunes the library** to the branched chat's own references — every swipe variant counted — while image files stay in SillyTavern's shared gallery.
+
+### The watcher grows a third mouth
+- Settings › Backgrounds now holds **Watcher prompt · Transport interior** — editable, with Restore default — beside Scene tags and Plain prose. The interior rule and the answer format are appended by code and cannot be edited away, and a saved core still holding the old default follows the new one automatically.
+
+### The map: the ship as a traveler
+- **The board rule.** A named space after the vehicle is *aboard* it: journeys, "now" and transit all resolve to the vehicle — never the room, which stays a place of its own for cards, turns and pictures. This is also what un-glitched the travel lines — rooms aboard a moving ship used to read as ordinary places, and every journey touching them died on arrival.
+- **The trail follows the story.** A reply's own scene tags are its movement: the journey segments through **every level the ship crossed** ("Landing Pad → Mara's Rest → Corporate Space → Kessel Drift → Docking Bay 7"), each segment a journey in the cards with its turn, and the icon follows the trip to its arrival — the ship parks at the berth its last leg closed on. Route context above En Route is placed as soft evidence (visited, never a stop — the "passed through" dots), so the blobs appear as the ship crosses them and merge with the places it later stops at.
+- **The trail's stops carry the turns.** Where responses caught the ship under way, a small vehicle icon — about half the live one — marks the spot ("Corporate Space · 2×"), and clicking it opens that place's card with those turns. One full-size icon shows where the vehicle is now: its picture, a room count and **Look inside** when it has rooms aboard; a plain glyph disc when it has not. The mid-leg glyphs are gone — journeys are dotted lines.
+- **The deck.** Click-pair a ship on the map (or the card's Look inside) to see only its rooms, each its own painted picture; the bar, Esc, or zooming out past the fit returns to the world. Shuffling vehicles below decks swaps the deck; picking a place on the ground steps back out.
+
+### The map listens again
+- Pointer capture was swallowing every chart click's hit-test — pins, stop icons and ships all looked unclickable. Clicks now reach the right rail everywhere, the card's Seen listing the turns and the chain reading the place's own. The card column is **reserved**, so the chart never slides when a card opens — which is also what killed double-clicks — and any stage resize keeps the view's center. Zoom reaches 6, long labels fold over two rows, and the packing breathes (wider gaps and pads) now that passed places want their space.
+
+### Notes
+- `manifest.json` matches; the synthetic suite stands at 287 tests.
+
+## 2.9.5 - 2026-11-13
+
+The pictures stop sharing beds - and the library learns to speak plainly.
+
+### One place, one picture - and never two places, one picture
+- A watcher answer of "same" or "known" claims two names are one spot. That claim is now **verified before anything folds**: names must look like variants of one place (numbers decide - "Corridor C-12" is never "Corridor C-9"; "Landing Pad" shares nothing with "Kaffe Station"; "Pier 9", "Pier No9" and "the ninth pier" are one pier). A careless answer used to merge two rooms onto one record forever, and the next brush then repainted both - "the last picture overwrites all previous". A rejected claim draws the new place its own picture instead.
+- The **brush repaints the response it was clicked on** - the shown reply, read from the pane at click time, never the chat's end behind the reader's back - and the place's picture is replaced everywhere that place recurs. A record still shared by several places (old fold) is never overwritten: the fresh picture takes the brushed key and that place's replies follow it, so old chats heal one brush at a time.
+- Shuffle-back keeps every reply's own picture: verified live, turn by turn.
+
+### Location edits keep the books
+- Editing a scene tag's location (the ribbon's level rows) now **renames and re-keys the record that reply points at**, picture kept - the tag and the library never drift apart. Adding or deleting a chain level is the same place; naming a genuinely different place falls through to the ordinary re-resolution (the cached picture of the new place, or a fresh draw). Works for chains of any length - 4, 5, 6 parts, the leaf is always the place.
+
+### The watcher's question, tidied
+- Every block of the request wears its own tags (`<currentBackground>`, `<knownBackgrounds>`, `<recentPlaces>`, `<latestStory>`) - look-alikes in story text are scrubbed, so the layout can't be spoofed - and every place reads **`short name [World location: chain]`** with the leaf first and the image description behind an explicit **`Description:`** marker. The library's title reads KNOWN BACKGROUNDS (IMAGE LIBRARY). The context is unchanged: environment-only, one reply, the same question every call.
+- The **image prompt** the fallback template writes speaks image-model now: the spot first, its world as plain words (never a pipe chain), the weather and a day-part for the light (never "Friday, March 16, 2347 09:58"). Records keep the description **raw** - the style suffix rides in at draw time - so the library reads clean.
+- Notices name the leaf: "Painting Junction 7-B...", never the whole chain.
+
+### Notes
+- `manifest.json` matches; the synthetic suite stands at 276 tests.
+
 ## 2.9.4 - 2026-11-13
 
 The scene ribbon gets its wardrobes — and its own pen.
