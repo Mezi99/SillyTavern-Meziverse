@@ -397,8 +397,24 @@ export function buildAtlas(observations, { equivalences = [] } = {}) {
         if (keyword < 0) continue;
         const vehicle = entry.parts[keyword + 1] || null;
         if (vehicle) vehicleFolds.add(vehicle.fold);
-        entry.parts = entry.parts.slice(keyword + 1);
-        if (!entry.parts.length) entry.transit = true;
+        if (!vehicle) {
+            // Pure route context - the story is on the road and no vehicle
+            // names it. Places nothing, as ever.
+            entry.parts = [];
+            entry.transit = true;
+            continue;
+        }
+        // A ride: the route context above the keyword is WHERE THE SHIP IS -
+        // "Mara's Rest | En Route" sails inside Mara's Rest, "Corporate
+        // Space | En Route" in the open region between its children. It is
+        // placed as soft evidence (visited, never a stop) so the trail can
+        // cross the blob hierarchy, inner to outer and into the new; the
+        // keyword level itself is route talk and goes, as do generic
+        // streets ("Downtown Streets | En Route") - those name no place.
+        entry.moving = true;
+        entry.parts = entry.parts.slice(0, keyword)
+            .filter(part => !isTransientFold(part.fold))
+            .concat(entry.parts.slice(keyword + 1));
     }
 
     const mobileFolds = vehicleFolds;
@@ -487,7 +503,7 @@ export function buildAtlas(observations, { equivalences = [] } = {}) {
                 const node = getOrCreateMobile(part, entry.obsIndex);
                 touch(node, part, entry.obsIndex);
                 if (!node.trajectory.some(stop => stop.obs === entry.obsIndex)) {
-                    node.trajectory.push({ obs: entry.obsIndex, positionId: current ? current.id : null });
+                    node.trajectory.push({ obs: entry.obsIndex, positionId: current ? current.id : null, moving: !!entry.moving });
                 }
                 current = node;
                 return;
@@ -802,7 +818,11 @@ export function deriveLegs(atlas) {
     /* Where each scene happens. Aboard rule: a scene inside a space of a
        moving place ("... | CV-7742 Shuttle | Bunk Room") IS aboard it - the
        vehicle's parked position or leg speaks for the journey, never the
-       room - while the room stays the scene's own place for "now" and cards. */
+       room - while the room stays the scene's own place for "now" and cards.
+       A moving stop's position is its route context ("Kessel Drift | En
+       Route") - the place the ship is CROSSING, and the trail's waypoint:
+       it is located for the legs, so the journey segments itself through
+       every level the ship sailed. */
     const loc = obs.map(entry => {
         if (entry.transit) return { transit: true, mode: travelMode('') };
 
@@ -815,7 +835,11 @@ export function deriveLegs(atlas) {
             const stop = (aboard.trajectory || []).find(item => item.obs === entry.obsIndex);
             const position = stop && stop.positionId ? nodes[stop.positionId] : null;
             const mode = travelMode(aboard.name);
-            if (position && position.kind !== 'transient') return { id: position.id, vehicle: aboard.id, mode, parked: true, own: node.id };
+            if (position && position.kind !== 'transient') {
+                return stop.moving
+                    ? { id: position.id, vehicle: aboard.id, mode, moving: true, own: node.id }
+                    : { id: position.id, vehicle: aboard.id, mode, parked: true, own: node.id };
+            }
             return { transit: true, vehicle: aboard.id, mode, own: node.id };
         }
 
@@ -855,6 +879,7 @@ export function deriveLegs(atlas) {
                     order: i,
                     dir: [last.id, where.id],
                     mode: null,
+                    vehicle: null,
                     local: false,
                 };
                 legByKey.set(key, leg);
@@ -865,10 +890,15 @@ export function deriveLegs(atlas) {
             leg.dir = [last.id, where.id];
             leg.lastObs = i;
             leg.order = i;
-            if (pending) leg.mode = pending;
+            const rideMode = pending || (where.vehicle ? where.mode : null);
+            if (rideMode) leg.mode = rideMode;
+            if (where.vehicle) leg.vehicle = where.vehicle;
         }
         last = { id: where.id, i };
-        pending = null;
+        // A moving scene keeps its mode alive - the trip carries to the
+        // arrival leg (a flight changing country mid-leg is still one
+        // journey) - while any other place ends it: a cut is a cut.
+        pending = where.moving ? where.mode : null;
     });
 
     /* A move between two spots of one place is not a journey - the kitchen
@@ -902,8 +932,8 @@ export function deriveLegs(atlas) {
     return {
         legs,
         nowId: nowOwn || tail.id || (last && last.id) || null,
-        inTransit: !!tail.transit,
-        transitMode: tail.transit ? pending || tail.mode : null,
+        inTransit: !!(tail.transit || tail.moving),
+        transitMode: tail.transit ? pending || tail.mode : (tail.moving ? tail.mode : null),
         fromId: (last && last.id) || null,
         present,
     };
@@ -1006,7 +1036,7 @@ function pack(items, gap, seed) {
  * @param {{depth?: number}} [options] 2, 3 or 4 levels, or 99 for everything
  * @returns {{items:Record<string,object>, order:object[], roots:object[], bounds:{x0:number,x1:number,y0:number,y1:number}, anchor:(id:string)=>object|null}}
  */
-export function layoutAtlas(atlas, { depth = 4 } = {}) {
+export function layoutAtlas(atlas, { depth = 4, inside = '' } = {}) {
     const nodes = atlas?.nodes || {};
     const kidsOf = node => (node.children || [])
         .map(id => nodes[id])
@@ -1027,12 +1057,13 @@ export function layoutAtlas(atlas, { depth = 4 } = {}) {
         return { n: node, r: Math.max(inner + pad, PIN_R + pad), pin: false, kids: subs };
     };
 
-    /* Vehicles with named spaces aboard are clusters of their own - the ship
-       and its rooms, floating like the vehicle does. A vehicle without spaces
-       stays out of the layout: its parked badge sits on its position. */
-    const roots = (atlas?.roots || [])
-        .map(id => nodes[id])
-        .filter(node => node && node.kind !== 'transient' && (node.kind !== 'mobile' || kidsOf(node).length))
+    /* The world holds the places; a vehicle's rooms live in their own deck
+       (inside) and leave the world to the ship's icon and its trail. */
+    const roots = (inside
+        ? [nodes[inside]].filter(node => node && node.kind === 'mobile')
+        : (atlas?.roots || [])
+            .map(id => nodes[id])
+            .filter(node => node && node.kind !== 'mobile' && node.kind !== 'transient'))
         .map(lay);
     pack(roots, 90, 7);
 

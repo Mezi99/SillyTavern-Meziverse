@@ -62,6 +62,17 @@ let flagsShown = true;
 let view = { tx: 0, ty: 0, s: 1, placed: false };
 let lastFocus = null;
 
+/* The deck: one vehicle's rooms, seen from inside. The world map shows the
+   ship's icon and trail instead; entering the ship swaps the chart. */
+let insideKey = null;
+let deckLayout = null;
+let insideBaseS = 1;
+
+/** The layout the chart is drawing right now: the deck when inside a ship. */
+function activeLayout() {
+    return insideKey && deckLayout ? deckLayout : layout;
+}
+
 const svg = name => `<svg class="ico" aria-hidden="true"><use href="#mz-i-${name}"/></svg>`;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const esc = value => String(value ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
@@ -316,6 +327,8 @@ function ensure() {
         lastChatId = chatId;
         lastSignature = null;
         selectedKey = null;
+        insideKey = null;
+        deckLayout = null;
         view = { tx: 0, ty: 0, s: 1, placed: false };
     }
 
@@ -341,6 +354,17 @@ function ensure() {
         layoutDepth = depth;
         layout = layoutAtlas(atlas, { depth });
     }
+
+    if (atlas && insideKey) {
+        const ship = findByKey(insideKey);
+        deckLayout = ship ? layoutAtlas(atlas, { depth: 99, inside: ship.id }) : null;
+        if (!deckLayout || !deckLayout.order.length) {
+            insideKey = null;
+            deckLayout = null;
+        }
+    } else {
+        deckLayout = null;
+    }
 }
 
 function findByKey(key) {
@@ -349,7 +373,22 @@ function findByKey(key) {
 
 function anchorOf(key) {
     const node = findByKey(key);
-    return node && layout ? layout.anchor(node.id) : null;
+    const lay = activeLayout();
+    return node && lay ? lay.anchor(node.id) : null;
+}
+
+/**
+ * The world-chart spot for "where the story is". A room aboard a ship lives
+ * on the deck, not the world - so the world answers with the ship's berth or
+ * last known position instead.
+ */
+function nowAnchor() {
+    let node = derived?.nowId && atlas ? atlas.nodes[derived.nowId] : null;
+    const own = node && layout ? layout.anchor(node.id) : null;
+    if (own) return own;
+    while (node && node.kind !== 'mobile') node = node.parentId ? atlas.nodes[node.parentId] : null;
+    const stop = node ? (node.trajectory || []).slice(-1)[0] : null;
+    return stop && stop.positionId && layout ? layout.anchor(stop.positionId) : null;
 }
 
 /** The node the story is at now, if it is at one. */
@@ -467,13 +506,15 @@ function descend(node) {
 
 function renderChart(mode) {
     const mini = mode === 'mini';
+    const deck = mode === 'deck';
+    const lay = deck ? (deckLayout || layout) : layout;
     const nodes = atlas.nodes;
     const selNode = selectedKey ? findByKey(selectedKey) : null;
     const sel = selNode ? selNode.id : null;
 
     /* which pins carry a flag of their own (or below them) */
     const flagged = new Set();
-    const sameFlags = flagsShown ? atlas.flags.same.filter(([a, b]) => layout.items[a] || layout.items[b]) : [];
+    const sameFlags = flagsShown ? atlas.flags.same.filter(([a, b]) => lay.items[a] || lay.items[b]) : [];
     if (flagsShown) {
         sameFlags.forEach(([a, b]) => {
             flagged.add(a);
@@ -484,11 +525,89 @@ function renderChart(mode) {
         });
     }
 
-    const nowItem = derived.nowId ? layout.anchor(derived.nowId) : null;
+    const nowItem = derived.nowId ? lay.anchor(derived.nowId) : null;
+
+    /* The ship the story is aboard, if any: the "now" ring follows it. */
+    let nowAboard = derived.nowId ? nodes[derived.nowId] : null;
+    while (nowAboard && nowAboard.kind !== 'mobile') nowAboard = nowAboard.parentId ? nodes[nowAboard.parentId] : null;
+
+    /* The ships' trails: where each vehicle sits in the blob hierarchy on
+       its way through - one point per crossed level, placed inside that
+       level's blob and outside the deeper ones (the open area the ship
+       sails). The journey legs route through these points, so the trail
+       climbs out of inner blobs and into new ones as the story moves. */
+    const clipR = new Set();
+    const wayPoints = new Map();
+    const ships = [];
+    const shipDrawn = new Set();
+    if (!deck) {
+        for (const node of Object.values(nodes)) {
+            if (node.kind !== 'mobile') continue;
+            const seq = [];
+            for (const stop of node.trajectory || []) {
+                if (stop.positionId && seq[seq.length - 1] !== stop.positionId) seq.push(stop.positionId);
+            }
+            seq.forEach((id, i) => {
+                const item = lay.items[id];
+                if (!item) return;
+                if (item.pin) {
+                    wayPoints.set(id, { n: nodes[id], ax: item.ax, ay: item.ay, r: 12, pin: true });
+                    return;
+                }
+                const prevItem = i > 0 ? lay.items[seq[i - 1]] : null;
+                const nextItem = i < seq.length - 1 ? lay.items[seq[i + 1]] : null;
+                let dx = 1;
+                let dy = 0;
+                if (nextItem && prevItem) { dx = nextItem.ax - prevItem.ax; dy = nextItem.ay - prevItem.ay; }
+                else if (nextItem) { dx = nextItem.ax - item.ax; dy = nextItem.ay - item.ay; }
+                else if (prevItem) { dx = item.ax - prevItem.ax; dy = item.ay - prevItem.ay; }
+                const len = Math.hypot(dx, dy) || 1;
+                dx /= len;
+                dy /= len;
+                let p = null;
+                for (let t = item.r * 0.72; t >= 0; t -= 6) {
+                    const x = item.ax + dx * t;
+                    const y = item.ay + dy * t;
+                    if ((item.kids || []).every(k => Math.hypot(x - k.ax, y - k.ay) > k.r + 8)) {
+                        p = { ax: x, ay: y };
+                        break;
+                    }
+                }
+                wayPoints.set(id, { n: nodes[id], ...(p || { ax: item.ax + dx * item.r * 0.5, ay: item.ay + dy * item.r * 0.5 }), r: 12, pin: true });
+            });
+
+            /* the icon: at the trail's head while moving, beside its berth
+               when parked - and nowhere at all for a vehicle the story only
+               ever names on the road (the leg glyphs carry those). */
+            const stops = node.trajectory || [];
+            const lastStop = stops[stops.length - 1];
+            const head = lastStop && lastStop.positionId ? wayPoints.get(lastStop.positionId) : null;
+            if (!head) continue;
+            const x = head.ax + (lastStop.moving ? 0 : 22);
+            const y = head.ay + (lastStop.moving ? 0 : -22);
+            shipDrawn.add(node.id);
+            const img = thumbOf(node);
+            const r = 15;
+            const isNow = !!nowAboard && nowAboard.id === node.id;
+            const kids = node.children.filter(id => nodes[id].kind !== 'mobile' && nodes[id].kind !== 'transient').length;
+            if (img) clipR.add(r);
+            ships.push(`<g class="mzc-ship${isNow ? ' is-now' : ''}${sel === node.id ? ' is-sel' : ''}" data-node="${esc(node.key)}" transform="translate(${f1(x)} ${f1(y)})" tabindex="${mini ? -1 : 0}" role="button" aria-label="${esc(node.name)}">
+            ${isNow ? `<circle class="mzc-ping" r="${r + 5}"/><circle class="mzc-ping p2" r="${r + 5}"/>` : ''}
+            <circle class="mzc-pin-disc" r="${r}"/>
+            ${img ? `<image href="${esc(img)}" x="${-r}" y="${-r}" width="${2 * r}" height="${2 * r}" clip-path="url(#mzc-c${r})" preserveAspectRatio="xMidYMid slice" draggable="false"/>` : icon(`m-${travelMode(node.name).glyph}`, 0, 0, r * 1.05)}
+            <circle class="mzc-pin-ring" r="${r}"/>
+            <g class="mzc-shipglyph" transform="translate(${f1(r * 0.82)} ${f1(-r * 0.82)})"><circle r="8"/>${icon(`m-${travelMode(node.name).glyph}`, 0, 0, 11)}</g>
+            ${kids && !mini ? `<g class="mzc-count" transform="translate(${f1(-r * 0.82)} ${f1(r * 0.82)})"><circle r="7.5"/><text y="3" text-anchor="middle">${kids}</text></g>` : ''}
+            ${!mini ? `<text class="mzc-pin-label" y="${r + 14}" text-anchor="middle">${esc(trunc(node.name, 20))}</text>` : ''}
+            <title>${esc(node.name)}</title></g>`);
+        }
+    }
+    const pointFor = id => wayPoints.get(id) || lay.anchor(id);
+
     const parts = [];
 
     /* ground and the contour rings that make land look like land */
-    const containers = layout.order.filter(item => !item.pin);
+    const containers = lay.order.filter(item => !item.pin);
     const rings = [];
     containers.filter(item => item.n.level === 0).forEach(item => {
         for (let k = 3; k >= 1; k -= 1) {
@@ -531,9 +650,9 @@ function renderChart(mode) {
     const shown = new Set(mini ? recent.slice(0, 4).map(leg => leg.key) : derived.legs.map(leg => leg.key));
     const seen = new Map();
     derived.legs.forEach(leg => {
-        if (!trails || !shown.has(leg.key)) return;
-        const from = layout.anchor(leg.dir[0]);
-        const to = layout.anchor(leg.dir[1]);
+        if (deck || !trails || !shown.has(leg.key)) return;
+        const from = pointFor(leg.dir[0]);
+        const to = pointFor(leg.dir[1]);
         if (!from || !to || from === to) return;
 
         const pairKey = [from.n.id, to.n.id].sort().join('|');
@@ -561,10 +680,10 @@ function renderChart(mode) {
     parts.push(`<g class="mzc-legs">${legSvg.join('')}</g>`);
 
     /* possible duplicates: a dotted tie, display only */
-    if (flagsShown && !mini) {
+    if (flagsShown && !mini && !deck) {
         const ties = sameFlags.map(([a, b]) => {
-            const p = layout.anchor(a);
-            const q = layout.anchor(b);
+            const p = lay.anchor(a);
+            const q = lay.anchor(b);
             if (!p || !q || p === q) return '';
             return `<g class="mzc-same"><path d="M${f1(p.ax)} ${f1(p.ay)}L${f1(q.ax)} ${f1(q.ay)}"/><g transform="translate(${f1((p.ax + q.ax) / 2)} ${f1((p.ay + q.ay) / 2)})"><circle r="7"/><text y="3.2" text-anchor="middle">?</text></g></g>`;
         });
@@ -573,14 +692,13 @@ function renderChart(mode) {
 
     /* pins: each place is a small picture on the chart */
     const pins = [];
-    const clipR = new Set();
     const recentIds = new Set();
     recent.slice(0, 3).forEach(leg => {
         recentIds.add(leg.dir[0]);
         recentIds.add(leg.dir[1]);
     });
 
-    layout.order.filter(item => item.pin).forEach(item => {
+    lay.order.filter(item => item.pin).forEach(item => {
         const node = item.n;
         const isNow = nowItem === item;
         const isSel = sel === node.id;
@@ -599,8 +717,9 @@ function renderChart(mode) {
         const flag = flagged.has(node.id) || (node.children.length && descend(node).some(child => flagged.has(child.id)));
         const people = isNow && derived.nowId ? Object.keys(derived.present[derived.nowId] || {}).slice(0, 3) : [];
         const parked = Object.values(nodes).find(vehicle => vehicle.kind === 'mobile'
+            && !shipDrawn.has(vehicle.id)
             && vehicle.trajectory.length
-            && layout.anchor(vehicle.trajectory[vehicle.trajectory.length - 1].positionId || '') === item);
+            && lay.anchor(vehicle.trajectory[vehicle.trajectory.length - 1].positionId || '') === item);
         const label = mini ? (isNow || recentIds.has(node.id)) : true;
         const hiddenKids = node.children.filter(id => nodes[id].kind !== 'mobile' && nodes[id].kind !== 'transient').length;
 
@@ -618,9 +737,19 @@ function renderChart(mode) {
     });
     parts.push(`<g class="mzc-pins">${pins.join('')}</g><g class="mzc-modes">${modeSvg.join('')}</g>`);
 
+    /* the crossed levels of the ships' trails: small named waypoints */
+    if (!mini && !deck && trails && wayPoints.size) {
+        const wp = [];
+        for (const p of wayPoints.values()) {
+            wp.push(`<g class="mzc-waypoint"><circle cx="${f1(p.ax)}" cy="${f1(p.ay)}" r="3.5"/><text x="${f1(p.ax)}" y="${f1(p.ay - 9)}" text-anchor="middle">${esc(trunc(p.n.name, 18))}</text></g>`);
+        }
+        parts.push(`<g class="mzc-waypoints">${wp.join('')}</g>`);
+    }
+    if (ships.length) parts.push(`<g class="mzc-ships">${ships.join('')}</g>`);
+
     /* an unfinished journey: the story is still on the road */
-    if (derived.inTransit && derived.fromId) {
-        const from = layout.anchor(derived.fromId);
+    if (!deck && derived.inTransit && derived.fromId) {
+        const from = pointFor(derived.fromId);
         if (from) {
             const angle = Math.atan2(from.ay - (layout.bounds.y0 + layout.bounds.y1) / 2, from.ax - (layout.bounds.x0 + layout.bounds.x1) / 2);
             const length = 70;
@@ -637,8 +766,8 @@ function renderChart(mode) {
 
 /* ---------- the two crops of one chart ---------- */
 
-function fullSvg(width, height) {
-    const out = renderChart('full');
+function fullSvg(width, height, mode = 'full') {
+    const out = renderChart(mode);
     const tier = view.s < 0.5 ? 0 : view.s < 1.1 ? 1 : 2;
     return `<svg class="mzc" data-style="contour" data-zoom="${tier}" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="Map of the story's places">${out.defs}<g class="mzc-world" style="transform-origin:0 0;transform:translate(${f1(view.tx)}px,${f1(view.ty)}px) scale(${f1(view.s)})"><rect class="mzc-ground" x="-6000" y="-6000" width="12000" height="12000"/>${out.body}</g></svg>`;
 }
@@ -646,7 +775,7 @@ function fullSvg(width, height) {
 function miniSvg() {
     const ratio = MINI_W / MINI_H;
     const out = renderChart('mini');
-    const now = derived.nowId ? layout.anchor(derived.nowId) : null;
+    const now = nowAnchor();
     let box = layout.bounds;
 
     if (now) {
@@ -933,12 +1062,16 @@ function renderDetail() {
 
     const flags = flagsShown ? flagsFor(node) : [];
     const thumb = thumbOf(node);
+    const rooms = node.children
+        .map(id => atlas.nodes[id])
+        .filter(kid => kid && kid.kind !== 'mobile' && kid.kind !== 'transient').length;
 
     els.detail.innerHTML = `
         ${thumb ? `<div class="mz-map-hero"><img alt="" src="${esc(thumb)}"></div>` : ''}
         <div class="mz-map-card">
             <div><h3>${esc(node.name)}</h3><p class="mz-map-crumb">${esc(path.slice(0, -1).join(' \u203a ') || 'Top level')}</p></div>
             <div class="mz-map-chips">${chips.join('')}</div>
+            ${mobile && rooms ? `<button class="mz-btn-ghost mz-map-lookinside" type="button" data-mz-map-inside="${esc(node.key)}">Look inside \u00b7 ${rooms} ${rooms === 1 ? 'room' : 'rooms'}</button>` : ''}
             ${flags.length ? `<ul class="mz-map-flags">${flags.map(text => `<li>${esc(text)}</li>`).join('')}</ul>` : ''}
             ${seenHtml(node)}
             ${whoHtml(node.id)}
@@ -955,9 +1088,16 @@ function drawChart() {
     if (!view.placed) {
         fit();
         view.placed = true;
+        if (insideKey) insideBaseS = view.s;
     }
-    els.chart.innerHTML = fullSvg(width, height);
+    els.chart.innerHTML = (insideKey ? deckBar() : '') + fullSvg(width, height, insideKey ? 'deck' : 'full');
     bindChart();
+}
+
+/** The deck's exit bar: the ship's name, and the way back to the world. */
+function deckBar() {
+    const ship = insideKey ? findByKey(insideKey) : null;
+    return `<div class="mzc-deckbar"><button type="button" data-mz-map-deckexit title="Back to the world map" aria-label="Back to the world map">\u2190</button><b>${esc(ship ? ship.name : '')}</b><span>inside</span><button type="button" class="mz-btn-ghost" data-mz-map-deckexit>World map</button></div>`;
 }
 
 function applyTransform() {
@@ -971,7 +1111,7 @@ function applyTransform() {
 function fit() {
     const width = els.stage.clientWidth;
     const height = els.stage.clientHeight;
-    const bounds = layout.bounds;
+    const bounds = activeLayout().bounds;
     const spanX = bounds.x1 - bounds.x0;
     const spanY = bounds.y1 - bounds.y0;
     const margin = 70;
@@ -992,10 +1132,39 @@ function zoomBy(direction) {
     const width = els.stage.clientWidth / 2;
     const height = els.stage.clientHeight / 2;
     const next = clamp(view.s * (direction > 0 ? 1.35 : 1 / 1.35), 0.35, 3.2);
+    if (insideKey && next < insideBaseS * 0.82) {
+        // zooming out of a ship's deck lands back on the world map
+        exitInside();
+        return;
+    }
     view.tx = width - (width - view.tx) * (next / view.s);
     view.ty = height - (height - view.ty) * (next / view.s);
     view.s = next;
     applyTransform();
+}
+
+/**
+ * Enters a vehicle's deck: the chart shows only its rooms - the ship as its
+ * own little world. The exit is the bar, Esc, or zooming out past the fit.
+ *
+ * @param {string} key the vehicle's stable key
+ */
+function enterInside(key) {
+    const node = key && findByKey(key);
+    if (!node || node.kind !== 'mobile' || !node.children.length) return;
+    insideKey = node.key;
+    ensure();
+    view.placed = false;
+    renderWin();
+}
+
+/** Back out to the world map. */
+function exitInside() {
+    if (!insideKey) return;
+    insideKey = null;
+    deckLayout = null;
+    view.placed = false;
+    renderWin();
 }
 
 let pan = null;
@@ -1042,6 +1211,10 @@ function bindChart() {
         const py = event.clientY - rect.top;
         const factor = Math.exp(-event.deltaY * 0.0016);
         const next = clamp(view.s * factor, 0.35, 3.2);
+        if (insideKey && next < insideBaseS * 0.82) {
+            exitInside();
+            return;
+        }
         view.tx = px - (px - view.tx) * (next / view.s);
         view.ty = py - (py - view.ty) * (next / view.s);
         view.s = next;
@@ -1056,11 +1229,31 @@ function bindChart() {
             }
         });
     });
+
+    /* double-clicking a ship steps inside it */
+    chart.addEventListener('dblclick', event => {
+        const hit = event.target.closest && event.target.closest('[data-node]');
+        const node = hit ? findByKey(hit.dataset.node) : null;
+        if (node && node.kind === 'mobile') enterInside(node.key);
+    });
 }
 
 function select(key, panThere) {
-    selectedKey = key && findByKey(key) ? key : null;
+    const node = key ? findByKey(key) : null;
+    selectedKey = node ? key : null;
     visitsExpanded = false;
+
+    // A room aboard a ship has no place on the world map - picking one steps
+    // inside the ship first. Picking the ship itself just opens its card.
+    if (node && !insideKey && atlas) {
+        let at = node;
+        while (at && at.kind !== 'mobile') at = at.parentId ? atlas.nodes[at.parentId] : null;
+        if (at && at !== node && at.children.length) {
+            enterInside(at.key);
+            return;
+        }
+    }
+
     if (panThere && selectedKey) {
         const item = anchorOf(selectedKey);
         if (item) centerOn(item.ax, item.ay, Math.max(view.s, item.pin ? 1.4 : 0.9));
@@ -1351,6 +1544,10 @@ function wireWin() {
 
         if (button.hasAttribute('data-mz-map-close')) {
             closeMapWin();
+        } else if (button.hasAttribute('data-mz-map-deckexit')) {
+            exitInside();
+        } else if (button.dataset.mzMapInside !== undefined) {
+            enterInside(button.dataset.mzMapInside);
         } else if (button.dataset.mzMapTwist !== undefined) {
             twistState.set(button.dataset.mzMapTwist, button.getAttribute('aria-expanded') !== 'true');
             renderIndex();
@@ -1378,7 +1575,7 @@ function wireWin() {
             fit();
             applyTransform();
         } else if (button.hasAttribute('data-mz-map-now')) {
-            const item = derived?.nowId ? layout.anchor(derived.nowId) : null;
+            const item = (insideKey ? activeLayout().anchor(derived?.nowId || '') : nowAnchor()) || null;
             if (item) {
                 centerOn(item.ax, item.ay, Math.max(view.s, 1.3));
                 applyTransform();
@@ -1402,5 +1599,11 @@ function wireWin() {
             const first = els.index.querySelector('[data-mz-map-pick]');
             if (first) select(first.dataset.mzMapPick, true);
         }
+    });
+
+    win.addEventListener('keydown', event => {
+        if (event.key !== 'Escape') return;
+        if (insideKey) exitInside();
+        else closeMapWin();
     });
 }
