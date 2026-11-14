@@ -856,11 +856,13 @@ export function deriveLegs(atlas) {
     const legByKey = new Map();
     let last = null;
     let pending = null;
+    let pendingVehicle = null;
 
     loc.forEach((where, i) => {
         if (where.transit) {
             pending = pending || where.mode;
             if (where.mode && where.mode.glyph !== 'route') pending = where.mode;
+            if (where.vehicle) pendingVehicle = where.vehicle;
             return;
         }
         if (!where.id) return;
@@ -890,26 +892,34 @@ export function deriveLegs(atlas) {
             leg.dir = [last.id, where.id];
             leg.lastObs = i;
             leg.order = i;
+            // the narration's own movement between its scene tags is always
+            // trail - the reply walked us here
+            if (obs[last.i]?.at?.msgIndex === obs[i]?.at?.msgIndex) leg.withinReply = true;
             const rideMode = pending || (where.vehicle ? where.mode : null);
             if (rideMode) leg.mode = rideMode;
-            if (where.vehicle) leg.vehicle = where.vehicle;
+            // the arrival leg belongs to the trip too: the ship is at the
+            // berth its journey ended on
+            const rider = where.vehicle || (pending ? pendingVehicle : null);
+            if (rider) leg.vehicle = rider;
         }
         last = { id: where.id, i };
         // A moving scene keeps its mode alive - the trip carries to the
         // arrival leg (a flight changing country mid-leg is still one
         // journey) - while any other place ends it: a cut is a cut.
         pending = where.moving ? where.mode : null;
+        pendingVehicle = where.moving ? where.vehicle : null;
     });
 
     /* A move between two spots of one place is not a journey - the kitchen
-       to the bedroom leaves no leg. Unless a NAMED vehicle made the trip:
-       the shuttle from the landing pad to the docking bay is a journey even
-       though both spots hang on one hub. */
+       to the bedroom leaves no leg. Unless a NAMED vehicle made the trip
+       (the shuttle from the landing pad to the docking bay) or the REPLY
+       itself walked us there: a narration's own scene tags are its trail. */
     for (let i = legs.length - 1; i >= 0; i -= 1) {
         const leg = legs[i];
         const parentA = nodes[leg.a]?.parentId;
         const parentB = nodes[leg.b]?.parentId;
         leg.local = !!parentA && parentA === parentB && nodes[parentA]?.level >= 2
+            && !leg.withinReply
             && (!leg.mode || leg.mode.glyph === 'route');
         if (leg.local) legs.splice(i, 1);
     }
@@ -942,7 +952,7 @@ export function deriveLegs(atlas) {
 /* ---------- layout: where things sit on the chart ---------- */
 
 export const PIN_R = 17;
-const PLACE_PAD = { plot: 26, city: 44, region: 64 };
+const PLACE_PAD = { plot: 36, city: 58, region: 82 };
 
 /** FNV-1a over the folded name: the seed behind every slot and shape. */
 export function hashFold(fold) {
@@ -1052,7 +1062,7 @@ export function layoutAtlas(atlas, { depth = 4, inside = '' } = {}) {
     const lay = node => {
         if (!expands(node)) return { n: node, r: PIN_R, pin: true, kids: [] };
         const subs = kidsOf(node).map(lay);
-        const inner = pack(subs, levelOf(node) >= 2 ? 10 : 22, hashFold(node.fold));
+        const inner = pack(subs, levelOf(node) >= 2 ? 14 : 32, hashFold(node.fold));
         const pad = levelOf(node) === 0 ? PLACE_PAD.region : levelOf(node) === 1 ? PLACE_PAD.city : PLACE_PAD.plot;
         return { n: node, r: Math.max(inner + pad, PIN_R + pad), pin: false, kids: subs };
     };
@@ -1065,7 +1075,7 @@ export function layoutAtlas(atlas, { depth = 4, inside = '' } = {}) {
             .map(id => nodes[id])
             .filter(node => node && node.kind !== 'mobile' && node.kind !== 'transient'))
         .map(lay);
-    pack(roots, 90, 7);
+    pack(roots, 130, 7);
 
     const out = { items: {}, order: [], roots, bounds: null };
     const walk = (item, ox, oy) => {

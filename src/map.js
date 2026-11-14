@@ -67,6 +67,7 @@ let lastFocus = null;
 let insideKey = null;
 let deckLayout = null;
 let insideBaseS = 1;
+let lastSize = null;
 
 /** The layout the chart is drawing right now: the deck when inside a ship. */
 function activeLayout() {
@@ -81,6 +82,31 @@ const trunc = (value, max) => {
     return text.length > max ? `${text.slice(0, max - 1).trimEnd()}\u2026` : text;
 };
 const f1 = value => Math.round(value * 10) / 10;
+
+/** Long names fold into two lines at the space nearest the middle, so labels
+    stop colliding on a busy chart. */
+function labelLines(name, max = 16) {
+    const text = String(name ?? '');
+    if (text.length <= max) return [text];
+    const words = text.split(' ');
+    if (words.length < 2) return [trunc(text, max)];
+    let best = null;
+    let bestDiff = Infinity;
+    for (let i = 1; i < words.length; i += 1) {
+        const a = words.slice(0, i).join(' ');
+        const b = words.slice(i).join(' ');
+        const diff = Math.abs(a.length - b.length);
+        if (Math.max(a.length, b.length) <= max + 6 && diff < bestDiff) {
+            best = [a, b];
+            bestDiff = diff;
+        }
+    }
+    return best || [trunc(text, max)];
+}
+
+const labelSvg = (name, y, max = 16) => labelLines(name, max)
+    .map((line, i) => `<text class="mzc-pin-label" y="${f1(y + i * 11)}" text-anchor="middle">${esc(line)}</text>`)
+    .join('');
 
 /** The depth the chart shows: 2, 3 or 4 levels, or 99 for everything. */
 function depthValue() {
@@ -539,6 +565,7 @@ function renderChart(mode) {
     const clipR = new Set();
     const wayPoints = new Map();
     const ships = [];
+    const marks = [];
     const shipDrawn = new Set();
     if (!deck) {
         for (const node of Object.values(nodes)) {
@@ -578,28 +605,65 @@ function renderChart(mode) {
 
             /* the icon: at the trail's head while moving, beside its berth
                when parked - and nowhere at all for a vehicle the story only
-               ever names on the road (the leg glyphs carry those). */
+               ever names on the road (the stub glyph carries those). Rich
+               when the vehicle has rooms aboard (its picture, the room
+               count, look inside), a plain glyph disc when it has not. */
             const stops = node.trajectory || [];
             const lastStop = stops[stops.length - 1];
-            const head = lastStop && lastStop.positionId ? wayPoints.get(lastStop.positionId) : null;
+            // The ship sits where its journey ended: the trail's head while
+            // under way, the berth its arrival leg closed on when parked -
+            // the icon follows the trail to the last scene tag.
+            const endLeg = [...derived.legs].reverse().find(leg => leg.vehicle === node.id);
+            const endId = endLeg ? endLeg.dir[1] : (lastStop ? lastStop.positionId : null);
+            const head = endId ? (wayPoints.get(endId) || lay.items[endId] || null) : null;
             if (!head) continue;
-            const x = head.ax + (lastStop.moving ? 0 : 22);
-            const y = head.ay + (lastStop.moving ? 0 : -22);
             shipDrawn.add(node.id);
-            const img = thumbOf(node);
+            const aboard = !!(lastStop && lastStop.moving && endId === lastStop.positionId);
+            const x = head.ax + (aboard ? 0 : 22);
+            const y = head.ay + (aboard ? 0 : -22);
             const r = 15;
-            const isNow = !!nowAboard && nowAboard.id === node.id;
             const kids = node.children.filter(id => nodes[id].kind !== 'mobile' && nodes[id].kind !== 'transient').length;
+            const isNow = !!nowAboard && nowAboard.id === node.id;
+            const glyph = `m-${travelMode(node.name).glyph}`;
+            const rich = kids > 0;
+            const img = rich ? thumbOf(node) : '';
             if (img) clipR.add(r);
-            ships.push(`<g class="mzc-ship${isNow ? ' is-now' : ''}${sel === node.id ? ' is-sel' : ''}" data-node="${esc(node.key)}" transform="translate(${f1(x)} ${f1(y)})" tabindex="${mini ? -1 : 0}" role="button" aria-label="${esc(node.name)}">
+            ships.push(`<g class="mzc-ship${isNow ? ' is-now' : ''}${sel === node.id ? ' is-sel' : ''}${rich ? '' : ' is-plain'}" data-node="${esc(node.key)}" transform="translate(${f1(x)} ${f1(y)})" tabindex="${mini ? -1 : 0}" role="button" aria-label="${esc(node.name)}">
             ${isNow ? `<circle class="mzc-ping" r="${r + 5}"/><circle class="mzc-ping p2" r="${r + 5}"/>` : ''}
             <circle class="mzc-pin-disc" r="${r}"/>
-            ${img ? `<image href="${esc(img)}" x="${-r}" y="${-r}" width="${2 * r}" height="${2 * r}" clip-path="url(#mzc-c${r})" preserveAspectRatio="xMidYMid slice" draggable="false"/>` : icon(`m-${travelMode(node.name).glyph}`, 0, 0, r * 1.05)}
+            ${img ? `<image href="${esc(img)}" x="${-r}" y="${-r}" width="${2 * r}" height="${2 * r}" clip-path="url(#mzc-c${r})" preserveAspectRatio="xMidYMid slice" draggable="false"/>` : icon(glyph, 0, 0, r * 1.15)}
             <circle class="mzc-pin-ring" r="${r}"/>
-            <g class="mzc-shipglyph" transform="translate(${f1(r * 0.82)} ${f1(-r * 0.82)})"><circle r="8"/>${icon(`m-${travelMode(node.name).glyph}`, 0, 0, 11)}</g>
-            ${kids && !mini ? `<g class="mzc-count" transform="translate(${f1(-r * 0.82)} ${f1(r * 0.82)})"><circle r="7.5"/><text y="3" text-anchor="middle">${kids}</text></g>` : ''}
-            ${!mini ? `<text class="mzc-pin-label" y="${r + 14}" text-anchor="middle">${esc(trunc(node.name, 20))}</text>` : ''}
+            ${rich ? `<g class="mzc-shipglyph" transform="translate(${f1(r * 0.82)} ${f1(-r * 0.82)})"><circle r="8"/>${icon(glyph, 0, 0, 11)}</g>` : ''}
+            ${rich && !mini ? `<g class="mzc-count" transform="translate(${f1(-r * 0.82)} ${f1(r * 0.82)})"><circle r="7.5"/><text y="3" text-anchor="middle">${kids}</text></g>` : ''}
+            ${!mini ? labelSvg(node.name, r + 14, 16) : ''}
             <title>${esc(node.name)}</title></g>`);
+
+            /* Past stops of the trail: where responses caught the vehicle
+               under way (turns 15, 17 at Corporate Space) - a small vehicle
+               icon each, about half the live one's size, clickable so the
+               rail tells those turns. History never shouts. */
+            if (!mini) {
+                const caught = new Map();
+                for (const stop of stops) {
+                    if (!stop.positionId || !stop.moving) continue;
+                    const entry = atlas.observations[stop.obs];
+                    if (!entry || !entry.last) continue;
+                    caught.set(stop.positionId, (caught.get(stop.positionId) || 0) + 1);
+                }
+                for (const [id, count] of caught) {
+                    const p = id === endId ? null : wayPoints.get(id);
+                    const placeNode = nodes[id];
+                    if (!p || !placeNode) continue;
+                    const mr = 8;
+                    marks.push(`<g class="mzc-stopmark${sel === id ? ' is-sel' : ''}" data-node="${esc(placeNode.key)}" transform="translate(${f1(p.ax)} ${f1(p.ay)})" tabindex="0" role="button" aria-label="${esc(placeNode.name)}">
+                    <circle class="mzc-pin-disc" r="${mr}"/>
+                    ${icon(glyph, 0, 0, 10)}
+                    <circle class="mzc-pin-ring" r="${mr}"/>
+                    ${count > 1 ? `<g class="mzc-count mzc-count--sm" transform="translate(${f1(mr * 0.8)} ${f1(-mr * 0.8)})"><circle r="6"/><text y="2.2" text-anchor="middle" font-size="8">${count}</text></g>` : ''}
+                    ${labelSvg(placeNode.name, mr + 11, 14)}
+                    <title>${esc(placeNode.name)} \u00b7 ${count}\u00d7 on the road</title></g>`);
+                }
+            }
         }
     }
     const pointFor = id => wayPoints.get(id) || lay.anchor(id);
@@ -644,7 +708,6 @@ function renderChart(mode) {
 
     /* journeys: dotted legs, thicker the more travelled, the latest flowing */
     const legSvg = [];
-    const modeSvg = [];
     const recent = derived.legs.slice().sort((a, b) => b.order - a.order);
     const lastKey = recent[0] && recent[0].key;
     const shown = new Set(mini ? recent.slice(0, 4).map(leg => leg.key) : derived.legs.map(leg => leg.key));
@@ -669,13 +732,6 @@ function renderChart(mode) {
         const isLast = leg.key === lastKey;
 
         legSvg.push(`<path class="mzc-leg${isLast ? ' is-last' : ''}${sel && (leg.a === sel || leg.b === sel) ? ' is-sel' : ''}" d="M${f1(from.ax)} ${f1(from.ay)}Q${f1(mx)} ${f1(my)} ${f1(to.ax)} ${f1(to.ay)}" style="stroke-width:${f1(width)}px"/>`);
-
-        if (leg.mode && (!mini || isLast)) {
-            const px = 0.25 * from.ax + 0.5 * mx + 0.25 * to.ax;
-            const py = 0.25 * from.ay + 0.5 * my + 0.25 * to.ay;
-            const size = mini ? 18 : 17;
-            modeSvg.push(`<g class="mzc-mode${isLast ? ' is-last' : ''}" transform="translate(${f1(px)} ${f1(py)})"><title>${esc(leg.mode.name)} \u00b7 ${leg.count}\u00d7</title><circle r="${mini ? 13 : 12}"/>${icon(`m-${leg.mode.glyph}`, 0, 0, size)}</g>`);
-        }
     });
     parts.push(`<g class="mzc-legs">${legSvg.join('')}</g>`);
 
@@ -732,19 +788,11 @@ function renderChart(mode) {
         ${flag && !mini ? `<g class="mzc-flagdot" transform="translate(${f1(-r * 0.78)} ${f1(-r * 0.78)})"><circle r="6.5"/><text y="3.2" text-anchor="middle">!</text></g>` : ''}
         ${parked && !mini ? `<g class="mzc-parked" transform="translate(${f1(r * 0.8)} ${f1(-r * 0.8)})"><circle r="8"/>${icon(`m-${travelMode(parked.name).glyph}`, 0, 0, 10)}</g>` : ''}
         ${people.length ? `<g class="mzc-people">${people.map((name, k) => `<g transform="translate(${f1(-(people.length - 1) * 7 + k * 14)} ${-r - 11})"><circle r="7"/><text y="3" text-anchor="middle">${esc(name[0])}</text></g>`).join('')}</g>` : ''}
-        ${label ? `<text class="mzc-pin-label" y="${r + 14}" text-anchor="middle">${esc(trunc(node.name, mini ? 16 : 20))}</text>` : ''}
+        ${label ? labelSvg(node.name, r + 14, mini ? 16 : 18) : ''}
         <title>${esc(node.name)}</title></g>`);
     });
-    parts.push(`<g class="mzc-pins">${pins.join('')}</g><g class="mzc-modes">${modeSvg.join('')}</g>`);
-
-    /* the crossed levels of the ships' trails: small named waypoints */
-    if (!mini && !deck && trails && wayPoints.size) {
-        const wp = [];
-        for (const p of wayPoints.values()) {
-            wp.push(`<g class="mzc-waypoint"><circle cx="${f1(p.ax)}" cy="${f1(p.ay)}" r="3.5"/><text x="${f1(p.ax)}" y="${f1(p.ay - 9)}" text-anchor="middle">${esc(trunc(p.n.name, 18))}</text></g>`);
-        }
-        parts.push(`<g class="mzc-waypoints">${wp.join('')}</g>`);
-    }
+    parts.push(`<g class="mzc-pins">${pins.join('')}</g>`);
+    if (marks.length && trails) parts.push(`<g class="mzc-stopmarks">${marks.join('')}</g>`);
     if (ships.length) parts.push(`<g class="mzc-ships">${ships.join('')}</g>`);
 
     /* an unfinished journey: the story is still on the road */
@@ -756,7 +804,12 @@ function renderChart(mode) {
             const ex = from.ax + Math.cos(angle) * length;
             const ey = from.ay + Math.sin(angle) * length;
             const mode = derived.transitMode || travelMode('');
-            parts.push(`<g class="mzc-open"><path class="mzc-leg is-last" d="M${f1(from.ax)} ${f1(from.ay)}L${f1(ex)} ${f1(ey)}"/><g class="mzc-mode is-last" transform="translate(${f1(ex)} ${f1(ey)})"><circle r="13"/>${icon(`m-${mode.glyph}`, 0, 0, 18)}</g></g>`);
+            // the ship's icon marks the head; the stub's glyph is only for
+            // vehicles no icon can be placed for
+            const tip = shipDrawn.size
+                ? ''
+                : `<g class="mzc-mode is-last" transform="translate(${f1(ex)} ${f1(ey)})"><circle r="13"/>${icon(`m-${mode.glyph}`, 0, 0, 18)}</g>`;
+            parts.push(`<g class="mzc-open"><path class="mzc-leg is-last" d="M${f1(from.ax)} ${f1(from.ay)}L${f1(ex)} ${f1(ey)}"/>${tip}</g>`);
         }
     }
 
@@ -1085,6 +1138,13 @@ function drawChart() {
     if (win.hidden || !atlas) return;
     const width = els.stage.clientWidth;
     const height = els.stage.clientHeight;
+    if (lastSize && (lastSize.w !== width || lastSize.h !== height)) {
+        // the stage resized under us (the window, the rails): keep the view's
+        // center rather than letting the content slide off the chart
+        view.tx += (width - lastSize.w) / 2;
+        view.ty += (height - lastSize.h) / 2;
+    }
+    lastSize = { w: width, h: height };
     if (!view.placed) {
         fit();
         view.placed = true;
@@ -1131,7 +1191,7 @@ function centerOn(x, y, scale) {
 function zoomBy(direction) {
     const width = els.stage.clientWidth / 2;
     const height = els.stage.clientHeight / 2;
-    const next = clamp(view.s * (direction > 0 ? 1.35 : 1 / 1.35), 0.35, 3.2);
+    const next = clamp(view.s * (direction > 0 ? 1.35 : 1 / 1.35), 0.35, 6);
     if (insideKey && next < insideBaseS * 0.82) {
         // zooming out of a ship's deck lands back on the world map
         exitInside();
@@ -1168,6 +1228,7 @@ function exitInside() {
 }
 
 let pan = null;
+let lastClick = { key: null, at: 0 };
 
 function bindChart() {
     const chart = els.chart.querySelector('.mzc');
@@ -1176,7 +1237,7 @@ function bindChart() {
     chart.addEventListener('pointerdown', event => {
         if (event.button > 0) return;
         pan = { x: event.clientX, y: event.clientY, tx: view.tx, ty: view.ty, moved: false };
-        chart.setPointerCapture(event.pointerId);
+        try { chart.setPointerCapture(event.pointerId); } catch { /* the pointer went away mid-gesture */ }
     });
     chart.addEventListener('pointermove', event => {
         if (!pan) return;
@@ -1194,10 +1255,23 @@ function bindChart() {
         const moved = pan.moved;
         pan = null;
         chart.classList.remove('is-panning');
-        if (!moved) {
-            const hit = event.target.closest && event.target.closest('[data-node]');
-            select(hit ? hit.dataset.node : null, false);
+        if (moved) return;
+        // Pointer capture retargets pointerup at the canvas - the swallowed
+        // target would never name the pin under the cursor. Hit-test at the
+        // click's coordinates instead.
+        const under = document.elementFromPoint(event.clientX, event.clientY);
+        const hit = under && under.closest ? under.closest('[data-node]') : null;
+        const key = hit ? hit.dataset.node : null;
+        // A second click on one ship steps inside it - a real dblclick event
+        // can never fire here, the first click's re-render replaces the node.
+        const pair = key && key === lastClick.key && Date.now() - lastClick.at < 450;
+        lastClick = pair ? { key: null, at: 0 } : { key, at: Date.now() };
+        const node = pair ? findByKey(key) : null;
+        if (node && node.kind === 'mobile') {
+            enterInside(node.key);
+            return;
         }
+        select(key, false);
     };
     chart.addEventListener('pointerup', endPan);
     chart.addEventListener('pointercancel', () => {
@@ -1210,7 +1284,7 @@ function bindChart() {
         const px = event.clientX - rect.left;
         const py = event.clientY - rect.top;
         const factor = Math.exp(-event.deltaY * 0.0016);
-        const next = clamp(view.s * factor, 0.35, 3.2);
+        const next = clamp(view.s * factor, 0.35, 6);
         if (insideKey && next < insideBaseS * 0.82) {
             exitInside();
             return;
@@ -1221,20 +1295,13 @@ function bindChart() {
         applyTransform();
     }, { passive: false });
 
-    chart.querySelectorAll('.mzc-pin').forEach(pin => {
+    chart.querySelectorAll('.mzc-pin, .mzc-ship, .mzc-stopmark').forEach(pin => {
         pin.addEventListener('keydown', event => {
             if (event.key === 'Enter' || event.key === ' ') {
                 event.preventDefault();
                 select(pin.dataset.node, true);
             }
         });
-    });
-
-    /* double-clicking a ship steps inside it */
-    chart.addEventListener('dblclick', event => {
-        const hit = event.target.closest && event.target.closest('[data-node]');
-        const node = hit ? findByKey(hit.dataset.node) : null;
-        if (node && node.kind === 'mobile') enterInside(node.key);
     });
 }
 
@@ -1243,15 +1310,22 @@ function select(key, panThere) {
     selectedKey = node ? key : null;
     visitsExpanded = false;
 
-    // A room aboard a ship has no place on the world map - picking one steps
-    // inside the ship first. Picking the ship itself just opens its card.
-    if (node && !insideKey && atlas) {
+    // The chart follows the selection: a room (or a stop on a trail) steps
+    // into its ship's deck, another ship swaps the deck, a place on the
+    // ground steps back out to the world. Picking the ship itself just
+    // opens its card - the second click steps inside.
+    if (node && atlas) {
         let at = node;
         while (at && at.kind !== 'mobile') at = at.parentId ? atlas.nodes[at.parentId] : null;
-        if (at && at !== node && at.children.length) {
-            enterInside(at.key);
+        const ship = at && at.children.length ? at : null;
+        // enter on a room of another ship, or on a ship while already below
+        // decks (shuffling vehicles swaps the deck); on the world the ship's
+        // first click stays a card
+        if (ship && insideKey !== ship.key && (ship !== node || insideKey)) {
+            enterInside(ship.key);
             return;
         }
+        if (!ship && insideKey) exitInside();
     }
 
     if (panThere && selectedKey) {

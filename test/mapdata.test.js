@@ -718,6 +718,25 @@ test('the trail: the journey segments through every level the ship crossed', () 
     assert.equal(name(d.nowId), 'Docking Bay 7', 'the story ends on land');
 });
 
+test('legs: a reply walks its own scene tags; a shuffle across replies stays silent', () => {
+    const at = (msgIndex, tagIndex) => ({ msgIndex, tagIndex });
+    const base = { date: '', time: '', hour: null, weather: '', locationTag: '', present: [] };
+    const atlas = buildAtlas([
+        { ...base, chain: ['Corporate Space', 'Helios-9', 'Platform K-22', 'Docking Port'], at: at(0, 0) },
+        { ...base, chain: ['Corporate Space', 'Helios-9', 'Platform K-22', 'Vault Interior'], at: at(0, 1) },
+        { ...base, chain: ['Corporate Space', 'Helios-9', 'Platform K-22', 'Vault Interior'], at: at(1, 0) },
+        { ...base, chain: ['Corporate Space', 'Helios-9', 'Platform K-22', 'Vault Corridor'], at: at(1, 1) },
+        { ...base, chain: ['Corporate Space', 'Helios-9', 'Platform K-22', 'Docking Port'], at: at(2, 0) },
+    ]);
+    const d = deriveLegs(atlas);
+    const name = id => atlas.nodes[id].name;
+
+    assert.deepEqual(d.legs.map(leg => [name(leg.dir[0]), name(leg.dir[1])]), [
+        ['Docking Port', 'Vault Interior'],
+        ['Vault Interior', 'Vault Corridor'],
+    ]);
+});
+
 test('layoutAtlas: a vehicle\u2019s rooms live on its deck, never on the world chart', () => {
     const atlas = buildAtlas(obs(
         ['Space', 'En Route', 'CV-7742 Shuttle', 'Cockpit'],
