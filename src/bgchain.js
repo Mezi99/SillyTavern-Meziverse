@@ -26,16 +26,22 @@
 import {
     aliasLocation,
     brushTargetIndex,
+    buildTransportRequest,
     buildWatcherRequest,
+    collapseTransports,
     compileBgPrompt,
     decide,
+    decideTransport,
     fallbackLocationPrompt,
+    fallbackTransportPrompt,
+    knownVehicles,
     locationKey,
     noteBaseline,
     parseWatcherReply,
     placeNamesLikelySame,
     placeShortName,
     planResolution,
+    pruneStore,
     recoverCurrentKey,
     reconcileRecordPlace,
     resolveRecordId,
@@ -45,6 +51,8 @@ import {
     setStamp,
     stampOf,
     storeRecord,
+    parkTransport,
+    transportOf,
     LANDSCAPE_SIZE,
 } from './backgrounds.js';
 import {
@@ -169,6 +177,9 @@ export function initBackgrounds({ isOpen } = {}) {
         cancelBackgroundWork();
         resetBackgroundPacing();
         setShownTurn(null);
+        // The parking lot folds legacy per-chain interiors to one per
+        // vehicle before anything reads them.
+        if (collapseTransports(bgStore(), chatMessages())) saveChatMetadata();
         recoverCurrentKey(bgStore(), customBackground());
     });
 
@@ -234,6 +245,7 @@ export function initBackgrounds({ isOpen } = {}) {
 export async function uiOpened() {
     cancelBackgroundWork();
     resetBackgroundPacing();
+    if (collapseTransports(bgStore(), chatMessages())) saveChatMetadata();
     recoverCurrentKey(bgStore(), customBackground());
 
     try {
@@ -295,6 +307,17 @@ export async function forceBackground(at = null) {
     const index = brushTargetIndex(messages, Number.isInteger(at) ? at : shownTarget());
     const swipeId = Number(messages[index]?.swipe_id ?? 0);
     return requestBackground({ index, swipeId, force: true });
+}
+
+/**
+ * The branch button's cleanup: the branched chat keeps only the library its
+ * own messages refer to - the pictures that rode along from the parent but
+ * belong to replies the branch never had leave the library (their image
+ * files stay in SillyTavern's shared gallery). Ids are never recycled.
+ */
+export function pruneBranch() {
+    const store = bgStore();
+    if (pruneStore(store, chatMessages())) saveChatMetadata();
 }
 
 /**
@@ -412,9 +435,13 @@ async function runTarget({ index, swipeId, force, refresh, my, signal }) {
 
     // Where this reply is: the scene governing ITS turn (the last usable one
     // at or before it), never the chat's end. Any preset can carry the tag -
-    // without one the reply falls to the plain-prose watcher below.
+    // without one the reply falls to the plain-prose watcher below. A ride
+    // (En Route in the chain) is decided differently: the vehicle's parked
+    // interior answers it, by code, and the watcher is never asked whether a
+    // ride changed.
     const scene = resolveScene(messages, index, { persona })?.scene || null;
     const place = scene?.placeFull || '';
+    const ride = scene ? transportOf(place, { vehicles: knownVehicles(store) }) : null;
 
     const carried = own ?? resolveStampId(messages, index)?.id ?? null;
     const baseline = (carried && store.records[carried]) || null;
@@ -428,7 +455,9 @@ async function runTarget({ index, swipeId, force, refresh, my, signal }) {
         console.warn(`${LOG} reply ${index} carries no scene tag; the plain-prose fallback takes it`);
         globalThis.toastr?.warning?.('A reply carried no scene tag \u2014 the plain-prose fallback is handling it.', '', { timeOut: 6000 });
     }
-    const step = !force && scene ? decide(store, place, { baseline }) : null;
+    const step = !force && scene
+        ? (ride ? decideTransport(store, ride, { baseline }) : decide(store, place, { baseline }))
+        : null;
 
     const plan = planResolution({ step, force, counter: repliesSinceWatch, every: settings().bgEveryN });
     repliesSinceWatch = plan.counter;
@@ -451,6 +480,9 @@ async function runTarget({ index, swipeId, force, refresh, my, signal }) {
         return { status: 'unchanged', record: baseline || undefined };
     }
 
+    if (ride) {
+        return runTransportChain({ store, messages, index, swipeId, ride, scene, baseline, persona, force, my, signal });
+    }
     return runWatcherChain({ store, messages, index, swipeId, place, scene, tagged: !!scene, baseline, persona, force, my, signal });
 }
 
@@ -574,8 +606,92 @@ async function runWatcherChain({ store, messages, index, swipeId, place, scene, 
     });
 }
 
-/** Draws one image for a reply's place and makes it that reply's picture. */
-async function generateBackground({ store, index, swipeId, place, description, force, my, signal }) {
+/**
+ * The ride's watcher: asked only about vehicles and spaces the parking lot
+ * has never seen (or a spelling drift it must recognise) - a parked interior
+ * answers without a call at all. The lot is the only menu, "known" parks the
+ * variant's name onto the interior it matched, "new" draws the interior once
+ * and parks it, and "same" is never trusted: a reply boarding from a
+ * location must never inherit the place it left.
+ */
+async function runTransportChain({ store, messages, index, swipeId, ride, scene, baseline, persona, force, my, signal }) {
+    const request = buildTransportRequest({
+        store,
+        messages,
+        at: index,
+        persona,
+        vehicle: ride.vehicle,
+        space: ride.space,
+        place: scene?.placeFull || '',
+        force,
+        systemCore: settings().bgPromptTransport,
+    });
+    lastRequest = { systemPrompt: request.systemPrompt, prompt: request.prompt, at: Date.now() };
+
+    const plain = () => fallbackTransportPrompt(scene || `En Route | ${ride.vehicle}${ride.space ? ` | ${ride.space}` : ''}`, ride);
+    const thinking = stage(`Envisioning ${placeShortName(ride.space || ride.vehicle)}\u2026`);
+    let answer = null;
+    let failure = null;
+    try {
+        const reply = await generateOn('backgroundAgent', {
+            prompt: request.prompt,
+            systemPrompt: request.systemPrompt,
+        });
+
+        if (my !== chainSeq) return { status: 'superseded' };
+
+        answer = reply.ok ? parseWatcherReply(reply.text) : null;
+        if (!answer) {
+            failure = reply.error || 'The watcher call failed.';
+        } else if (answer.state === 'same' || (force && answer.state !== 'new')) {
+            // Identity of a ride is decided here, never by "same" - a reply
+            // boarding from a location must never inherit the place it left -
+            // and the brush must paint whatever the watcher matches.
+            answer = { state: 'new', knownId: null, place: answer.place || ride.vehicle, prompt: answer.prompt || plain() };
+        } else if (answer.state === 'known') {
+            const id = resolveRecordId(store, answer.knownId);
+            const record = id ? store.records[id] : null;
+            if (!record || !record.vehicle || !placeNamesLikelySame(ride.vehicle, record.vehicle)) {
+                // A stale id, or a location misread as a ride: the interior
+                // draws instead, from the watcher's own description.
+                answer = { state: 'new', knownId: null, place: answer.place || ride.vehicle, prompt: answer.prompt || plain() };
+            }
+        }
+    } finally {
+        thinking();
+    }
+
+    if (failure) return { status: 'error', error: failure };
+    if (my !== chainSeq) return { status: 'superseded' };
+
+    if (answer.state === 'known') {
+        const id = resolveRecordId(store, answer.knownId);
+        const record = store.records[id];
+        // The spelling drift parks the variant's name onto the interior it
+        // matched - the same record under one more name - so the next ride
+        // needs no call at all.
+        const variantKey = ride.spaceKey;
+        if (variantKey) store.transports[variantKey] = record.id;
+        stampLanded(index, swipeId, record.id);
+        globalThis.toastr?.success?.(`Background set: ${placeShortName(record.place)}`);
+        return { status: 'cached', record };
+    }
+
+    return generateBackground({
+        store,
+        index,
+        swipeId,
+        place: scene?.placeFull || ride.vehicle,
+        description: answer.prompt || plain(),
+        force,
+        my,
+        signal,
+        ride,
+    });
+}
+
+/** Draws one image for a reply's place - or its ride's interior - and makes it that reply's picture. */
+async function generateBackground({ store, index, swipeId, place, description, force, my, signal, ride = null }) {
     const ready = imageGenerationStatus();
     if (!ready.ok) return { status: 'unavailable', error: ready.text };
 
@@ -586,7 +702,9 @@ async function generateBackground({ store, index, swipeId, place, description, f
 
     console.debug(`${LOG} drawing`, { place, prompt });
 
-    const painting = stage(place ? `Painting ${placeShortName(place)}\u2026` : 'Painting the location\u2026');
+    const painting = stage(ride
+        ? `Painting ${placeShortName(ride.space || ride.vehicle)} interior\u2026`
+        : place ? `Painting ${placeShortName(place)}\u2026` : 'Painting the location\u2026');
     let result;
     try {
         result = await imagine({
@@ -608,7 +726,26 @@ async function generateBackground({ store, index, swipeId, place, description, f
     // record keeps the description WITHOUT the style suffix: the style rides
     // in at draw time, so the library reads clean. When the place's old
     // record was a fold (shared with other places) the fresh picture takes a
-    // record of its own and this place's replies follow it.
+    // record of its own and this place's replies follow it. A ride parks in
+    // the lot instead: one record per vehicle-and-space, replaced IN PLACE,
+    // so every ride wearing that interior repaints together.
+    if (ride) {
+        const record = parkTransport(store, {
+            vehicle: ride.vehicle,
+            space: ride.space,
+            place,
+            prompt: clean,
+            path: result.path,
+            overwrite: true,
+        });
+        if (!record) return { status: 'error', error: 'The background could not be remembered.' };
+
+        stampLanded(index, swipeId, record.id);
+        console.debug(`${LOG} interior parked`, { vehicle: ride.vehicle, space: ride.space, path: result.path });
+        globalThis.toastr?.success?.(`Background set: ${placeShortName(ride.space || ride.vehicle)} interior`);
+        return { status: 'generated', record };
+    }
+
     const key = locationKey(place);
     const priorId = store?.keys?.[key] || null;
     const record = storeRecord(store, {
@@ -683,10 +820,13 @@ export async function syncShownBackground() {
         return { status: 'cached', record };
     }
 
-    // No history at or before here: the cached picture of the shown place is
-    // the best guess - still never a generation.
-    const place = resolveScene(messages, index, { persona: personaName() })?.scene?.placeFull || '';
-    const step = decide(store, place, { baseline: null });
+    // No history at or before here: the cached picture of the shown place -
+    // or the shown ride's parked interior - is the best guess, still never a
+    // generation.
+    const scene = resolveScene(messages, index, { persona: personaName() })?.scene || null;
+    const place = scene?.placeFull || '';
+    const ride = scene ? transportOf(place, { vehicles: knownVehicles(store) }) : null;
+    const step = ride ? decideTransport(store, ride, { baseline: null }) : decide(store, place, { baseline: null });
     if (step.action === 'apply' && step.record) {
         await showRecord(store, step.record);
         return { status: 'cached', record: step.record };

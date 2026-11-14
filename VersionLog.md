@@ -1,5 +1,28 @@
 # Meziverse — version log
 
+## 2.9.6 - 2026-11-14
+
+The parking lot opens — and the map learns to travel.
+
+### Rides are decided by code, never by the LLM
+- A chain carrying **En Route** at any level is a ride; the level after it names the vehicle, and the levels after THAT are **spaces aboard it** ("... | En Route | CV-7742 Shuttle | Bunk Room") — a cockpit is not a cabin. One interior per vehicle-and-space lives in the parking lot, whatever the travel chain spelled: found = shown with **no call at all**; missed = one watcher call whose only menu is **PARKING LOT (TRANSPORT INTERIORS)** and whose fixed, code-appended rule demands that interior ("it must never change wherever the vehicle travels"). A bare parked chain stays a normal location (the docking bay draws its own scene); a parked chain naming a space aboard shares the moving room's picture — same room, same picture. "same" is never trusted on a ride; "known" parks the spelling variant onto the interior it matched; the brush repaints the interior **in place**, so every ride wearing it repaints together.
+- **Legacy chats fold at load**: the per-chain interiors of old chats become one per vehicle-and-space (the newest wins, stale ones leave the library, stamps follow, every ride reply wears its exact interior) and ride chain keys leave the location library for good. The **branch button prunes the library** to the branched chat's own references — every swipe variant counted — while image files stay in SillyTavern's shared gallery.
+
+### The watcher grows a third mouth
+- Settings › Backgrounds now holds **Watcher prompt · Transport interior** — editable, with Restore default — beside Scene tags and Plain prose. The interior rule and the answer format are appended by code and cannot be edited away, and a saved core still holding the old default follows the new one automatically.
+
+### The map: the ship as a traveler
+- **The board rule.** A named space after the vehicle is *aboard* it: journeys, "now" and transit all resolve to the vehicle — never the room, which stays a place of its own for cards, turns and pictures. This is also what un-glitched the travel lines — rooms aboard a moving ship used to read as ordinary places, and every journey touching them died on arrival.
+- **The trail follows the story.** A reply's own scene tags are its movement: the journey segments through **every level the ship crossed** ("Landing Pad → Mara's Rest → Corporate Space → Kessel Drift → Docking Bay 7"), each segment a journey in the cards with its turn, and the icon follows the trip to its arrival — the ship parks at the berth its last leg closed on. Route context above En Route is placed as soft evidence (visited, never a stop — the "passed through" dots), so the blobs appear as the ship crosses them and merge with the places it later stops at.
+- **The trail's stops carry the turns.** Where responses caught the ship under way, a small vehicle icon — about half the live one — marks the spot ("Corporate Space · 2×"), and clicking it opens that place's card with those turns. One full-size icon shows where the vehicle is now: its picture, a room count and **Look inside** when it has rooms aboard; a plain glyph disc when it has not. The mid-leg glyphs are gone — journeys are dotted lines.
+- **The deck.** Click-pair a ship on the map (or the card's Look inside) to see only its rooms, each its own painted picture; the bar, Esc, or zooming out past the fit returns to the world. Shuffling vehicles below decks swaps the deck; picking a place on the ground steps back out.
+
+### The map listens again
+- Pointer capture was swallowing every chart click's hit-test — pins, stop icons and ships all looked unclickable. Clicks now reach the right rail everywhere, the card's Seen listing the turns and the chain reading the place's own. The card column is **reserved**, so the chart never slides when a card opens — which is also what killed double-clicks — and any stage resize keeps the view's center. Zoom reaches 6, long labels fold over two rows, and the packing breathes (wider gaps and pads) now that passed places want their space.
+
+### Notes
+- `manifest.json` matches; the synthetic suite stands at 287 tests.
+
 ## 2.9.5 - 2026-11-13
 
 The pictures stop sharing beds - and the library learns to speak plainly.

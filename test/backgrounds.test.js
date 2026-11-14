@@ -7,26 +7,33 @@ import {
     WATCHER_SCHEMA,
     aliasLocation,
     brushTargetIndex,
+    buildTransportRequest,
     buildWatcherRequest,
     cleanPlaceText,
+    collapseTransports,
     compileBgPrompt,
     currentRecord,
     decide,
+    decideTransport,
     extractRecentPlaces,
     fallbackLocationPrompt,
+    fallbackTransportPrompt,
     formatLatestStory,
     groupMessageByScene,
     isOurBackground,
     knownBackgroundsList,
     locationKey,
     lookupRecord,
+    lookupTransport,
     normalizeStore,
     noteBaseline,
     parseWatcherReply,
+    parkTransport,
     placeLabel,
     placeNamesLikelySame,
     placeShortName,
     planResolution,
+    pruneStore,
     recoverCurrentKey,
     reconcileRecordPlace,
     recordSrc,
@@ -39,7 +46,9 @@ import {
     stampOf,
     storeRecord,
     toCssBgUrl,
+    transportOf,
     watcherSystemPrompt,
+    watcherTransportSystemPrompt,
 } from '../src/backgrounds.js';
 
 test('locationKey folds spelling drift to one key', () => {
@@ -55,6 +64,7 @@ test('normalizeStore fills the shape and repairs what it can', () => {
         version: BG_STORE_VERSION,
         currentKey: null,
         keys: {},
+        transports: {},
         records: {},
         nextId: 1,
     });
@@ -330,7 +340,7 @@ test('knownBackgroundsList serves the newest places first, capped', () => {
 
     const list = knownBackgroundsList(store, { limit: 2 });
     assert.deepEqual(list.map(entry => entry.place), ['B', 'C']);
-    assert.deepEqual(Object.keys(list[0]), ['id', 'place', 'prompt']);
+    assert.deepEqual(Object.keys(list[0]), ['id', 'place', 'prompt', 'vehicle', 'space']);
 });
 
 test('decide turns a resolved place into none, apply, or watch', () => {
@@ -672,4 +682,188 @@ test("buildWatcherRequest asks about its own reply, not the chat's end", () => {
 
     const plain = buildWatcherRequest({ store, messages });
     assert.ok(plain.prompt.includes('<currentBackground>\nPier 9 [World location: Pier 9], Description: a pier at dusk'), 'with no baseline given, the on-screen record stands in');
+});
+
+/* ---------- the parking lot: transport interiors ---------- */
+
+test('transportOf reads the vehicle out of a ride, and only a ride', () => {
+    assert.deepEqual(
+        transportOf("Corporate Space | Outer Rim | Mara's Rest | En Route | CV-7742 Shuttle"),
+        { vehicle: 'CV-7742 Shuttle', key: 'cv-7742 shuttle', space: '', spaceKey: 'cv-7742 shuttle' },
+    );
+    assert.equal(transportOf('Space | Mars | EN-ROUTE | Jin\u2019s Lotus Emira')?.vehicle, 'Jin\u2019s Lotus Emira', 'the keyword is loose about spelling and case');
+    assert.deepEqual(
+        transportOf('Space | En Route | CV-7742 Shuttle | Bunk Room'),
+        { vehicle: 'CV-7742 Shuttle', key: 'cv-7742 shuttle', space: 'Bunk Room', spaceKey: 'cv-7742 shuttle::bunk room' },
+        'a misbehaving chain: the vehicle is the level right after En Route - and the levels after it are spaces aboard',
+    );
+    assert.deepEqual(
+        transportOf('Corporate Space | En Route | CV-7742 Shuttle | Deck 2 | Bunk Room')?.space,
+        'Deck 2 | Bunk Room',
+        'spaces aboard nest like places do',
+    );
+
+    assert.equal(transportOf('Space | Mars | En Route'), null, 'a chain ending at En Route names no vehicle - it stays a place');
+    assert.equal(transportOf('Space | Mars | Docking Bay | CV-7742 Shuttle'), null, 'a bare parked chain is a place, not a ride - the docking bay gets its own picture');
+
+    const vehicles = new Set(['cv-7742 shuttle']);
+    assert.deepEqual(
+        transportOf('Corporate Space | Outer Rim | Docking Bay 7-C | CV-7742 Shuttle | Cockpit', { vehicles }),
+        { vehicle: 'CV-7742 Shuttle', key: 'cv-7742 shuttle', space: 'Cockpit', spaceKey: 'cv-7742 shuttle::cockpit' },
+        'parked with a space aboard is the SAME room as on the move - for a vehicle this chat knows',
+    );
+    assert.equal(transportOf('Corporate Space | Outer Rim | Docking Bay 7-C | CV-7742 Shuttle | Cockpit'), null, 'a vehicle the chat has never seen rides nowhere');
+    assert.equal(transportOf('Metro City | Grand Ferry | Gift Shop', { vehicles }), null, 'a name alone never proves a vehicle - the map agrees, and consistency beats cleverness');
+    assert.equal(transportOf('Metro City | Docks | Pier 9'), null);
+    assert.equal(transportOf(''), null);
+});
+
+test('the parking lot keeps one interior per vehicle and space, and the brush repaints every ride', () => {
+    const store = normalizeStore();
+    const bare = { vehicle: 'CV-7742 Shuttle', space: '' };
+    const cockpit = { vehicle: 'CV-7742 Shuttle', space: 'Cockpit' };
+
+    const first = parkTransport(store, { vehicle: 'CV-7742 Shuttle', place: "Mara's Rest | En Route | CV-7742 Shuttle", prompt: 'interior one', path: '/one.png' });
+    assert.equal(lookupTransport(store, 'CV-7742 Shuttle'), first);
+    assert.equal(lookupTransport(store, 'CV-7742 Shuttle', 'Cockpit'), null, 'a cockpit is not the cabin - the bare interior never answers for a space');
+    assert.equal(lookupTransport(store, 'Other Shuttle'), null, 'an unparked vehicle has nothing');
+
+    const room = parkTransport(store, { vehicle: 'CV-7742 Shuttle', space: 'Cockpit', prompt: 'cockpit one', path: '/cockpit.png' });
+    assert.equal(lookupTransport(store, 'CV-7742 Shuttle', 'Cockpit'), room, 'one record per named space');
+
+    // The brush: the parked record is replaced IN PLACE - one interior per
+    // vehicle-and-space, and every ride wearing it repaints together.
+    const again = parkTransport(store, { vehicle: 'CV-7742 Shuttle', place: 'Outer Rim | En Route | CV-7742 Shuttle', prompt: 'interior two', path: '/two.png', overwrite: true });
+    assert.equal(again.id, first.id, 'the same record, a new interior');
+    assert.equal(again.path, '/two.png');
+    assert.notEqual(room.id, again.id, 'brushing the cabin leaves the cockpit alone');
+
+    assert.equal(decideTransport(store, bare, { baseline: again }).action, 'none', 'it already shows this vehicle\u2019s interior');
+    assert.equal(decideTransport(store, bare, { baseline: null }).action, 'apply');
+    assert.equal(decideTransport(store, cockpit, { baseline: room }).action, 'none', 'the cockpit shows its own interior');
+    assert.equal(decideTransport(store, cockpit, { baseline: again }).action, 'apply', 'a reply leaving the cabin for the cockpit swaps pictures');
+    assert.equal(decideTransport(store, { vehicle: 'Other Shuttle', space: '' }, { baseline: null }).action, 'watch', 'an unparked vehicle asks the watcher - once');
+});
+
+test('collapseTransports folds the legacy per-chain interiors into one ride', () => {
+    const store = normalizeStore({
+        keys: {
+            "mara's rest | en route | cv-7742 shuttle": 'bg_1',
+            'outer rim | en route | cv-7742 shuttle': 'bg_2',
+            'docking bay 7-c': 'bg_3',
+        },
+        records: {
+            bg_1: { id: 'bg_1', place: "Mara's Rest | En Route | CV-7742 Shuttle", prompt: 'a', path: '/a.png', createdAt: 1 },
+            bg_2: { id: 'bg_2', place: 'Outer Rim | En Route | CV-7742 Shuttle', prompt: 'b', path: '/b.png', createdAt: 2 },
+            bg_3: { id: 'bg_3', place: 'Docking Bay 7-C', prompt: 'c', path: '/c.png', createdAt: 3 },
+        },
+    });
+    const reply = msg('x');
+    setStamp(reply, 0, 'bg_1');
+    const rideReply = msg('<scene location="Outer Rim | En Route | CV-7742 Shuttle" /> riding');
+    setStamp(rideReply, 0, 'bg_3');
+
+    assert.ok(collapseTransports(store, [reply, rideReply]));
+    assert.equal(store.transports['cv-7742 shuttle'], 'bg_2', 'the newest interior wins the vehicle');
+    assert.equal(store.records.bg_1, undefined, 'the stale interior leaves the library');
+    assert.ok(store.records.bg_3, 'a place on the ground is never touched');
+    assert.equal(stampOf(reply, 0), 'bg_2', 'stamps follow the winner - one interior wherever it travels');
+    assert.equal(stampOf(rideReply, 0), 'bg_2', 'a ride reply wears the parked interior, never a place it passed through');
+    assert.deepEqual(Object.keys(store.keys), ['docking bay 7-c'], 'ride chain keys are dropped - the lot owns them now');
+});
+
+test('collapseTransports folds per vehicle AND per space', () => {
+    const store = normalizeStore({
+        records: {
+            bg_1: { id: 'bg_1', place: 'Space | En Route | CV-7742 Shuttle | Cockpit', prompt: 'a', path: '/a.png', createdAt: 1 },
+            bg_2: { id: 'bg_2', place: 'Outer Rim | En Route | CV-7742 Shuttle | Cockpit', prompt: 'b', path: '/b.png', createdAt: 2 },
+            bg_3: { id: 'bg_3', place: 'Outer Rim | En Route | CV-7742 Shuttle | Bunk Room', prompt: 'c', path: '/c.png', createdAt: 3 },
+        },
+    });
+    const roomReply = msg('<scene location="Outer Rim | En Route | CV-7742 Shuttle | Cockpit" /> in the cockpit');
+    setStamp(roomReply, 0, 'bg_3');
+
+    assert.ok(collapseTransports(store, [roomReply]));
+    assert.equal(store.transports['cv-7742 shuttle::cockpit'], 'bg_2', 'the newest cockpit wins the space');
+    assert.equal(store.transports['cv-7742 shuttle::bunk room'], 'bg_3', 'a different space aboard is a different interior');
+    assert.equal(store.transports['cv-7742 shuttle'], undefined, 'no bare interior was ever parked');
+    assert.equal(store.records.bg_1, undefined, 'the stale cockpit leaves the library');
+    assert.equal(stampOf(roomReply, 0), 'bg_2', 'the cockpit reply wears the cockpit interior, never the cabin');
+});
+
+test('pruneStore keeps only what the branched chat refers to', () => {
+    const store = normalizeStore();
+    const kept = storeRecord(store, { key: 'A', place: 'A', prompt: 'a', path: '/a.png' });
+    storeRecord(store, { key: 'B', place: 'B', prompt: 'b', path: '/b.png' });
+    parkTransport(store, { vehicle: 'Shuttle', prompt: 'i', path: '/i.png' });
+
+    const reply = msg('x');
+    setStamp(reply, 0, kept.id);
+    const swiped = { mes: 'y', extra: {}, swipes: ['y', 'z'], swipe_id: 1, swipe_info: [{ extra: {} }, { extra: {} }] };
+    setStamp(swiped, 0, 'bg_2');
+
+    assert.ok(pruneStore(store, [reply, swiped]), 'the branch-away pictures go');
+    assert.deepEqual(Object.keys(store.records).sort(), ['bg_1', 'bg_2'], 'stamps - any variant - keep their records');
+    assert.deepEqual(Object.keys(store.keys), ['a', 'b'], 'only the unparked library entry goes');
+    assert.deepEqual(Object.keys(store.transports), [], 'the unparked ride goes too');
+    assert.equal(pruneStore(store, [reply, swiped]), false, 'nothing left to prune');
+});
+
+test('buildTransportRequest asks about one ride against the parking lot alone', () => {
+    const store = normalizeStore();
+    parkTransport(store, { vehicle: 'CV-7742 Shuttle', place: 'Space | En Route | CV-7742 Shuttle', prompt: 'cramped cabin', path: '/s.png' });
+    storeRecord(store, { key: 'Pier 9', place: 'Pier 9', prompt: 'rain-slick pier', path: '/p.png' });
+
+    const request = buildTransportRequest({
+        store,
+        messages: [msg('<scene location="Space | En Route | CV-7742 Shuttle" /> x')],
+        vehicle: 'CV-7742 Shuttle',
+        place: 'Space | En Route | CV-7742 Shuttle',
+    });
+    assert.ok(request.prompt.includes('<transportInterior>\nCV-7742 Shuttle [World location: Space | En Route | CV-7742 Shuttle] - paint its INTERIOR'));
+    assert.ok(request.prompt.includes('<parkingLot>\nPARKING LOT (TRANSPORT INTERIORS)\n- bg_1:'), 'the lot is the menu');
+    assert.ok(request.prompt.includes('cramped cabin'));
+    assert.ok(!request.prompt.includes('rain-slick pier'), 'the location library never appears on a ride');
+    assert.ok(request.systemPrompt.includes('INTERIOR'), 'the interior rule rides along - by code');
+    assert.ok(request.systemPrompt.includes('"state":"known|new"'), 'a ride is known or new - never "same"');
+
+    parkTransport(store, { vehicle: 'CV-7742 Shuttle', space: 'Cockpit', prompt: 'glowing console', path: '/c.png' });
+    const spaced = buildTransportRequest({
+        store,
+        messages: [msg('<scene location="Space | En Route | CV-7742 Shuttle | Cockpit" /> x')],
+        vehicle: 'CV-7742 Shuttle',
+        space: 'Cockpit',
+        place: 'Space | En Route | CV-7742 Shuttle | Cockpit',
+    });
+    assert.ok(spaced.prompt.includes('Cockpit [World location: Space | En Route | CV-7742 Shuttle | Cockpit] - paint its Cockpit INTERIOR'), 'the space is the subject');
+    assert.ok(spaced.prompt.includes('CV-7742 Shuttle \u00b7 Cockpit, Description: glowing console'), 'the menu names the space aboard');
+    assert.ok(spaced.systemPrompt.includes("the vehicle's Cockpit"), 'the interior rule is scoped to the space - by code');
+});
+
+test('the location hand\u2019s library never lists a ride', () => {
+    const store = normalizeStore();
+    parkTransport(store, { vehicle: 'CV-7742 Shuttle', place: 'Space | En Route | CV-7742 Shuttle', prompt: 'cramped cabin', path: '/s.png' });
+    storeRecord(store, { key: 'Pier 9', place: 'Pier 9', prompt: 'rain-slick pier', path: '/p.png' });
+
+    const request = buildWatcherRequest({ store, messages: [msg('<scene location="Pier 9" /> x')], tagged: true });
+    assert.ok(request.prompt.includes('rain-slick pier'));
+    assert.ok(!request.prompt.includes('cramped cabin'), 'a shuttle interior can never answer for a docking bay');
+});
+
+test('fallbackTransportPrompt speaks interior when the watcher fails on a ride', () => {
+    const line = fallbackTransportPrompt({ placeFull: 'Space | Mars | En Route | CV-7742 Shuttle', time: '21:00', weather: 'Cold' });
+    assert.ok(line.startsWith('interior of CV-7742 Shuttle, vehicle interior'), 'the interior first - it never changes wherever the vehicle travels');
+    assert.ok(!line.includes('|'), 'no pipe chain in a picture');
+    assert.ok(line.includes('night'));
+    assert.equal(
+        fallbackTransportPrompt('Pier 9'),
+        'interior of Pier 9, vehicle interior, wide establishing shot, empty place, detailed environment',
+    );
+
+    const room = fallbackTransportPrompt(
+        { placeFull: 'Space | Mars | En Route | CV-7742 Shuttle | Cockpit', time: '21:00' },
+        { vehicle: 'CV-7742 Shuttle', key: 'cv-7742 shuttle', space: 'Cockpit', spaceKey: 'cv-7742 shuttle::cockpit' },
+    );
+    assert.ok(room.startsWith('interior of the Cockpit of CV-7742 Shuttle, vehicle interior'), 'the named space is the subject');
+    assert.ok(room.includes('Mars') && room.includes('night'), 'the world and the hour still ride along');
 });

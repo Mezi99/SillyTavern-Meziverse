@@ -12,12 +12,13 @@ import { DEFAULT_DJ_PROMPT, getLastDjRequest } from './musicdj.js';
 import {
     forceBackground,
     getLastWatcherRequest,
+    pruneBranch,
     setShownTurn,
     syncShownBackground,
     uiClosed,
     uiOpened,
 } from './bgchain.js';
-import { DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_OFF, sceneUrl, isNoPicture } from './backgrounds.js';
+import { DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_OFF, DEFAULT_BG_TRANSPORT_PROMPT, sceneUrl, isNoPicture } from './backgrounds.js';
 import { faHtml, injectSprite } from './icons.js';
 import { createTranscript } from './transcript.js';
 import { mountCast, refreshCastSizing, renderCast, renderThoughts, renderTells, clearCascade, redrawCast } from './cast.js';
@@ -33,7 +34,7 @@ import { mountMap, mapUiClosed, mapUiOpened, refreshMap, isMapWinOpen, openMapWi
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr, notify } from './notify.js';
 
-const VERSION = '2.9.5';
+const VERSION = '2.9.6';
 const PANE_DEFAULT = 300;
 const LOG_W_DEFAULT = 720;
 const LOG_H_SHARE = 0.7;
@@ -353,6 +354,11 @@ const FRAME_HTML = `
                 <button class="mz-btn-ghost" type="button" data-mz-action="bg-prompt-on-reset">Restore default</button>
             </div>
             <div class="mz-set-row mz-set-row--prompt">
+                <span class="mz-set-label"><b>Watcher prompt \u00b7 Transport interior</b><small>What the watcher is asked inside a vehicle on the move (En Route). The interior rule and the answer format are appended for you.</small></span>
+                <textarea class="mz-textarea" rows="8" data-mz="bg-prompt-transport" aria-label="Watcher prompt, transport interior"></textarea>
+                <button class="mz-btn-ghost" type="button" data-mz-action="bg-prompt-transport-reset">Restore default</button>
+            </div>
+            <div class="mz-set-row mz-set-row--prompt">
                 <span class="mz-set-label"><b>Watcher prompt \u00b7 Plain prose</b><small>The fallback hand, for replies without scene tags. The answer format is appended for you.</small></span>
                 <textarea class="mz-textarea" rows="8" data-mz="bg-prompt-off" aria-label="Watcher prompt, plain prose"></textarea>
                 <button class="mz-btn-ghost" type="button" data-mz-action="bg-prompt-off-reset">Restore default</button>
@@ -614,6 +620,7 @@ export function mount() {
         bgNegative: root.querySelector('[data-mz="bg-negative"]'),
         bgPromptOn: root.querySelector('[data-mz="bg-prompt-on"]'),
         bgPromptOff: root.querySelector('[data-mz="bg-prompt-off"]'),
+        bgPromptTransport: root.querySelector('[data-mz="bg-prompt-transport"]'),
         bgRequest: root.querySelector('[data-mz="bg-request"]'),
         musicKey: root.querySelector('[data-mz="music-key"]'),
         musicKeyState: root.querySelector('[data-mz="music-key-state"]'),
@@ -716,6 +723,7 @@ export function mount() {
             applyLedger(entry);
             applyTells(entry);
         },
+        onBranched: () => pruneBranch(),
     });
 
     desiredPane = Number(settings().paneHeight) || PANE_DEFAULT;
@@ -941,6 +949,7 @@ function applyBgControls() {
     if (els.bgNegative) els.bgNegative.value = settings().bgNegative ?? '';
     if (els.bgPromptOn) els.bgPromptOn.value = settings().bgPromptOn ?? DEFAULT_BG_PROMPT_ON;
     if (els.bgPromptOff) els.bgPromptOff.value = settings().bgPromptOff ?? DEFAULT_BG_PROMPT_OFF;
+    if (els.bgPromptTransport) els.bgPromptTransport.value = settings().bgPromptTransport ?? DEFAULT_BG_TRANSPORT_PROMPT;
 
     root.querySelectorAll('[data-mz-pick-bgsize]').forEach(button => {
         const isOn = button.dataset.mzPickBgsize === (settings().bgSize === 'st' ? 'st' : 'landscape');
@@ -2529,6 +2538,11 @@ function wireActions() {
                 applyBgControls();
                 saveSettings();
                 break;
+            case 'bg-prompt-transport-reset':
+                settings().bgPromptTransport = DEFAULT_BG_TRANSPORT_PROMPT;
+                applyBgControls();
+                saveSettings();
+                break;
             case 'bg-show-request':
                 if (els.bgRequest) {
                     const request = getLastWatcherRequest();
@@ -2596,6 +2610,11 @@ function wireActions() {
 
     els.bgPromptOff?.addEventListener('input', () => {
         settings().bgPromptOff = els.bgPromptOff.value;
+        saveSettings();
+    });
+
+    els.bgPromptTransport?.addEventListener('input', () => {
+        settings().bgPromptTransport = els.bgPromptTransport.value;
         saveSettings();
     });
 

@@ -6,7 +6,7 @@
  */
 
 import { ctx } from './st.js';
-import { DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_OFF, LEGACY_DEFAULT_BG_PROMPT_ON, LEGACY_DEFAULT_BG_PROMPT_OFF, PRIOR_DEFAULT_BG_PROMPT_ON, PRIOR_DEFAULT_BG_PROMPT_OFF } from './backgrounds.js';
+import { DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_OFF, DEFAULT_BG_TRANSPORT_PROMPT, LEGACY_DEFAULT_BG_PROMPT_ON, LEGACY_DEFAULT_BG_PROMPT_OFF, PRIOR_DEFAULT_BG_PROMPT_ON, PRIOR_DEFAULT_BG_PROMPT_OFF, PRIOR_DEFAULT_BG_TRANSPORT_PROMPT } from './backgrounds.js';
 import { DEFAULT_DJ_PROMPT, LEGACY_DEFAULT_DJ_PROMPT } from './musicdj.js';
 
 const DEFAULTS = {
@@ -119,6 +119,7 @@ const DEFAULTS = {
     // plain-prose hand. The answer format is appended by code.
     bgPromptOn: DEFAULT_BG_PROMPT_ON,
     bgPromptOff: DEFAULT_BG_PROMPT_OFF,
+    bgPromptTransport: DEFAULT_BG_TRANSPORT_PROMPT,
     reducedMotion: false,
     // How the inline cue popovers open: on hover and tap, or tap only.
     cuePopovers: 'both',
@@ -152,6 +153,7 @@ const PROMPT_DEFAULT_REFRESH = [
     ['bgPromptOn', PRIOR_DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_ON],
     ['bgPromptOff', LEGACY_DEFAULT_BG_PROMPT_OFF, DEFAULT_BG_PROMPT_OFF],
     ['bgPromptOff', PRIOR_DEFAULT_BG_PROMPT_OFF, DEFAULT_BG_PROMPT_OFF],
+    ['bgPromptTransport', PRIOR_DEFAULT_BG_TRANSPORT_PROMPT, DEFAULT_BG_TRANSPORT_PROMPT],
 ];
 
 /** The live settings object, with defaults filled in on first use. */
