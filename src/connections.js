@@ -31,11 +31,13 @@ const LOG = '[Meziverse connections]';
 export const CONNECTION_AGENTS = [
     {
         id: 'backgroundAgent',
-        label: 'Background Agent',
+        label: 'Background agent',
+        icon: 'image',
     },
     {
         id: 'musicAgent',
-        label: 'Music Agent',
+        label: 'Music agent',
+        icon: 'music',
     },
 ];
 
@@ -176,40 +178,38 @@ async function generateViaCustom(connection, request) {
 
 const svg = name => `<svg class="ico" aria-hidden="true"><use href="#mz-i-${name}"/></svg>`;
 
-/** One agent's expandable section - the same component for every agent. */
-function connectionSection({ id, label }) {
+/** One agent's card - the same component for every agent. */
+function connectionSection({ id, label, icon }) {
     return `
-        <div class="mz-set-group mz-set-group--fold" data-mz-pane="connections" data-mz-conn="${id}">
-            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="conn-${id}">${label} ${svg('chevdown')}</button></h3>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Connection</b></span>
-                <div class="mz-seg" role="group" aria-label="Connection source">
-                    <button type="button" data-mz-conn-src="current">Current ST API</button>
-                    <button type="button" data-mz-conn-src="profile">ST profile</button>
-                    <button type="button" data-mz-conn-src="custom">Custom</button>
+        <div class="mz-set-group" data-mz-pane="connections" data-mz-conn="${id}" data-mz-section="conn-${id}">
+            <div class="mz-set-title">${svg(icon)}<h3>${label}</h3></div>
+            <div class="mz-set-card">
+                <div class="mz-conn-fields">
+                    <div class="mz-seg mz-seg--full" role="group" aria-label="Connection source">
+                        <button type="button" data-mz-conn-src="current">Current API</button>
+                        <button type="button" data-mz-conn-src="profile">Profile</button>
+                        <button type="button" data-mz-conn-src="custom">Custom</button>
+                    </div>
+                    <div class="mz-adv-field" data-mz-conn-row="profile">
+                        <div class="mz-adv-label"><span>Profile</span></div>
+                        <select class="mz-select" data-mz-conn-select aria-label="Connection profile"></select>
+                    </div>
+                    <div class="mz-adv-field" data-mz-conn-row="custom-url">
+                        <div class="mz-adv-label"><span>API URL</span></div>
+                        <input class="mz-select" type="text" data-mz-conn-field="customUrl" aria-label="API URL" placeholder="http://localhost:1234/v1" spellcheck="false">
+                    </div>
+                    <div class="mz-adv-field" data-mz-conn-row="custom-key">
+                        <div class="mz-adv-label"><span>API key <button type="button" class="mz-hint" data-tip="Saved in SillyTavern\u2019s extension settings." aria-label="Saved in SillyTavern\u2019s extension settings.">i</button></span></div>
+                        <input class="mz-select" type="password" data-mz-conn-field="customKey" aria-label="API key" placeholder="sk-..." autocomplete="off">
+                    </div>
+                    <div class="mz-adv-field" data-mz-conn-row="custom-model">
+                        <div class="mz-adv-label"><span>Model</span></div>
+                        <input class="mz-select" type="text" data-mz-conn-field="customModel" aria-label="Model" placeholder="model name" spellcheck="false">
+                    </div>
                 </div>
-            </div>
-            <div class="mz-set-row" data-mz-conn-row="profile">
-                <span class="mz-set-label"><b>Connection profile</b></span>
-                <select class="mz-select" data-mz-conn-select aria-label="Connection profile"></select>
-            </div>
-            <div class="mz-set-row mz-set-row--prompt" data-mz-conn-row="custom-url">
-                <span class="mz-set-label"><b>API URL</b></span>
-                <input class="mz-select" type="text" data-mz-conn-field="customUrl" aria-label="API URL" placeholder="http://localhost:1234/v1" spellcheck="false">
-            </div>
-            <div class="mz-set-row mz-set-row--prompt" data-mz-conn-row="custom-key">
-                <span class="mz-set-label"><b>API key</b><small>Saved in SillyTavern\u2019s extension settings.</small></span>
-                <input class="mz-select" type="password" data-mz-conn-field="customKey" aria-label="API key" placeholder="sk-..." autocomplete="off">
-            </div>
-            <div class="mz-set-row mz-set-row--prompt" data-mz-conn-row="custom-model">
-                <span class="mz-set-label"><b>Model</b></span>
-                <input class="mz-select" type="text" data-mz-conn-field="customModel" aria-label="Model" placeholder="model name" spellcheck="false">
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Test</b></span>
-                <div>
-                    <button class="mz-btn-ghost" type="button" data-mz-conn-test>Send test call</button>
+                <div class="mz-set-foot">
                     <span class="mz-conn-state" data-mz-conn-state></span>
+                    <button class="mz-btn-ghost" type="button" data-mz-conn-test>Send test call</button>
                 </div>
             </div>
         </div>`;
