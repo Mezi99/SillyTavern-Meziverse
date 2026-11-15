@@ -34,7 +34,7 @@ import { mountMap, mapUiClosed, mapUiOpened, refreshMap, isMapWinOpen, openMapWi
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr, notify } from './notify.js';
 
-const VERSION = '2.9.6';
+const VERSION = '2.9.7';
 const PANE_DEFAULT = 300;
 const LOG_W_DEFAULT = 720;
 const LOG_H_SHARE = 0.7;
@@ -199,340 +199,319 @@ const FRAME_HTML = `
         </header>
 
         <div class="mz-seg mz-set-tabs" role="tablist" aria-label="Settings sections">
-            <button class="is-on" type="button" role="tab" aria-selected="true" data-mz-tab="general">General</button>
-            <button type="button" role="tab" aria-selected="false" data-mz-tab="image">Features</button>
-            <button type="button" role="tab" aria-selected="false" data-mz-tab="connections">Connections</button>
-            <button type="button" role="tab" aria-selected="false" data-mz-tab="mode">Meziverse mode</button>
+            <button class="is-on" type="button" role="tab" aria-selected="true" data-mz-tab="general">${svg('gear')}<span>General</span></button>
+            <button type="button" role="tab" aria-selected="false" data-mz-tab="image">${svg('spark')}<span>Features</span></button>
+            <button type="button" role="tab" aria-selected="false" data-mz-tab="connections">${svg('plug')}<span>Connections</span></button>
+            <button type="button" role="tab" aria-selected="false" data-mz-tab="mode">${svg('layers')}<span>Mode</span></button>
         </div>
 
         <div class="mz-set-scroll">
-        <div class="mz-set-group mz-set-group--fold" data-mz-pane="general">
-            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="appearance">Appearance ${svg('chevdown')}</button></h3>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Theme</b><small>Ink and one metal. Everything follows it.</small></span>
-                <div class="mz-theme-picks" role="group" aria-label="Theme">
-                    ${THEMES.map(theme => `<button class="mz-theme-pick" type="button" data-mz-pick-theme="${theme.id}"><i style="background:${theme.swatch}"></i><span>${theme.name}</span></button>`).join('\n')}
+        <div class="mz-set-group" data-mz-pane="general" data-mz-section="look">
+            <div class="mz-set-title">${svg('palette')}<h3>Look</h3></div>
+            <div class="mz-set-card">
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Theme</b></span>
+                    <div class="mz-theme-picks" role="group" aria-label="Theme">
+                        ${THEMES.map(theme => `<button class="mz-theme-pick" type="button" data-mz-pick-theme="${theme.id}"><i style="background:${theme.swatch}"></i><span>${theme.name}</span></button>`).join('\n')}
+                    </div>
                 </div>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Background</b><small>A quiet gradient, or the background SillyTavern has now.</small></span>
-                <div class="mz-seg" role="group" aria-label="Background">
-                    <button type="button" data-mz-pick-bg="none">None</button>
-                    <button type="button" data-mz-pick-bg="st">SillyTavern</button>
-                </div>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Pane transparency</b><small>How much of the background shows through the reading pane.</small></span>
-                <div class="mz-range">
-                    <input type="range" min="20" max="100" step="5" data-mz="pane-opacity" aria-label="Pane transparency">
-                    <span data-mz="pane-opacity-value">90%</span>
-                </div>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Pane blur</b><small>How sharply the background reads through the reading pane. None keeps it clean.</small></span>
-                <div class="mz-range">
-                    <input type="range" min="0" max="24" step="2" data-mz="pane-blur" aria-label="Pane blur">
-                    <span data-mz="pane-blur-value">16 px</span>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Background</b></span>
+                    <div class="mz-seg" role="group" aria-label="Background">
+                        <button type="button" data-mz-pick-bg="none">None</button>
+                        <button type="button" data-mz-pick-bg="st">SillyTavern</button>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <div class="mz-set-group mz-set-group--fold" data-mz-pane="general">
-            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="type">Type ${svg('chevdown')}</button></h3>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Interface scale</b><small>Menus, headers and buttons.</small></span>
-                <div class="mz-step">
-                    <button type="button" data-mz-step="ui" data-dir="-1" aria-label="Smaller interface">\u2212</button>
-                    <span data-mz="ui-value">100%</span>
-                    <button type="button" data-mz-step="ui" data-dir="1" aria-label="Larger interface">+</button>
+        <div class="mz-set-group" data-mz-pane="general" data-mz-section="reading-pane">
+            <div class="mz-set-title">${svg('type')}<h3>Reading pane</h3></div>
+            <div class="mz-set-card">
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Transparency</b></span>
+                    <div class="mz-range">
+                        <input type="range" min="20" max="100" step="5" data-mz="pane-opacity" aria-label="Pane transparency">
+                        <span data-mz="pane-opacity-value">90%</span>
+                    </div>
                 </div>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Narration size</b><small>The prose in the reading pane.</small></span>
-                <div class="mz-step">
-                    <button type="button" data-mz-step="narr" data-dir="-1" aria-label="Smaller narration">\u2212</button>
-                    <span data-mz="narr-value">18.5 px</span>
-                    <button type="button" data-mz-step="narr" data-dir="1" aria-label="Larger narration">+</button>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Blur</b></span>
+                    <div class="mz-range">
+                        <input type="range" min="0" max="24" step="2" data-mz="pane-blur" aria-label="Pane blur">
+                        <span data-mz="pane-blur-value">16 px</span>
+                    </div>
                 </div>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Narration font</b><small>The face the story is set in.</small></span>
-                <select class="mz-select" data-mz="font" aria-label="Narration font">
-                    <option value="theme">Theme default</option>
-                    <option value="newsreader">Newsreader</option>
-                    <option value="spectral">Spectral</option>
-                    <option value="lora">Lora</option>
-                    <option value="source-serif">Source Serif 4</option>
-                    <option value="inter">Inter</option>
-                    <option value="system">System serif</option>
-                </select>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Prose colors</b><small>Plain, speech, emphasis, strong — pane and log.</small></span>
-                <div class="mz-seg" role="group" aria-label="Prose colors">
-                    <button type="button" data-mz-pick-prose="theme">Theme</button>
-                    <button type="button" data-mz-pick-prose="st">SillyTavern</button>
-                    <button type="button" data-mz-pick-prose="custom">Custom</button>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Text size</b></span>
+                    <div class="mz-step">
+                        <button type="button" data-mz-step="narr" data-dir="-1" aria-label="Smaller narration">\u2212</button>
+                        <span data-mz="narr-value">18.5 px</span>
+                        <button type="button" data-mz-step="narr" data-dir="1" aria-label="Larger narration">+</button>
+                    </div>
                 </div>
-            </div>
-            <div class="mz-set-row mz-set-row--colors" data-mz="prose-pickers" hidden>
-                <span class="mz-set-label"><b>Pick your inks</b><small>Plain text, speech, emphasis, strong.</small></span>
-                <div class="mz-colors">
-                    <label class="mz-color"><input type="color" data-mz-color="plain" aria-label="Plain color"><span>Plain</span></label>
-                    <label class="mz-color"><input type="color" data-mz-color="q" aria-label="Speech color"><span>Speech</span></label>
-                    <label class="mz-color"><input type="color" data-mz-color="em" aria-label="Emphasis color"><span>Emphasis</span></label>
-                    <label class="mz-color"><input type="color" data-mz-color="strong" aria-label="Strong color"><span>Strong</span></label>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Font</b></span>
+                    <select class="mz-select" data-mz="font" aria-label="Narration font">
+                        <option value="theme">Theme default</option>
+                        <option value="newsreader">Newsreader</option>
+                        <option value="spectral">Spectral</option>
+                        <option value="lora">Lora</option>
+                        <option value="source-serif">Source Serif 4</option>
+                        <option value="inter">Inter</option>
+                        <option value="system">System serif</option>
+                    </select>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Prose colors</b></span>
+                    <div class="mz-seg" role="group" aria-label="Prose colors">
+                        <button type="button" data-mz-pick-prose="theme">Theme</button>
+                        <button type="button" data-mz-pick-prose="st">SillyTavern</button>
+                        <button type="button" data-mz-pick-prose="custom">Custom</button>
+                    </div>
+                </div>
+                <div class="mz-set-row mz-set-row--colors" data-mz="prose-pickers" hidden>
+                    <div class="mz-colors">
+                        <label class="mz-color"><input type="color" data-mz-color="plain" aria-label="Plain color"><span>Plain</span></label>
+                        <label class="mz-color"><input type="color" data-mz-color="q" aria-label="Speech color"><span>Speech</span></label>
+                        <label class="mz-color"><input type="color" data-mz-color="em" aria-label="Emphasis color"><span>Emphasis</span></label>
+                        <label class="mz-color"><input type="color" data-mz-color="strong" aria-label="Strong color"><span>Strong</span></label>
+                    </div>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Scene header</b></span>
+                    <div class="mz-seg" role="group" aria-label="Scene header style">
+                        <button type="button" data-mz-pick-scenehead="quiet">Quiet</button>
+                        <button type="button" data-mz-pick-scenehead="rule">Rule</button>
+                        <button type="button" data-mz-pick-scenehead="date">Date</button>
+                        <button type="button" data-mz-pick-scenehead="simple">Simple</button>
+                    </div>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Pane height</b></span>
+                    <button class="mz-btn-ghost" type="button" data-mz-action="reset-pane">Reset</button>
                 </div>
             </div>
         </div>
 
-        <div class="mz-set-group mz-set-group--fold" data-mz-pane="general">
-            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="sceneheader">Scene header ${svg('chevdown')}</button></h3>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Header style</b><small>How each scene tag reads in the reading pane: quiet, a chapter rule, the date first, or the simple band of old. The same fields, four wardrobes; the log keeps its own compact band.</small></span>
-                <div class="mz-seg" role="group" aria-label="Scene header style">
-                    <button type="button" data-mz-pick-scenehead="quiet">Quiet</button>
-                    <button type="button" data-mz-pick-scenehead="rule">Chapter rule</button>
-                    <button type="button" data-mz-pick-scenehead="date">Date-first</button>
-                    <button type="button" data-mz-pick-scenehead="simple">Simple</button>
+        <div class="mz-set-group" data-mz-pane="general" data-mz-section="interface">
+            <div class="mz-set-title">${svg('sliders')}<h3>Interface</h3></div>
+            <div class="mz-set-card">
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Scale</b></span>
+                    <div class="mz-step">
+                        <button type="button" data-mz-step="ui" data-dir="-1" aria-label="Smaller interface">\u2212</button>
+                        <span data-mz="ui-value">100%</span>
+                        <button type="button" data-mz-step="ui" data-dir="1" aria-label="Larger interface">+</button>
+                    </div>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Reduced motion</b></span>
+                    <button class="mz-switch" type="button" role="switch" aria-checked="false" aria-label="Reduced motion" data-mz-action="motion"><i></i></button>
                 </div>
             </div>
         </div>
 
-        <div class="mz-set-group mz-set-group--fold" data-mz-pane="general">
-            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="motion">Motion ${svg('chevdown')}</button></h3>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Reduced motion</b><small>Fades and slides become instant.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="false" aria-label="Reduced motion" data-mz-action="motion"><i></i></button>
-            </div>
-        </div>
-
-        <div class="mz-set-group mz-set-group--fold" data-mz-pane="image">
-            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="avatars">Avatars ${svg('chevdown')}</button></h3>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Avatars On/Off</b><small>The cast posters above the reading pane. Off leaves the background alone on stage.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Avatars" data-mz-action="avatars"><i></i></button>
-            </div>
-        </div>
-
-        <div class="mz-set-group mz-set-group--fold" data-mz-pane="image">
-            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="backgrounds">Backgrounds ${svg('chevdown')}</button></h3>
-            <div class="mz-set-row" data-mz-bg-master>
-                <span class="mz-set-label"><b>Background images</b><small>The watcher draws scene pictures. Off: the stage shows your own SillyTavern background, and no watcher ever runs. Weather and indoor effects still play.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Background images" data-mz-action="bg-images"><i></i></button>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Follow the story</b><small>A new background when the place changes; the brush draws one on demand.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="false" aria-label="Automatic location backgrounds" data-mz-action="bg-auto"><i></i></button>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Background generation pace</b><small>Draws at most once every N AI replies. New places between draws keep the last picture.</small></span>
-                <div class="mz-step">
-                    <button type="button" data-mz-step="bg-every" data-dir="-1" aria-label="Draw less often">\u2212</button>
-                    <span data-mz="bg-every-value">1</span>
-                    <button type="button" data-mz-step="bg-every" data-dir="1" aria-label="Draw more often">+</button>
+        <div class="mz-set-group" data-mz-pane="image" data-mz-section="stage">
+            <div class="mz-set-title">${svg('spark')}<h3>Stage</h3></div>
+            <div class="mz-set-card">
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Avatars</b></span>
+                    <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Avatars" data-mz-action="avatars"><i></i></button>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Speech bubbles</b></span>
+                    <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Speech bubbles" data-mz-action="speech-fx"><i></i></button>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Weather effects</b><button type="button" class="mz-hint" data-tip="Outdoor scenes only." aria-label="Outdoor scenes only.">i</button></span>
+                    <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Weather effects" data-mz-action="weather-fx"><i></i></button>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Indoor effects</b><button type="button" class="mz-hint" data-tip="Candlelight, hearth, window light. Indoor scenes only." aria-label="Candlelight, hearth, window light. Indoor scenes only.">i</button></span>
+                    <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Indoor effects" data-mz-action="indoor-fx"><i></i></button>
                 </div>
             </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Image size</b><small>Wide landscape, or whatever Image Generation is set to.</small></span>
-                <div class="mz-seg" role="group" aria-label="Image size">
-                    <button type="button" data-mz-pick-bgsize="landscape">Landscape</button>
-                    <button type="button" data-mz-pick-bgsize="st">Image Generation</button>
+        </div>
+
+        <div class="mz-set-group" data-mz-pane="image" data-mz-section="backgrounds">
+            <div class="mz-set-title">${svg('image')}<h3>Backgrounds</h3><span class="mz-set-sp"></span><button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Background images" data-mz-action="bg-images" data-mz-bg-master><i></i></button></div>
+            <div class="mz-set-card">
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Follow the story</b><button type="button" class="mz-hint" data-tip="A new picture when the place changes." aria-label="A new picture when the place changes.">i</button></span>
+                    <button class="mz-switch" type="button" role="switch" aria-checked="false" aria-label="Automatic location backgrounds" data-mz-action="bg-auto"><i></i></button>
                 </div>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Style</b><small>Appended to every description the watcher writes.</small></span>
-                <input class="mz-select" data-mz="bg-style" aria-label="Background style suffix">
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Negative</b><small>What the image must not contain.</small></span>
-                <input class="mz-select" data-mz="bg-negative" aria-label="Background negative prompt">
-            </div>
-            <div class="mz-set-row mz-set-row--prompt">
-                <span class="mz-set-label"><b>Watcher prompt \u00b7 Scene tags</b><small>What the watcher is asked where scene tags mark the places. The answer format is appended for you.</small></span>
-                <textarea class="mz-textarea" rows="8" data-mz="bg-prompt-on" aria-label="Watcher prompt, scene tags"></textarea>
-                <button class="mz-btn-ghost" type="button" data-mz-action="bg-prompt-on-reset">Restore default</button>
-            </div>
-            <div class="mz-set-row mz-set-row--prompt">
-                <span class="mz-set-label"><b>Watcher prompt \u00b7 Transport interior</b><small>What the watcher is asked inside a vehicle on the move (En Route). The interior rule and the answer format are appended for you.</small></span>
-                <textarea class="mz-textarea" rows="8" data-mz="bg-prompt-transport" aria-label="Watcher prompt, transport interior"></textarea>
-                <button class="mz-btn-ghost" type="button" data-mz-action="bg-prompt-transport-reset">Restore default</button>
-            </div>
-            <div class="mz-set-row mz-set-row--prompt">
-                <span class="mz-set-label"><b>Watcher prompt \u00b7 Plain prose</b><small>The fallback hand, for replies without scene tags. The answer format is appended for you.</small></span>
-                <textarea class="mz-textarea" rows="8" data-mz="bg-prompt-off" aria-label="Watcher prompt, plain prose"></textarea>
-                <button class="mz-btn-ghost" type="button" data-mz-action="bg-prompt-off-reset">Restore default</button>
-            </div>
-            <div class="mz-set-row mz-set-row--prompt">
-                <span class="mz-set-label"><b>Last request</b><small>Exactly what the watcher was last asked, footers included.</small></span>
-                <button class="mz-btn-ghost" type="button" data-mz-action="bg-show-request">Show last request</button>
-                <pre class="mz-bg-request" data-mz="bg-request" hidden></pre>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Try it</b><small>Draws a fresh background for the place the story is at now.</small></span>
-                <button class="mz-btn-ghost" type="button" data-mz-action="bg-test">Draw one now</button>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Draw every</b><button type="button" class="mz-hint" data-tip="At most one picture every N AI replies." aria-label="At most one picture every N AI replies.">i</button></span>
+                    <div class="mz-step">
+                        <button type="button" data-mz-step="bg-every" data-dir="-1" aria-label="Draw less often">\u2212</button>
+                        <span data-mz="bg-every-value">1 reply</span>
+                        <button type="button" data-mz-step="bg-every" data-dir="1" aria-label="Draw more often">+</button>
+                    </div>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Size</b></span>
+                    <div class="mz-seg" role="group" aria-label="Image size">
+                        <button type="button" data-mz-pick-bgsize="landscape">Landscape</button>
+                        <button type="button" data-mz-pick-bgsize="st">Image Generation</button>
+                    </div>
+                </div>
+                <div class="mz-adv">
+                    <button type="button" class="mz-adv-head" data-mz-adv aria-expanded="false">Prompts ${svg('chevdown')}</button>
+                    <div class="mz-adv-inner">
+                        <div class="mz-adv-field">
+                            <div class="mz-adv-label"><span>Style</span></div>
+                            <input class="mz-select" data-mz="bg-style" aria-label="Background style suffix">
+                        </div>
+                        <div class="mz-adv-field">
+                            <div class="mz-adv-label"><span>Negative</span></div>
+                            <input class="mz-select" data-mz="bg-negative" aria-label="Background negative prompt">
+                        </div>
+                        <div class="mz-adv-field">
+                            <div class="mz-adv-label"><span>Scene-tag prompt</span><button class="mz-btn-ghost mz-btn-mini" type="button" data-mz-action="bg-prompt-on-reset">Restore default</button></div>
+                            <textarea class="mz-textarea" rows="5" data-mz="bg-prompt-on" aria-label="Watcher prompt, scene tags"></textarea>
+                        </div>
+                        <div class="mz-adv-field">
+                            <div class="mz-adv-label"><span>Transport-interior prompt</span><button class="mz-btn-ghost mz-btn-mini" type="button" data-mz-action="bg-prompt-transport-reset">Restore default</button></div>
+                            <textarea class="mz-textarea" rows="5" data-mz="bg-prompt-transport" aria-label="Watcher prompt, transport interior"></textarea>
+                        </div>
+                        <div class="mz-adv-field">
+                            <div class="mz-adv-label"><span>Plain-prose prompt</span><button class="mz-btn-ghost mz-btn-mini" type="button" data-mz-action="bg-prompt-off-reset">Restore default</button></div>
+                            <textarea class="mz-textarea" rows="5" data-mz="bg-prompt-off" aria-label="Watcher prompt, plain prose"></textarea>
+                        </div>
+                        <div class="mz-adv-field">
+                            <div class="mz-adv-label"><span>Last request</span><button class="mz-btn-ghost mz-btn-mini" type="button" data-mz-action="bg-show-request">Show</button></div>
+                            <pre class="mz-bg-request" data-mz="bg-request" hidden></pre>
+                        </div>
+                    </div>
+                </div>
+                <div class="mz-set-foot">
+                    <button class="mz-btn-ghost" type="button" data-mz-action="bg-test">Draw one now</button>
+                </div>
             </div>
         </div>
 
-        <div class="mz-set-group mz-set-group--fold" data-mz-pane="image">
-            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="weather">Weather ${svg('chevdown')}</button></h3>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Weather effects</b><small>Rain, snow, lightning and light on the background stage. Outdoors scenes only - the scene tag's weatherTag and locationTag decide.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Weather effects" data-mz-action="weather-fx"><i></i></button>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Indoor effects</b><small>The room's quiet mood - candlelight, hearth, window light, dust, lamp. Indoors scenes only; the place itself picks the mood.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Indoor effects" data-mz-action="indoor-fx"><i></i></button>
+        <div class="mz-set-group" data-mz-pane="image" data-mz-section="music">
+            <div class="mz-set-title">${svg('music')}<h3>Music</h3><span class="mz-set-sp"></span><button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Music player" data-mz-action="music" data-mz-music-master><i></i></button></div>
+            <div class="mz-set-card">
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Story requests</b><button type="button" class="mz-hint" data-tip="A &lt;music&gt; tag in a reply starts playback." aria-label="A music tag in a reply starts playback.">i</button></span>
+                    <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Story requests" data-mz-action="music-auto"><i></i></button>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Music DJ</b><button type="button" class="mz-hint" data-tip="Picks music to match each new reply. Needs the API key." aria-label="Picks music to match each new reply. Needs the API key.">i</button></span>
+                    <button class="mz-switch" type="button" role="switch" aria-checked="false" aria-label="Music DJ" data-mz-action="music-dj"><i></i></button>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>DJ pace</b></span>
+                    <div class="mz-step">
+                        <button type="button" data-mz-step="music-dj-every" data-dir="-1" aria-label="Ask less often">\u2212</button>
+                        <span data-mz="music-dj-every-value">1 reply</span>
+                        <button type="button" data-mz-step="music-dj-every" data-dir="1" aria-label="Ask more often">+</button>
+                    </div>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Pick style</b></span>
+                    <div class="mz-seg" role="group" aria-label="Pick style">
+                        <button type="button" data-mz-pick-musicpick="orchestra">Orchestra</button>
+                        <button type="button" data-mz-pick-musicpick="songs">Songs</button>
+                    </div>
+                </div>
+                <div class="mz-adv">
+                    <button type="button" class="mz-adv-head" data-mz-adv aria-expanded="false">Key &amp; prompt ${svg('chevdown')}</button>
+                    <div class="mz-adv-inner">
+                        <div class="mz-adv-field">
+                            <div class="mz-adv-label"><span>YouTube Data API key <button type="button" class="mz-hint" data-tip="Free Google key. Restrict it by HTTP referrer to this address, or by your IP." aria-label="Free Google key. Restrict it by HTTP referrer to this address, or by your IP.">i</button></span></div>
+                            <input class="mz-select" type="password" data-mz="music-key" aria-label="YouTube Data API key" placeholder="AIza..." autocomplete="off">
+                            <div class="mz-adv-actions">
+                                <button class="mz-btn-ghost mz-btn-mini" type="button" data-mz-action="music-key-save">Save</button>
+                                <button class="mz-btn-ghost mz-btn-mini" type="button" data-mz-action="music-key-remove">Remove</button>
+                                <span class="mz-music-keystate" data-mz="music-key-state"></span>
+                            </div>
+                        </div>
+                        <div class="mz-adv-field">
+                            <div class="mz-adv-label"><span>DJ prompt</span><button class="mz-btn-ghost mz-btn-mini" type="button" data-mz-action="music-dj-prompt-reset">Restore default</button></div>
+                            <textarea class="mz-textarea" rows="5" data-mz="music-dj-prompt" aria-label="Music DJ prompt"></textarea>
+                        </div>
+                        <div class="mz-adv-field">
+                            <div class="mz-adv-label"><span>Last request</span><button class="mz-btn-ghost mz-btn-mini" type="button" data-mz-action="music-dj-show-request">Show</button></div>
+                            <pre class="mz-bg-request" data-mz="music-dj-request" hidden></pre>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <div class="mz-set-group mz-set-group--fold" data-mz-pane="image">
-            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="speech">Speech ${svg('chevdown')}</button></h3>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Speech bubbles</b><small>Spoken lines wear a bubble in the reading pane - the speaker's name and picture when the cast holds one, the words, and the tone said in, quietly after. Off leaves the prose plain.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Speech bubbles" data-mz-action="speech-fx"><i></i></button>
+        <div class="mz-set-group" data-mz-pane="image" data-mz-section="map">
+            <div class="mz-set-title">${svg('map')}<h3>Map</h3><span class="mz-set-sp"></span><button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Map" data-mz-action="map" data-mz-map-master><i></i></button></div>
+            <div class="mz-set-card">
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Minimap</b><button type="button" class="mz-hint" data-tip="Off leaves a small map button." aria-label="Off leaves a small map button.">i</button></span>
+                    <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Minimap" data-mz-action="map-mini"><i></i></button>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Depth</b><button type="button" class="mz-hint" data-tip="Deeper spots fold into their place." aria-label="Deeper spots fold into their place.">i</button></span>
+                    <div class="mz-step">
+                        <button type="button" data-mz-step="map-depth" data-dir="-1" aria-label="Show fewer levels">\u2212</button>
+                        <span data-mz="map-depth-value">All</span>
+                        <button type="button" data-mz-step="map-depth" data-dir="1" aria-label="Show more levels">+</button>
+                    </div>
+                </div>
+                <div class="mz-set-foot">
+                    <button class="mz-btn-ghost" type="button" data-mz-action="map-open">Open map</button>
+                </div>
             </div>
         </div>
 
-        <div class="mz-set-group mz-set-group--fold" data-mz-pane="image">
-            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="music">Music ${svg('chevdown')}</button></h3>
-            <div class="mz-set-row" data-mz-music-master>
-                <span class="mz-set-label"><b>Music player</b><small>The scene's soundtrack player - a compact YouTube player in the header, which undocks into a draggable card on wide screens. Off hides it whole and nothing plays.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Music player" data-mz-action="music"><i></i></button>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Story requests</b><small>A &lt;music&gt; tag in a reply starts playback when the reply lands. A link plays at once; a named song is searched with the key below.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Story requests" data-mz-action="music-auto"><i></i></button>
-            </div>
-            <div class="mz-set-row mz-set-row--prompt">
-                <span class="mz-set-label"><b>YouTube Data API key</b><small>Lets a named song be searched and played. Free key: Google Cloud Console \u25b8 enable \u201cYouTube Data API v3\u201d \u25b8 Credentials. Restrict it by HTTP referrer and allow this SillyTavern address (http://localhost:8000/*), or by your IP - never leave it open. It stays in SillyTavern's extension settings and is used from your browser.</small></span>
-                <input class="mz-select" type="password" data-mz="music-key" aria-label="YouTube Data API key" placeholder="AIza...">
-                <div>
-                    <button class="mz-btn-ghost" type="button" data-mz-action="music-key-save">Save key</button>
-                    <button class="mz-btn-ghost" type="button" data-mz-action="music-key-remove">Remove</button>
-                    <span class="mz-music-keystate" data-mz="music-key-state"></span>
+        <div class="mz-set-group" data-mz-pane="mode" data-mz-section="mode-main">
+            <div class="mz-set-title">${svg('layers')}<h3>Meziverse mode</h3><span class="mz-set-sp"></span><button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Meziverse mode" data-mz-action="mode"><i></i></button></div>
+            <div class="mz-set-card">
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Ledger, cues, mindscape, thought bubbles</b></span>
+                    <span class="mz-set-note">Set before the chat starts</span>
                 </div>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Music DJ</b><small>After each new reply a quiet watcher call reads the scene and picks music to match its mood - its own call, pace and prompt, independent of the background watcher. Off leaves Fresh pick on the player as the manual trigger. Needs the API key above.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="false" aria-label="Music DJ" data-mz-action="music-dj"><i></i></button>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>DJ pace</b><small>At most one DJ call every N AI replies. User turns never count.</small></span>
-                <div class="mz-step">
-                    <button type="button" data-mz-step="music-dj-every" data-dir="-1" aria-label="Ask less often">\u2212</button>
-                    <span data-mz="music-dj-every-value">1</span>
-                    <button type="button" data-mz-step="music-dj-every" data-dir="1" aria-label="Ask more often">+</button>
-                </div>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Pick style</b><small>What the DJ reaches for: an instrumental score, or one specific real song that fits the case. Either way the story\u2019s own genre and era decide the sound - a Wild West tale and a sci-fi tale never pick alike.</small></span>
-                <div class="mz-seg" role="group" aria-label="Pick style">
-                    <button type="button" data-mz-pick-musicpick="orchestra">Orchestra</button>
-                    <button type="button" data-mz-pick-musicpick="songs">Songs</button>
-                </div>
-            </div>
-            <div class="mz-set-row mz-set-row--prompt">
-                <span class="mz-set-label"><b>DJ prompt</b><small>What the DJ is asked about each reply. The answer format is appended for you.</small></span>
-                <textarea class="mz-textarea" rows="8" data-mz="music-dj-prompt" aria-label="Music DJ prompt"></textarea>
-                <button class="mz-btn-ghost" type="button" data-mz-action="music-dj-prompt-reset">Restore default</button>
-            </div>
-            <div class="mz-set-row mz-set-row--prompt">
-                <span class="mz-set-label"><b>Last request</b><small>Exactly what the DJ was last asked, footers included.</small></span>
-                <button class="mz-btn-ghost" type="button" data-mz-action="music-dj-show-request">Show last request</button>
-                <pre class="mz-bg-request" data-mz="music-dj-request" hidden></pre>
             </div>
         </div>
 
-        <div class="mz-set-group mz-set-group--fold" data-mz-pane="image">
-            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="map">Map ${svg('chevdown')}</button></h3>
-            <div class="mz-set-row" data-mz-map-master>
-                <span class="mz-set-label"><b>Map</b><small>The story's places as a live atlas - the minimap window on screen opens the full map of everywhere the story has been. Built from the scene tags; without tags, from the backgrounds the chat has drawn.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Map" data-mz-action="map"><i></i></button>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Minimap</b><small>The small window in the corner, game-minimap style. Off leaves the compact map button, which still opens the full map.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Minimap" data-mz-action="map-mini"><i></i></button>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Map depth</b><small>How deep the atlas shows places; deeper spots fold into their place until the detail card.</small></span>
-                <div class="mz-step">
-                    <button type="button" data-mz-step="map-depth" data-dir="-1" aria-label="Show fewer levels">\u2212</button>
-                    <span data-mz="map-depth-value">All</span>
-                    <button type="button" data-mz-step="map-depth" data-dir="1" aria-label="Show more levels">+</button>
+        <div class="mz-set-group" data-mz-pane="mode" data-mz-section="entries">
+            <div class="mz-set-title">${svg('sliders')}<h3>Tracker</h3></div>
+            <div class="mz-set-card">
+                <div class="mz-set-tiles">
+                    <div class="mz-set-tile"><span class="mz-set-label"><b>Standing</b></span><button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Standing" data-mz-entry="standing"><i></i></button></div>
+                    <div class="mz-set-tile"><span class="mz-set-label"><b>Profiles</b></span><button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Profiles" data-mz-entry="profiles"><i></i></button></div>
+                    <div class="mz-set-tile"><span class="mz-set-label"><b>Shifts</b></span><button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Shifts" data-mz-entry="shifts"><i></i></button></div>
+                    <div class="mz-set-tile"><span class="mz-set-label"><b>Threads</b></span><button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Threads" data-mz-entry="threads"><i></i></button></div>
+                    <div class="mz-set-tile"><span class="mz-set-label"><b>Plans</b></span><button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Plans" data-mz-entry="plans"><i></i></button></div>
+                    <div class="mz-set-tile"><span class="mz-set-label"><b>Hooks</b></span><button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Hooks" data-mz-entry="hooks"><i></i></button></div>
+                    <div class="mz-set-tile"><span class="mz-set-label"><b>Lore</b></span><button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Lore" data-mz-entry="lore"><i></i></button></div>
+                    <div class="mz-set-tile"><span class="mz-set-label"><b>Story so far</b></span><button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Story so far" data-mz-entry="recap"><i></i></button></div>
                 </div>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Open the map</b><small>The full atlas: places, visits and the pictures drawn there.</small></span>
-                <button class="mz-btn-ghost" type="button" data-mz-action="map-open">Open map</button>
             </div>
         </div>
 
-        <div class="mz-set-group mz-set-group--fold" data-mz-pane="mode">
-            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="mode-main">Meziverse mode ${svg('chevdown')}</button></h3>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Mode on/off</b><small>The master switch for the extras - ledger, cues, mindscape, thought bubbles. Off leaves the base extension alone. Best set before the chat starts.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Meziverse mode" data-mz-action="mode"><i></i></button>
-            </div>
-        </div>
-
-        <div class="mz-set-group mz-set-group--fold" data-mz-pane="mode">
-            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="entries">Tracker entries ${svg('chevdown')}</button></h3>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Standing</b><small>How the world sees you.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Standing" data-mz-entry="standing"><i></i></button>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Profiles</b><small>Who is here: mini cards and full profiles.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Profiles" data-mz-entry="profiles"><i></i></button>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Shifts</b><small>The pairs that moved this turn.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Shifts" data-mz-entry="shifts"><i></i></button>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Threads</b><small>Live plot threads and their clocks.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Threads" data-mz-entry="threads"><i></i></button>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Plans</b><small>What everyone intends to do.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Plans" data-mz-entry="plans"><i></i></button>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Hooks</b><small>Open questions and their clues.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Hooks" data-mz-entry="hooks"><i></i></button>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Lore</b><small>Seeds of the world's lore.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Lore" data-mz-entry="lore"><i></i></button>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Story So Far</b><small>The moments the story has marked.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Story So Far" data-mz-entry="recap"><i></i></button>
-            </div>
-        </div>
-
-        <div class="mz-set-group mz-set-group--fold" data-mz-pane="mode">
-            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="cues">Cues ${svg('chevdown')}</button></h3>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Popovers</b><small>How the truth behind a mark opens.</small></span>
-                <div class="mz-seg" role="group" aria-label="Popovers">
-                    <button type="button" data-mz-pick-cuepop="both">Hover and tap</button>
-                    <button type="button" data-mz-pick-cuepop="tap">Tap only</button>
+        <div class="mz-set-group" data-mz-pane="mode" data-mz-section="cues">
+            <div class="mz-set-title">${svg('bolt')}<h3>Cues</h3></div>
+            <div class="mz-set-card">
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Popovers</b></span>
+                    <div class="mz-seg" role="group" aria-label="Popovers">
+                        <button type="button" data-mz-pick-cuepop="both">Hover &amp; tap</button>
+                        <button type="button" data-mz-pick-cuepop="tap">Tap</button>
+                    </div>
                 </div>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Memories</b><small>How a flashback arrives: as a pill, or opening the memory at once.</small></span>
-                <div class="mz-seg" role="group" aria-label="Memories">
-                    <button type="button" data-mz-pick-cuemem="pill">Pill</button>
-                    <button type="button" data-mz-pick-cuemem="open">Open on arrival</button>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Memories</b></span>
+                    <div class="mz-seg" role="group" aria-label="Memories">
+                        <button type="button" data-mz-pick-cuemem="pill">Pill</button>
+                        <button type="button" data-mz-pick-cuemem="open">Open</button>
+                    </div>
                 </div>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Meanwhile</b><small>How the meanwhile boxes arrive: closed, or the latest one open.</small></span>
-                <div class="mz-seg" role="group" aria-label="Meanwhile">
-                    <button type="button" data-mz-pick-cuemw="closed">Closed</button>
-                    <button type="button" data-mz-pick-cuemw="open">Latest one open</button>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Meanwhile</b></span>
+                    <div class="mz-seg" role="group" aria-label="Meanwhile">
+                        <button type="button" data-mz-pick-cuemw="closed">Closed</button>
+                        <button type="button" data-mz-pick-cuemw="open">Latest open</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -540,9 +519,6 @@ const FRAME_HTML = `
         <div data-mz="connections-host"></div>
         </div>
 
-        <footer class="mz-sheet-foot">
-            <button class="mz-btn-ghost" type="button" data-mz-action="reset-pane">Reset pane height</button>
-        </footer>
     </section>
 
     <aside class="mz-log" aria-hidden="true" aria-label="Chat log">
@@ -919,9 +895,12 @@ function applyBgAuto() {
     if (els.bgAutoLabel) els.bgAutoLabel.textContent = on ? 'Auto BG: On' : 'Auto BG: Off';
 }
 
+/** "1 reply", "3 replies" - the stepper values wear their unit. */
+const replyCount = n => `${n} ${n === 1 ? 'reply' : 'replies'}`;
+
 /**
  * Syncs the background master switch. Off: the whole generation side steps
- * aside - the pill, the brush and every generation row - and the stage keeps
+ * aside - the pill, the brush and the settings card - and the stage keeps
  * showing what it shows. The weather plays on regardless.
  */
 function applyBgImages() {
@@ -932,10 +911,8 @@ function applyBgImages() {
     }
 
     const group = root.querySelector('[data-mz-section="backgrounds"]')?.closest('.mz-set-group');
-    group?.querySelectorAll('.mz-set-row').forEach(row => {
-        if (row.hasAttribute('data-mz-bg-master')) return;
-        row.hidden = !on;
-    });
+    const card = group?.querySelector('.mz-set-card');
+    if (card) card.hidden = !on;
 
     root.querySelectorAll('[data-mz-action="bg-generate"], .mz-bgauto').forEach(element => {
         element.hidden = !on;
@@ -944,7 +921,7 @@ function applyBgImages() {
 
 /** Syncs the background settings rows with the settings they edit. */
 function applyBgControls() {
-    if (els.bgEveryValue) els.bgEveryValue.textContent = String(Math.max(1, Number(settings().bgEveryN) || 1));
+    if (els.bgEveryValue) els.bgEveryValue.textContent = replyCount(Math.max(1, Number(settings().bgEveryN) || 1));
     if (els.bgStyle) els.bgStyle.value = settings().bgStyle ?? '';
     if (els.bgNegative) els.bgNegative.value = settings().bgNegative ?? '';
     if (els.bgPromptOn) els.bgPromptOn.value = settings().bgPromptOn ?? DEFAULT_BG_PROMPT_ON;
@@ -1213,7 +1190,7 @@ function applyMusic() {
         button.setAttribute('aria-checked', String(musicDjOn()));
     }
     if (els.musicDjValue) {
-        els.musicDjValue.textContent = String(Math.max(1, Number(settings().musicDjEveryN) || 1));
+        els.musicDjValue.textContent = replyCount(Math.max(1, Number(settings().musicDjEveryN) || 1));
     }
     root.querySelectorAll('[data-mz-pick-musicpick]').forEach(button => {
         const isOn = button.dataset.mzPickMusicpick === musicPickMode();
@@ -1224,12 +1201,10 @@ function applyMusic() {
         els.musicDjPrompt.value = settings().musicDjPrompt ?? DEFAULT_DJ_PROMPT;
     }
 
-    // The player's own rows step aside with the master switch.
+    // The player's own card steps aside with the master switch.
     const group = root.querySelector('[data-mz-section="music"]')?.closest('.mz-set-group');
-    group?.querySelectorAll('.mz-set-row').forEach(row => {
-        if (row.hasAttribute('data-mz-music-master')) return;
-        row.hidden = !musicOn();
-    });
+    const card = group?.querySelector('.mz-set-card');
+    if (card) card.hidden = !musicOn();
 
     // The key: shown as saved, never clobbered mid-typing.
     if (els.musicKey && document.activeElement !== els.musicKey) {
@@ -1259,12 +1234,10 @@ function applyMap() {
         depthValue.textContent = depth === 99 ? 'All' : String(depth);
     }
 
-    // The map's own rows step aside with the master switch.
+    // The map's own card steps aside with the master switch.
     const group = root.querySelector('[data-mz-section="map"]')?.closest('.mz-set-group');
-    group?.querySelectorAll('.mz-set-row').forEach(row => {
-        if (row.hasAttribute('data-mz-map-master')) return;
-        row.hidden = !mapOn();
-    });
+    const card = group?.querySelector('.mz-set-card');
+    if (card) card.hidden = !mapOn();
 
     refreshMap();
 }
@@ -2212,6 +2185,18 @@ function submitLine() {
 
 function wireActions() {
     frame.addEventListener('click', event => {
+        // The hint dots open their bubble on tap as well as hover (a touch
+        // has no hover, and iOS never focuses a tapped button): one dot open
+        // at a time, and any other tap closes it again.
+        const hint = event.target.closest('.mz-hint');
+        root.querySelectorAll('.mz-hint.is-open').forEach(dot => {
+            if (dot !== hint) dot.classList.remove('is-open');
+        });
+        if (hint) {
+            hint.classList.toggle('is-open');
+            return;
+        }
+
         const themePick = event.target.closest('[data-mz-pick-theme]');
         if (themePick) {
             settings().theme = themePick.dataset.mzPickTheme;
@@ -2291,24 +2276,17 @@ function wireActions() {
             return;
         }
 
-        const section = event.target.closest('[data-mz-section]');
-        if (section) {
-            // A foldable group's header opens and closes its rows - and an
-            // opening header closes every other fold, so the sheet never
-            // grows long. The sheet is built once, so the state sticks for
-            // the session.
-            const group = section.closest('.mz-set-group');
-            const open = group ? !group.classList.contains('is-open') : true;
+        const adv = event.target.closest('[data-mz-adv]');
+        if (adv) {
+            // The quiet folds at the cards' feet (prompts, keys, last request)
+            // open and close their own field block. Each fold stands alone, so
+            // two sets of prompts can be compared on screen. The sheet is built
+            // once, so the state sticks for the session.
+            const fold = adv.closest('.mz-adv');
+            const open = fold ? !fold.classList.contains('is-open') : true;
 
-            if (open) {
-                root.querySelectorAll('.mz-set-group--fold.is-open').forEach(other => {
-                    other.classList.remove('is-open');
-                    other.querySelector('.mz-set-head')?.setAttribute('aria-expanded', 'false');
-                });
-            }
-
-            group?.classList.toggle('is-open', open);
-            section.setAttribute('aria-expanded', String(open));
+            fold?.classList.toggle('is-open', open);
+            adv.setAttribute('aria-expanded', String(open));
             return;
         }
 
