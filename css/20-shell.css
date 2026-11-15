@@ -258,13 +258,24 @@ body.mz-open .popup { z-index: 9500 !important; }
     color: var(--mz-text-dim);
 }
 
-/* The mode switch rides beside the wordmark: the one control that stays
-   visible exactly when everything it governs steps aside. */
-.mz-mode {
+/* The quick toggles ride beside the wordmark: Auto - Backgrounds, Music,
+   Map - each the same switch as its settings row, for play-time access.
+   Narrow screens send them back to settings; they never crowd the title. */
+.mz-quick-hair {
+    align-self: center;
+    margin-left: 8px;
+}
+
+.mz-autoquick {
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    margin-left: 10px;
+}
+
+.mz-qpill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     padding: 2px 9px;
     border: 1px solid var(--mz-line);
     border-radius: var(--mz-r-pill);
@@ -272,7 +283,7 @@ body.mz-open .popup { z-index: 9500 !important; }
     color: var(--mz-text-dim);
     font-family: var(--mz-font-ui);
     font-size: var(--mz-text-2xs);
-    letter-spacing: .1em;
+    letter-spacing: .08em;
     line-height: 1.4;
     white-space: nowrap;
     cursor: pointer;
@@ -282,40 +293,34 @@ body.mz-open .popup { z-index: 9500 !important; }
         background var(--mz-dur) var(--mz-ease);
 }
 
-.mz-mode:hover {
+.mz-qpill .ico {
+    width: 13px;
+    height: 13px;
+    flex: none;
+}
+
+.mz-qpill:hover {
     color: var(--mz-text);
     border-color: var(--mz-line-strong);
     background: color-mix(in srgb, var(--mz-text) 6%, transparent);
 }
 
-.mz-mode i {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    border: 1px solid currentColor;
-    background: transparent;
-    transition:
-        background var(--mz-dur) var(--mz-ease),
-        border-color var(--mz-dur) var(--mz-ease),
-        box-shadow var(--mz-dur) var(--mz-ease);
-}
-
-.mz-mode.is-on {
+.mz-qpill.is-on {
     color: var(--mz-text);
     border-color: color-mix(in srgb, var(--mz-accent) 35%, var(--mz-line));
+    background: var(--mz-accent-soft);
 }
 
-.mz-mode.is-on i {
-    border-color: var(--mz-accent);
-    background: var(--mz-accent);
-    box-shadow: 0 0 6px color-mix(in srgb, var(--mz-accent) 55%, transparent);
+.mz-qpill.is-on .ico { color: var(--mz-accent); }
+
+/* No room on narrow screens - the same switches live in settings. */
+@media (max-width: 900px) {
+    .mz-autoquick,
+    .mz-quick-hair { display: none; }
 }
 
-/* The background switch rides with the mode switch: the same pill, one
-   more promise kept beside it. The brush moved to the pane head beside
-   the card name - position-neutral; only its state is styled here. */
-.mz-bgauto { margin-left: 6px; }
-
+/* The brush moved to the pane head beside the card name - position-neutral;
+   only its state is styled here. */
 .mz-brush {
     margin-left: 2px;
     align-self: center;
@@ -2195,7 +2200,6 @@ body.mz-open .popup { z-index: 9500 !important; }
     .mz-header { padding: 0 8px 0 10px; gap: 8px; }
     .mz-brand { font-size: var(--mz-text-xs); letter-spacing: .12em; }
     .mz-brand > span { display: none; }
-    .mz-mode { padding: 1px 7px; gap: 4px; letter-spacing: .06em; }
     .mz-chatname { max-width: 52vw; font-size: var(--mz-text-2xs); }
 
     .mz-chatbar { gap: 2px; padding: 4px 6px 4px 10px; }

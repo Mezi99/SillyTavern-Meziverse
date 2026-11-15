@@ -72,7 +72,7 @@ const FRAME_HTML = `
     <div class="mz-scrim" aria-hidden="true"></div>
 
     <header class="mz-header">
-        <div class="mz-brand"><b>Meziverse</b><small class="mz-version">v${VERSION}</small><button class="mz-mode mz-bgauto" type="button" role="switch" aria-checked="false" title="Backgrounds follow the story" aria-label="Automatic location backgrounds" data-mz-action="bg-auto"><i aria-hidden="true"></i><span data-mz="bg-auto-label">Auto BG: Off</span></button></div>
+        <div class="mz-brand"><b>Meziverse</b><small class="mz-version">v${VERSION}</small><span class="mz-hair mz-quick-hair" aria-hidden="true"></span><div class="mz-autoquick" role="group" aria-label="Quick toggles"><span class="mz-label">Auto</span><button class="mz-qpill mz-bgauto" type="button" role="switch" aria-checked="false" title="Backgrounds follow the story" aria-label="Automatic location backgrounds" data-mz-action="bg-auto">${svg('image')}<span>Backgrounds</span></button><button class="mz-qpill mz-musicauto" type="button" role="switch" aria-checked="true" title="Music from story requests" aria-label="Story requests" data-mz-action="music-auto">${svg('music')}<span>Music</span></button><button class="mz-qpill" type="button" role="switch" aria-checked="true" title="Map on or off" aria-label="Map" data-mz-action="map">${svg('map')}<span>Map</span></button></div></div>
         <div class="mz-chatname" data-mz="chatname"><b class="is-empty">No chat open</b></div>
         <div class="mz-header-tools">
             <div class="mz-music-slot" data-mz="music-slot"></div>
@@ -589,7 +589,6 @@ export function mount() {
     els = {
         chatName: root.querySelector('[data-mz="chatname"]'),
         chatNameText: root.querySelector('[data-mz="chatname"] b'),
-        bgAutoLabel: root.querySelector('[data-mz="bg-auto-label"]'),
         bgBrushButton: root.querySelector('[data-mz-action="bg-generate"]'),
         bgEveryValue: root.querySelector('[data-mz="bg-every-value"]'),
         bgStyle: root.querySelector('[data-mz="bg-style"]'),
@@ -885,14 +884,13 @@ function applyAvatars() {
     }
 }
 
-/** Syncs the background switch - header pill and settings row - with the setting. */
+/** Syncs the follow-the-story switch - header pill and settings row - with the setting. */
 function applyBgAuto() {
     const on = bgAutoOn();
     for (const button of root.querySelectorAll('[data-mz-action="bg-auto"]')) {
         button.classList.toggle('is-on', on);
         button.setAttribute('aria-checked', String(on));
     }
-    if (els.bgAutoLabel) els.bgAutoLabel.textContent = on ? 'Auto BG: On' : 'Auto BG: Off';
 }
 
 /** "1 reply", "3 replies" - the stepper values wear their unit. */
@@ -1205,6 +1203,12 @@ function applyMusic() {
     const group = root.querySelector('[data-mz-section="music"]')?.closest('.mz-set-group');
     const card = group?.querySelector('.mz-set-card');
     if (card) card.hidden = !musicOn();
+
+    // Story requests have nothing to govern while the player is off, so the
+    // quick pill steps aside the way the backgrounds pill does.
+    root.querySelectorAll('.mz-musicauto').forEach(element => {
+        element.hidden = !musicOn();
+    });
 
     // The key: shown as saved, never clobbered mid-typing.
     if (els.musicKey && document.activeElement !== els.musicKey) {
