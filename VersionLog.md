@@ -1,5 +1,23 @@
 # Meziverse — version log
 
+## 2.9.7 - 2026-11-15
+
+The settings sheet learns to breathe.
+
+### Cards, not folds
+- Every group is now a title line (icon, name - and for Backgrounds, Music and Map the master switch) above one always-open card of rows. No more column of closed headers to open one by one: the whole sheet reads at a glance.
+- The old folds merge where they belonged together. Avatars, Speech bubbles, Weather and Indoor become one **Stage** card; Theme and Background become **Look**; Transparency, Blur, Text size, Font, Prose colors, Scene header and **Reset pane height** (gone from the footer) become **Reading pane**; Scale and Reduced motion become **Interface**. With the footer gone, the scroll area gains its height.
+- The master switches ride their title lines: switching Backgrounds, Music or Map off steps the whole card aside - title line stays, controls never disabled. The Meziverse mode master keeps its one-line card.
+
+### Label, control, and one quiet dot
+- Rows are one rhythm: 46px, label left, control right, hairline between. The helper sentences are gone - where a row needs a hint it wears a small **i** dot carrying one short sentence, shown on hover, on tap and on keyboard focus (the tap path is real, not hover-only CSS).
+- Prompts, the YouTube key and the "Last request" dumps step behind one quiet fold per card - **Prompts** and **Key & prompt** - closed by default, each standing alone so two sets can be compared. The Transport-interior prompt stays beside its siblings. Actions ("Draw one now", "Open map") sit in a foot strip; the Connections foot carries the test answer beside [Send test call].
+- The eight tracker entries are a 2-column tile grid. Each connection agent is one card: a full-width source segmented control (Current API / Profile / Custom), only the fields that source needs, and its own foot.
+- Tabs wear icons (gear, sparkle, plug, layers); the "Meziverse mode" tab reads **Mode**. Copy is trimmed throughout: labels alone, options shortened (Quiet / Rule / Date / Simple), stepper values wear their units ("1 reply", "3 replies").
+
+### Notes
+- `manifest.json` matches; the synthetic suite stands at 287 tests.
+
 ## 2.9.6 - 2026-11-14
 
 The parking lot opens — and the map learns to travel.
