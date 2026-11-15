@@ -2,7 +2,7 @@
 
 ## 2.9.7 - 2026-11-15
 
-The settings sheet learns to breathe.
+The settings sheet learns to breathe - and the top bar keeps three quiet toggles within reach.
 
 ### Cards, not folds
 - Every group is now a title line (icon, name - and for Backgrounds, Music and Map the master switch) above one always-open card of rows. No more column of closed headers to open one by one: the whole sheet reads at a glance.
