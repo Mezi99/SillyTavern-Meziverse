@@ -16,8 +16,8 @@ The settings sheet learns to breathe.
 - Tabs wear icons (gear, sparkle, plug, layers); the "Meziverse mode" tab reads **Mode**. Copy is trimmed throughout: labels alone, options shortened (Quiet / Rule / Date / Simple), stepper values wear their units ("1 reply", "3 replies").
 
 ### Quick toggles in the top bar
-- The single "Auto BG" pill grows into a small **Auto** group beside the wordmark: **Backgrounds** (the old pill, renamed), **Music** (the same switch as Story requests) and **Map** (the feature's master), each an icon pill wearing the same icon as its settings card. They are the settings' own switches - toggling one lights the other place up at once - so gameplay can flip them without opening the sheet. The Backgrounds and Music pills step aside when their feature's master is off; the Map pill never does, since it is that master.
-- Narrow screens send the group away whole (the settings hold the same switches), which also ends the old pill's habit of crowding the chat title on phones.
+- The single "Auto BG" pill grows into a trio of quiet icon pills beside the wordmark: **Backgrounds** (the old pill, renamed), **Music** (the same switch as Story requests) and **Map** (the feature's master), each wearing its settings card's icon and its name in a tooltip. They are the settings' own switches - toggling one lights the other place up at once - so gameplay can flip them without opening the sheet. The Backgrounds and Music pills step aside when their feature's master is off; the Map pill never does, since it is that master.
+- Below 560px the trio steps away and settings hold the same switches - which also ends the old pill's habit of crowding the chat title on phones.
 
 ### Notes
 - `manifest.json` matches; the synthetic suite stands at 287 tests.

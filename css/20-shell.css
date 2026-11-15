@@ -258,9 +258,10 @@ body.mz-open .popup { z-index: 9500 !important; }
     color: var(--mz-text-dim);
 }
 
-/* The quick toggles ride beside the wordmark: Auto - Backgrounds, Music,
-   Map - each the same switch as its settings row, for play-time access.
-   Narrow screens send them back to settings; they never crowd the title. */
+/* The quick toggles ride beside the wordmark: Backgrounds, Music, Map -
+   quiet icon pills, each the same switch as its settings row, for play-time
+   access. The names ride in their tooltips; narrow screens send them back
+   to settings, where they never crowd the title. */
 .mz-quick-hair {
     align-self: center;
     margin-left: 8px;
@@ -269,23 +270,19 @@ body.mz-open .popup { z-index: 9500 !important; }
 .mz-autoquick {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: 4px;
 }
 
 .mz-qpill {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 2px 9px;
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
     border: 1px solid var(--mz-line);
-    border-radius: var(--mz-r-pill);
+    border-radius: 50%;
     background: transparent;
     color: var(--mz-text-dim);
-    font-family: var(--mz-font-ui);
-    font-size: var(--mz-text-2xs);
-    letter-spacing: .08em;
-    line-height: 1.4;
-    white-space: nowrap;
     cursor: pointer;
     transition:
         color var(--mz-dur) var(--mz-ease),
@@ -296,7 +293,6 @@ body.mz-open .popup { z-index: 9500 !important; }
 .mz-qpill .ico {
     width: 13px;
     height: 13px;
-    flex: none;
 }
 
 .mz-qpill:hover {
@@ -313,8 +309,9 @@ body.mz-open .popup { z-index: 9500 !important; }
 
 .mz-qpill.is-on .ico { color: var(--mz-accent); }
 
-/* No room on narrow screens - the same switches live in settings. */
-@media (max-width: 900px) {
+/* Below phone-landscape width the trio steps away - the same switches
+   live in settings. */
+@media (max-width: 560px) {
     .mz-autoquick,
     .mz-quick-hair { display: none; }
 }
