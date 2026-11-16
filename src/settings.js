@@ -83,6 +83,15 @@ const DEFAULTS = {
     // The full map window's remembered spot and size. Null = centred default.
     mapWinPos: null,
     mapWinSize: null,
+    // The map's land: 'ink' paints the story's terrain under the chart,
+    // 'flat' is the plain chart. The map window's Land chips edit this.
+    mapTerrain: 'ink',
+    // Terrain quality tier: 0 low, 1 medium, 2 high - a pixel budget and
+    // an octave count. A slow frame steps the tier down and remembers it.
+    mapTerrainQ: 2,
+    // Terrain motion: drifting clouds and water shimmer while the map is
+    // open. Off draws one still frame; reduced motion is always still.
+    mapTerrainAnim: false,
     // Story requests: a `<music>` tag in a reply starts playback when the
     // reply lands. Off leaves playback to the player's own input.
     musicAuto: true,

@@ -24,9 +24,9 @@ import {
     travelMode,
 } from './mapdata.js';
 import { recordSrc } from './backgrounds.js';
-import { bgStore, chatMessages, currentChatId, on, personaName } from './st.js';
+import { bgStore, chatMessages, currentChatId, on, personaName, saveTerrainRecord, terrainStore } from './st.js';
 import { mapMiniOn, mapOn, saveSettings, settings } from './settings.js';
-import { createTerrain, deriveTerrainRecord } from './terrain.js';
+import { TERRAIN_QUALITY, createTerrain, deriveTerrainRecord, validateTerrainRecord } from './terrain.js';
 
 const LOG = '[Meziverse map]';
 
@@ -78,7 +78,15 @@ let terrain = null;
 let terrainCanvas = null;
 let terrainStory = null;
 let terrainRaf = 0;
-let mapLook = 'ink';
+let terrainQuality = -1;
+
+/* The terrain record: the map's land as one small JSON per chat - derived
+   by code from the watcher's own pictures and words, kept in the chat's
+   metadata, free for the user to edit. A derived record follows the story
+   as it grows; the moment a hand edits it (or Reseed), it is the user's
+   until they ask for a fresh derivation. */
+let terrainRecordPending = false;
+let terrainDerivedSig = null;
 
 /** The layout the chart is drawing right now: the deck when inside a ship. */
 function activeLayout() {
@@ -87,7 +95,7 @@ function activeLayout() {
 
 /** The land is under the chart: true only where the shader draws. */
 function terrainOn() {
-    return !!terrain && !!terrainCanvas && mapLook !== 'flat' && !insideKey;
+    return !!terrain && !!terrainCanvas && settings().mapTerrain !== 'flat' && !insideKey;
 }
 
 const svg = name => `<svg class="ico" aria-hidden="true"><use href="#mz-i-${name}"/></svg>`;
@@ -962,10 +970,20 @@ function renderWidget() {
     positionWidget();
 }
 
+/** The Land chips say what the settings hold. */
+function syncLookChips() {
+    if (!win) return;
+    const look = settings().mapTerrain === 'flat' ? 'flat' : 'ink';
+    win.querySelectorAll('[data-mz-map-look]').forEach(button => {
+        button.setAttribute('aria-pressed', String(button.dataset.mzMapLook === look));
+    });
+}
+
 function renderWin() {
     if (!win || win.hidden) return;
 
     applyWinPlace();
+    syncLookChips();
     els.depthv.textContent = depthLabel();
 
     if (!atlas) {
@@ -1154,6 +1172,187 @@ function renderDetail() {
 
 /* ---------- the chart on screen: pan and zoom ---------- */
 
+/* ---------- the terrain record ---------- */
+
+/** The world's top-level places - the record's region keys. */
+function terrainRegions() {
+    return (layout?.roots || []).map(root => ({ fold: root.n.fold, name: root.n.name }));
+}
+
+/* What the watcher's pictures were painted from, one bucket per region:
+   every place's name, and the stored background words of the scenes that
+   ended there. */
+function terrainTexts() {
+    const texts = {};
+    for (const item of layout.order) {
+        const node = item.n;
+        let top = node;
+        while (top.parentId) top = atlas.nodes[top.parentId];
+        const bucket = texts[top.fold] || (texts[top.fold] = []);
+        bucket.push(node.name);
+        for (let i = node.visits.length - 1; i >= 0; i -= 1) {
+            const obsIndex = node.visits[i];
+            if (atlas.observations[obsIndex]?.nodeId !== node.id) continue;
+            const prompt = recordFor(obsIndex)?.prompt;
+            if (prompt) {
+                bucket.push(String(prompt));
+                break;
+            }
+        }
+    }
+    return texts;
+}
+
+/* Sampled pixels per picture, kept forever: deriving twice must not
+   re-read every image. */
+const terrainPixels = new Map();
+
+function samplePicture(src) {
+    if (!src) return Promise.resolve([]);
+    if (terrainPixels.has(src)) return terrainPixels.get(src);
+    const promise = new Promise(resolve => {
+        const image = new Image();
+        image.onload = () => {
+            try {
+                const canvas = document.createElement('canvas');
+                canvas.width = 16;
+                canvas.height = 16;
+                const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                ctx.drawImage(image, 0, 0, 16, 16);
+                const data = ctx.getImageData(0, 0, 16, 16).data;
+                const out = [];
+                for (let i = 0; i < data.length; i += 16) out.push([data[i], data[i + 1], data[i + 2]]);
+                resolve(out);
+            } catch {
+                resolve([]); // a tainted canvas: the seeded palette stands in
+            }
+        };
+        image.onerror = () => resolve([]);
+        image.src = src;
+    });
+    terrainPixels.set(src, promise);
+    return promise;
+}
+
+/* A couple of pictures per region is plenty to read a palette from - and
+   the watcher may have painted many. */
+async function terrainSamples() {
+    const samples = {};
+    const jobs = [];
+    for (const root of layout.roots) {
+        const bucket = samples[root.n.fold] = [];
+        let taken = 0;
+        for (const node of [root.n, ...descend(root.n)]) {
+            if (taken >= 2) break;
+            let src = '';
+            for (let i = node.visits.length - 1; i >= 0; i -= 1) {
+                const obsIndex = node.visits[i];
+                if (atlas.observations[obsIndex]?.nodeId !== node.id) continue;
+                src = recordSrc(recordFor(obsIndex));
+                if (src) break;
+            }
+            if (!src) continue;
+            taken += 1;
+            jobs.push(samplePicture(src).then(pixels => bucket.push(...pixels)));
+        }
+    }
+    await Promise.all(jobs);
+    return samples;
+}
+
+/** The record this chat's land deserves, derived whole by code. */
+async function deriveRecordForChat() {
+    return {
+        ...deriveTerrainRecord({
+            regions: terrainRegions(),
+            textsByRegion: terrainTexts(),
+            samplesByRegion: await terrainSamples(),
+            observations: atlas.observations || [],
+        }),
+        auto: true,
+    };
+}
+
+/* The record to draw with: the user's if they have taken the pen, the
+   derived one while it follows the story, and a fresh derivation asked for
+   in the background the moment the story grows past its record. */
+function terrainRecordForDraw(signature) {
+    const stored = terrainStore();
+    if (stored && stored.auto === false) return stored;
+    if (stored && terrainDerivedSig === signature) return stored;
+    if (!terrainRecordPending) {
+        terrainRecordPending = true;
+        const chatSig = lastSignature;
+        deriveRecordForChat().then(record => {
+            terrainRecordPending = false;
+            if (!record || lastSignature !== chatSig) return;
+            if (terrainStore()?.auto === false) return; // the user took the pen
+            const same = terrainStore() && JSON.stringify(terrainStore()) === JSON.stringify(record);
+            terrainDerivedSig = signature;
+            if (!same) {
+                saveTerrainRecord(record);
+                terrainStory = null; // the land re-reads the record next frame
+                scheduleTerrain();
+            }
+        }).catch(error => {
+            terrainRecordPending = false;
+            console.warn('[Meziverse map] terrain record:', error);
+        });
+    }
+    return stored || null;
+}
+
+/** The terrain record for the open chat, or null before one exists. */
+export function terrainRecordView() {
+    return terrainStore() || null;
+}
+
+/**
+ * Saves a hand-edited terrain record. The map follows at once.
+ *
+ * @param {string|object} input JSON text or a parsed record
+ * @returns {{ok:true, record:object}|{ok:false, error:string}}
+ */
+export function writeTerrainRecord(input) {
+    const result = validateTerrainRecord(input);
+    if (!result.ok) return result;
+    const record = { ...result.record, auto: false };
+    saveTerrainRecord(record);
+    terrainStory = null;
+    scheduleTerrain();
+    return { ok: true, record };
+}
+
+/** Reseed the noise behind the land - same story, new shores. */
+export function reseedTerrainRecord() {
+    const current = terrainStore();
+    if (!current) return rederiveTerrainRecord();
+    const record = { ...current, seed: (Number(current.seed) || 0) + 1, auto: false };
+    saveTerrainRecord(record);
+    terrainStory = null;
+    scheduleTerrain();
+    return { ok: true, record };
+}
+
+/** Throw the record away and derive a fresh one from the story as it is. */
+export async function rederiveTerrainRecord() {
+    if (!atlas || !layout) return null;
+    const signature = `${lastSignature}|${layoutDepth}`;
+    terrainDerivedSig = null;
+    try {
+        const record = await deriveRecordForChat();
+        if (!record) return null;
+        terrainDerivedSig = signature;
+        saveTerrainRecord(record);
+        terrainStory = null;
+        scheduleTerrain();
+        return record;
+    } catch (error) {
+        console.warn('[Meziverse map] terrain record:', error);
+        return null;
+    }
+}
+
 /* ---------- the land under the chart ---------- */
 
 function ensureTerrain() {
@@ -1206,16 +1405,16 @@ function drawTerrain() {
     const signature = `${lastSignature}|${layoutDepth}`;
     if (terrainStory !== signature) {
         terrainStory = signature;
-        terrain.updateScene({
-            layout,
-            atlas,
-            derived,
-            record: deriveTerrainRecord({
-                regions: (layout.roots || []).map(root => ({ fold: root.n.fold, name: root.n.name })),
-                observations: atlas.observations || [],
-            }),
-        });
+        terrain.updateScene({ layout, atlas, derived, record: terrainRecordForDraw(signature) });
     }
+    /* quality: the settings row speaks, a slow frame steps down and is
+       remembered - one land, whatever the GPU can carry */
+    const wantQuality = Math.max(0, Math.min(TERRAIN_QUALITY.length - 1, Number(settings().mapTerrainQ) || 0));
+    if (wantQuality !== terrainQuality) {
+        terrainQuality = wantQuality;
+        terrain.setQuality(wantQuality);
+    }
+    const animate = settings().mapTerrainAnim && !settings().reducedMotion;
     terrain.draw({
         width: els.stage.clientWidth,
         height: els.stage.clientHeight,
@@ -1223,7 +1422,16 @@ function drawTerrain() {
         tx: view.tx,
         ty: view.ty,
         s: view.s,
+        time: animate ? performance.now() / 1000 : 0,
     });
+    if (terrain.quality !== terrainQuality) {
+        terrainQuality = terrain.quality;
+        settings().mapTerrainQ = terrain.quality;
+        saveSettings();
+    }
+    // how many frames the land has drawn - the quiet proof it is alive
+    terrainCanvas.dataset.draws = String((Number(terrainCanvas.dataset.draws) || 0) + 1);
+    if (animate) scheduleTerrain();
 }
 
 function drawChart() {
@@ -1734,8 +1942,8 @@ function wireWin() {
             view.placed = false;
             renderWin();
         } else if (button.dataset.mzMapLook) {
-            mapLook = button.dataset.mzMapLook;
-            win.querySelectorAll('[data-mz-map-look]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mzMapLook === mapLook)));
+            settings().mapTerrain = button.dataset.mzMapLook;
+            saveSettings();
             renderWin();
         } else if (button.dataset.mzMapLayer) {
             if (button.dataset.mzMapLayer === 'trails') trails = !trails;
