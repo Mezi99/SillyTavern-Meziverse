@@ -12,6 +12,8 @@ import {
     splitAspect,
     splitMapChain,
     travelMode,
+    walkedPath,
+    walkedPoints,
 } from '../src/mapdata.js';
 
 const obs = (...chains) => chains.map((chain, i) => ({
@@ -752,4 +754,24 @@ test('layoutAtlas: a vehicle\u2019s rooms live on its deck, never on the world c
     const deck = layoutAtlas(atlas, { depth: 99, inside: ship.id });
     assert.deepEqual(deck.order.map(item => item.n.name).sort(), ['Bunk Room', 'CV-7742 Shuttle', 'Cockpit']);
     assert.ok(deck.order.filter(item => item.pin).some(item => item.n.name === 'Cockpit'), 'the rooms are pins on the deck');
+});
+
+test('walkedPoints: a path that wanders but always lands on its places', () => {
+    const pts = walkedPoints(0, 0, 100, 0, 42, 10, 8);
+    assert.equal(pts.length, 9);
+    assert.deepEqual(pts[0], [0, 0], 'lands exactly where it started');
+    assert.deepEqual(pts[pts.length - 1], [100, 0], 'lands exactly on the place');
+    assert.deepEqual(pts, walkedPoints(0, 0, 100, 0, 42, 10, 8), 'same journey, same walk');
+    assert.notDeepEqual(pts, walkedPoints(0, 0, 100, 0, 43, 10, 8), 'another journey, another walk');
+    for (const [, y] of pts) assert.ok(Math.abs(y) <= 12, `the wander stays near the line: ${y}`);
+    // the wander fades at the ends - the first step is already tighter
+    const mid = pts[Math.floor(pts.length / 2)];
+    assert.ok(Math.abs(mid[1]) > 0, 'the path wanders in the middle');
+});
+
+test('walkedPath: an SVG path from place to place', () => {
+    const d = walkedPath(0, 0, 100, 50, 7, 12, 8);
+    assert.match(d, /^M0 0Q/);
+    assert.match(d, /L100 50$/);
+    assert.ok(d.includes('Q'), 'the walk bends between its steps');
 });

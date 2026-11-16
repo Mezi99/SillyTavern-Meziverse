@@ -81,6 +81,14 @@
 .mzc-leg { fill: none; stroke: var(--mzc-trail); stroke-opacity: .42; stroke-dasharray: 2 7; stroke-linecap: round; pointer-events: none; vector-effect: non-scaling-stroke; }
 .mzc-leg.is-sel { stroke-opacity: .95; }
 .mzc-leg.is-last { stroke-opacity: .95; stroke-dasharray: 9 7; stroke-width: 2.6px; animation: mzc-flow 1.6s linear infinite; }
+/* the trail waits for a closer look: zoomed all the way out the journey
+   lines are dots among dots - the stop marks and the ships carry the story
+   there. Dashes breathe with the zoom so they never blob. */
+[data-mz-map-chart] .mzc[data-zoom="0"] .mzc-legs,
+[data-mz-map-chart] .mzc[data-zoom="0"] .mzc-ties,
+[data-mz-map-chart] .mzc[data-zoom="0"] .mzc-open { display: none; }
+[data-mz-map-chart] .mzc[data-zoom="1"] .mzc-leg { stroke-dasharray: 1.5 5; }
+[data-mz-map-chart] .mzc[data-zoom="1"] .mzc-leg.is-last { stroke-dasharray: 6 5; }
 @keyframes mzc-flow { to { stroke-dashoffset: -32; } }
 
 .mzc-mode circle { fill: var(--mz-surface-solid); stroke: var(--mzc-trail); stroke-opacity: .6; stroke-width: 1.2; vector-effect: non-scaling-stroke; }

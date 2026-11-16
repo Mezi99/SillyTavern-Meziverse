@@ -22,6 +22,7 @@ import {
     hashFold,
     layoutAtlas,
     travelMode,
+    walkedPath,
 } from './mapdata.js';
 import { recordSrc } from './backgrounds.js';
 import { bgStore, chatMessages, currentChatId, on, personaName, saveTerrainRecord, terrainStore } from './st.js';
@@ -762,12 +763,13 @@ function renderChart(mode) {
         const dy = to.ay - from.ay;
         const len = Math.hypot(dx, dy) || 1;
         const bow = (nth % 2 ? -1 : 1) * (0.16 + nth * 0.08) * len * (hashFold(pairKey) % 2 ? 1 : -1);
-        const mx = (from.ax + to.ax) / 2 - dy / len * bow;
-        const my = (from.ay + to.ay) / 2 + dx / len * bow;
-        const width = Math.min(3.4, 1.4 + leg.count * 0.45);
+        const width = Math.min(2.2, 1.2 + leg.count * 0.25);
         const isLast = leg.key === lastKey;
 
-        legSvg.push(`<path class="mzc-leg${isLast ? ' is-last' : ''}${sel && (leg.a === sel || leg.b === sel) ? ' is-sel' : ''}" d="M${f1(from.ax)} ${f1(from.ay)}Q${f1(mx)} ${f1(my)} ${f1(to.ax)} ${f1(to.ay)}" style="stroke-width:${f1(width)}px"/>`);
+        // a walked path, not a ruled line: the journey wanders like a
+        // footpath and lands exactly on both places
+        const d = walkedPath(from.ax, from.ay, to.ax, to.ay, hashFold(pairKey) + nth * 977, bow);
+        legSvg.push(`<path class="mzc-leg${isLast ? ' is-last' : ''}${sel && (leg.a === sel || leg.b === sel) ? ' is-sel' : ''}" d="${d}" style="stroke-width:${f1(width)}px"/>`);
     });
     parts.push(`<g class="mzc-legs">${legSvg.join('')}</g>`);
 
@@ -1492,14 +1494,28 @@ function applyTransform() {
     scheduleTerrain();
 }
 
+/** The scale fit() would pick. The zoom floor lives just below it, so every
+    map can always zoom back out to its own fitted world - a house and a
+    travel world keep their own floors. */
+function fitScale() {
+    const width = els.stage.clientWidth;
+    const height = els.stage.clientHeight;
+    const bounds = activeLayout().bounds;
+    const margin = 70;
+    return Math.max(0.02, Math.min(1.25,
+        Math.min((width - margin * 2) / Math.max(1, bounds.x1 - bounds.x0),
+            (height - margin * 2) / Math.max(1, bounds.y1 - bounds.y0))));
+}
+
+const zoomMin = () => Math.min(0.35, fitScale() * 0.85);
+
 function fit() {
     const width = els.stage.clientWidth;
     const height = els.stage.clientHeight;
     const bounds = activeLayout().bounds;
     const spanX = bounds.x1 - bounds.x0;
     const spanY = bounds.y1 - bounds.y0;
-    const margin = 70;
-    view.s = Math.min(1.25, Math.min((width - margin * 2) / spanX, (height - margin * 2) / spanY));
+    view.s = fitScale();
     view.tx = width / 2 - (bounds.x0 + spanX / 2) * view.s;
     view.ty = height / 2 - (bounds.y0 + spanY / 2) * view.s + 16;
 }
@@ -1515,7 +1531,7 @@ function centerOn(x, y, scale) {
 function zoomBy(direction) {
     const width = els.stage.clientWidth / 2;
     const height = els.stage.clientHeight / 2;
-    const next = clamp(view.s * (direction > 0 ? 1.35 : 1 / 1.35), 0.35, 6);
+    const next = clamp(view.s * (direction > 0 ? 1.35 : 1 / 1.35), zoomMin(), 6);
     if (insideKey && next < insideBaseS * 0.82) {
         // zooming out of a ship's deck lands back on the world map
         exitInside();
@@ -1608,7 +1624,7 @@ function bindChart() {
         const px = event.clientX - rect.left;
         const py = event.clientY - rect.top;
         const factor = Math.exp(-event.deltaY * 0.0016);
-        const next = clamp(view.s * factor, 0.35, 6);
+        const next = clamp(view.s * factor, zoomMin(), 6);
         if (insideKey && next < insideBaseS * 0.82) {
             exitInside();
             return;

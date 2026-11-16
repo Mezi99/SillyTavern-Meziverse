@@ -974,6 +974,59 @@ function randomFrom(seed) {
 }
 
 /**
+ * The points of a WALKED path between two places: a bowed line that wanders
+ * like a footpath instead of ruling straight across the map. The wander is
+ * seeded (the same journey always walks the same way) and fades to nothing
+ * at both ends, so the path lands exactly on its nodes - it can never spill
+ * outside them.
+ *
+ * @param {number} ax @param {number} ay start
+ * @param {number} bx @param {number} by end
+ * @param {number} seed the journey's seed (same trip, same walk)
+ * @param {number} [bow] how far the path bows sideways (signed, world units)
+ * @param {number} [steps] how many wander samples along the way
+ * @returns {Array<[number, number]>} points from start to end
+ */
+export function walkedPoints(ax, ay, bx, by, seed, bow = 0, steps = 8) {
+    const dx = bx - ax;
+    const dy = by - ay;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len;
+    const ny = dx / len;
+    const rand = randomFrom(seed);
+    const points = [];
+    for (let i = 0; i <= steps; i += 1) {
+        const t = i / steps;
+        // the bow is the journey's arc; the wander is the walker - both
+        // vanish at the endpoints
+        const fade = Math.sin(Math.PI * t);
+        const offset = bow * fade + (rand() - 0.5) * len * 0.06 * fade;
+        points.push([ax + dx * t + nx * offset, ay + dy * t + ny * offset]);
+    }
+    points[0] = [ax, ay];
+    points[points.length - 1] = [bx, by];
+    return points;
+}
+
+/**
+ * `walkedPoints` as a smooth SVG path (quadratics through the midpoints).
+ *
+ * @returns {string} the `d` attribute
+ */
+export function walkedPath(ax, ay, bx, by, seed, bow = 0, steps = 8) {
+    const pts = walkedPoints(ax, ay, bx, by, seed, bow, steps);
+    const r1 = value => Math.round(value * 10) / 10;
+    let d = `M${r1(pts[0][0])} ${r1(pts[0][1])}`;
+    for (let i = 1; i < pts.length - 1; i += 1) {
+        const mx = (pts[i][0] + pts[i + 1][0]) / 2;
+        const my = (pts[i][1] + pts[i + 1][1]) / 2;
+        d += `Q${r1(pts[i][0])} ${r1(pts[i][1])} ${r1(mx)} ${r1(my)}`;
+    }
+    const last = pts[pts.length - 1];
+    return `${d}L${r1(last[0])} ${r1(last[1])}`;
+}
+
+/**
  * Places items around the origin in the order given - story order, never
  * size order. Append-only is what makes the layout grow without moving: an
  * item's slot is computed from its seed and the items that came before it,

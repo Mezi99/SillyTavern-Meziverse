@@ -27,7 +27,7 @@
  * only Reseed changes the noise behind it.
  */
 
-import { hashFold } from './mapdata.js';
+import { hashFold, walkedPoints } from './mapdata.js';
 
 /* ---------- numbers ---------- */
 
@@ -413,6 +413,7 @@ export function fogReveal(layout, atlas, derived) {
         if (!from || !to) continue;
         ribbons.push({
             ax: from.ax, ay: from.ay, bx: to.ax, by: to.ay,
+            seed: hashFold(leg.key || `${leg.a}|${leg.b}`),
             w: r2(clamp(0.42 + 0.12 * (leg.count || 1), 0.42, 1)),
         });
     }
@@ -729,13 +730,15 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
             ctx.fillStyle = gradient;
             ctx.fillRect(x - r, y - r, r * 2, r * 2);
         };
-        const line = (ctx, ax, ay, bx, by, width, alpha) => {
+        /* walked, not ruled: the story's paths wander like footpaths */
+        const walk = (ctx, points, width, alpha) => {
             ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
             ctx.lineWidth = Math.max(1, width);
+            ctx.lineJoin = 'round';
             ctx.lineCap = 'round';
             ctx.beginPath();
-            ctx.moveTo(ax, ay);
-            ctx.lineTo(bx, by);
+            ctx.moveTo(toX(points[0][0]), toY(points[0][1]));
+            for (let i = 1; i < points.length; i += 1) ctx.lineTo(toX(points[i][0]), toY(points[i][1]));
             ctx.stroke();
         };
 
@@ -769,7 +772,7 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
             const rb = rootOf(leg.b);
             if (!ra || ra.id !== rb?.id) continue;
             if (Math.hypot(a.ax - b.ax, a.ay - b.ay) > 340) continue;
-            line(passes[1].ctx, toX(a.ax), toY(a.ay), toX(b.ax), toY(b.ay), 2.5 * scale, 0.9);
+            walk(passes[1].ctx, walkedPoints(a.ax, a.ay, b.ax, b.ay, hashFold(leg.key || `${leg.a}|${leg.b}`), 0, 6), 1.8 * scale, 0.9);
         }
 
         /* reveal: the fog the trail earns */
@@ -778,7 +781,7 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
             glow(passes[2].ctx, toX(spot.ax), toY(spot.ay), spot.r * scale, spot.w);
         }
         for (const ribbon of reveal.ribbons) {
-            line(passes[2].ctx, toX(ribbon.ax), toY(ribbon.ay), toX(ribbon.bx), toY(ribbon.by),
+            walk(passes[2].ctx, walkedPoints(ribbon.ax, ribbon.ay, ribbon.bx, ribbon.by, ribbon.seed || 1, 0, 6),
                 (60 + 150 * ribbon.w) * scale, 0.85);
         }
 
