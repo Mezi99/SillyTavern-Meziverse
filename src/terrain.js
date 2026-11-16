@@ -27,7 +27,7 @@
  * only Reseed changes the noise behind it.
  */
 
-import { hashFold, walkedPoints } from './mapdata.js';
+import { hashFold, trailWalks } from './mapdata.js';
 
 /* ---------- numbers ---------- */
 
@@ -398,23 +398,23 @@ export function weatherFx(text) {
  * @param {object} layout `layoutAtlas` output (items with ax/ay/r)
  * @param {object} atlas `buildAtlas` output (nodes carry visits/stops/kind)
  * @param {object} derived `deriveLegs` output (legs, nowId)
+ * @param {Array<object>} [walks] `trailWalks` output - the map's own walks,
+ *        so the cleared corridor follows the dotted trail exactly (derived
+ *        here from the layout when omitted)
  * @returns {{spots:Array<{id:string,ax:number,ay:number,r:number,w:number}>,
- *            ribbons:Array<{ax:number,ay:number,bx:number,by:number,w:number}>}}
+ *            ribbons:Array<{pts:Array<[number,number]>,w:number}>}}
  */
-export function fogReveal(layout, atlas, derived) {
+export function fogReveal(layout, atlas, derived, walks = null) {
     const spots = [];
     const ribbons = [];
     const items = (layout && layout.items) || {};
     const nodes = (atlas && atlas.nodes) || {};
 
-    for (const leg of (derived && derived.legs) || []) {
-        const from = items[leg.a];
-        const to = items[leg.b];
-        if (!from || !to) continue;
+    const trail = walks || trailWalks((derived && derived.legs) || [], id => items[id]);
+    for (const walk of trail) {
         ribbons.push({
-            ax: from.ax, ay: from.ay, bx: to.ax, by: to.ay,
-            seed: hashFold(leg.key || `${leg.a}|${leg.b}`),
-            w: r2(clamp(0.42 + 0.12 * (leg.count || 1), 0.42, 1)),
+            pts: walk.pts,
+            w: r2(clamp(0.42 + 0.12 * (walk.leg.count || 1), 0.42, 1)),
         });
     }
 
@@ -564,7 +564,11 @@ void main(){
   vec3 lightDir=normalize(vec3(uSun.x*.8-.45,-uSun.y*.8-.45,max(uSun.z,.15)+.55));
   float sh=clamp(dot(nrm,lightDir),0.,1.);
   float isWater=1.-ss(.296,.304,h0);
-  float road=story.g*(1.-isWater);
+  /* the road: the baked ridge, thresholded crisp at any zoom - with a
+     little wobble so the line reads hand-trodden */
+  float rg=story.g+(vn(sp*.05)-.5)*.12;
+  float aa=fwidth(rg)*2.+1e-4;
+  float road=smoothstep(.42-aa,.42+aa,rg)*(1.-isWater);
   vec4 P=uRegP[rid];
   vec3 Lc=uRC[rid*3],Fc=uRC[rid*3+1],Hc=uRC[rid*3+2];
   float hh=h0-.30;
@@ -702,7 +706,7 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
        One texture, three channels: town glow (R), roads (G), fog reveal (B).
        Painted with canvas gradients - cheap, and the shader never loops the
        story no matter how many places it grows. */
-    const bakeStory = ({ layout, atlas, derived, record }) => {
+    const bakeStory = ({ layout, atlas, derived, walks = null, record = null }) => {
         const bounds = layout.bounds || { x0: -500, x1: 500, y0: -500, y1: 500 };
         const margin = 260;
         const rect = [bounds.x0 - margin, bounds.y0 - margin,
@@ -711,6 +715,7 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
         const toX = x => (x - rect[0]) / rect[2] * size;
         const toY = y => (y - rect[1]) / rect[3] * size;
         const scale = Math.min(rect[2], rect[3]) > 0 ? size / Math.max(rect[2], rect[3]) : 1;
+        const trail = walks || trailWalks((derived && derived.legs) || [], id => layout.items[id]);
 
         const passes = [];
         for (let channel = 0; channel < 3; channel += 1) {
@@ -730,7 +735,8 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
             ctx.fillStyle = gradient;
             ctx.fillRect(x - r, y - r, r * 2, r * 2);
         };
-        /* walked, not ruled: the story's paths wander like footpaths */
+        /* walked, not ruled: the story's paths wander like footpaths -
+           drawn smooth, the same curve the SVG trail draws */
         const walk = (ctx, points, width, alpha) => {
             ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
             ctx.lineWidth = Math.max(1, width);
@@ -738,8 +744,21 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
             ctx.lineCap = 'round';
             ctx.beginPath();
             ctx.moveTo(toX(points[0][0]), toY(points[0][1]));
-            for (let i = 1; i < points.length; i += 1) ctx.lineTo(toX(points[i][0]), toY(points[i][1]));
+            for (let i = 1; i < points.length - 1; i += 1) {
+                const mx = (points[i][0] + points[i + 1][0]) / 2;
+                const my = (points[i][1] + points[i + 1][1]) / 2;
+                ctx.quadraticCurveTo(toX(points[i][0]), toY(points[i][1]), toX(mx), toY(my));
+            }
+            const last = points[points.length - 1];
+            ctx.lineTo(toX(last[0]), toY(last[1]));
             ctx.stroke();
+        };
+        /* the road: a soft ridge of stacked strokes (in texels), which the
+           shader thresholds - a thin stroke would be a sub-texel smear at
+           2.5 world units per texel, the threshold keeps it crisp at any
+           zoom and as close to the mockup's fine line as texels allow */
+        const ridge = (ctx, points) => {
+            for (const [w, a] of [[5, 0.16], [3.5, 0.22], [2.5, 0.3], [1.6, 0.4]]) walk(ctx, points, w, a);
         };
 
         /* towns: the glow of places - pins bright, their lands dim */
@@ -758,31 +777,29 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
             }
         }
 
-        /* roads: the same-region legs the story walked */
+        /* roads: the same-region legs the story walked - the very walk the
+           dotted trail draws, or the lit road would run beside it */
         const rootOf = id => {
             let node = atlas.nodes[id];
             while (node && node.parentId) node = atlas.nodes[node.parentId];
             return node;
         };
-        for (const leg of (derived && derived.legs) || []) {
-            const a = layout.items[leg.a];
-            const b = layout.items[leg.b];
-            if (!a || !b) continue;
+        for (const step of trail) {
+            const { leg, from, to } = step;
             const ra = rootOf(leg.a);
             const rb = rootOf(leg.b);
             if (!ra || ra.id !== rb?.id) continue;
-            if (Math.hypot(a.ax - b.ax, a.ay - b.ay) > 340) continue;
-            walk(passes[1].ctx, walkedPoints(a.ax, a.ay, b.ax, b.ay, hashFold(leg.key || `${leg.a}|${leg.b}`), 0, 6), 1.8 * scale, 0.9);
+            if (Math.hypot(from.ax - to.ax, from.ay - to.ay) > 340) continue;
+            ridge(passes[1].ctx, step.pts);
         }
 
         /* reveal: the fog the trail earns */
-        const reveal = fogReveal(layout, atlas, derived);
+        const reveal = fogReveal(layout, atlas, derived, trail);
         for (const spot of reveal.spots) {
             glow(passes[2].ctx, toX(spot.ax), toY(spot.ay), spot.r * scale, spot.w);
         }
         for (const ribbon of reveal.ribbons) {
-            walk(passes[2].ctx, walkedPoints(ribbon.ax, ribbon.ay, ribbon.bx, ribbon.by, ribbon.seed || 1, 0, 6),
-                (60 + 150 * ribbon.w) * scale, 0.85);
+            walk(passes[2].ctx, ribbon.pts, (60 + 150 * ribbon.w) * scale, 0.85);
         }
 
         /* the three channels, one texture */
@@ -808,9 +825,11 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
      * @param {object} sceneIn.layout `layoutAtlas` output
      * @param {object} sceneIn.atlas `buildAtlas` output
      * @param {object} [sceneIn.derived] `deriveLegs` output
+     * @param {Array<object>} [sceneIn.walks] `trailWalks` output - the map's
+     *        own walks, so the roads and corridors follow the dotted trail
      * @param {object} [sceneIn.record] the terrain record (see the module doc)
      */
-    const updateScene = ({ layout, atlas, derived = null, record = null }) => {
+    const updateScene = ({ layout, atlas, derived = null, walks = null, record = null }) => {
         const roots = (layout.roots || []).slice(0, 24);
         const reg = new Float32Array(24 * 4);
         const regB = new Float32Array(24 * 4);
@@ -826,7 +845,7 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
             regP.set([region.rugged, region.forest, region.water, 0], i * 4);
             (region.colors || []).slice(0, 3).forEach((color, k) => rc.set(hexToRgb(color), i * 9 + k * 3));
         });
-        const storyRect = bakeStory({ layout, atlas, derived, record });
+        const storyRect = bakeStory({ layout, atlas, derived, walks, record });
         const rec = record || {};
         scene = {
             reg, regB, regP, rc,

@@ -12,6 +12,7 @@ import {
     splitAspect,
     splitMapChain,
     travelMode,
+    trailWalks,
     walkedPath,
     walkedPoints,
     worldMatrix,
@@ -786,4 +787,38 @@ test('worldMatrix: the transform carries the exact scale the land is drawn at', 
     assert.ok(Math.abs(Number(t[2]) - 88.888) < 0.011, 'ty survives');
     // a rounded scale would slide the chart off the land at any odd zoom
     assert.notEqual(m, 'translate(-237.4px,88.9px) scale(0.4)');
+});
+
+test('trailWalks: one journey, one walk everywhere', () => {
+    const items = {
+        a: { n: { id: 'a' }, ax: 0, ay: 0 },
+        b: { n: { id: 'b' }, ax: 100, ay: 0 },
+    };
+    const pointFor = id => items[id] || null;
+    const leg = { a: 'a', b: 'b', key: 'a|b', dir: ['a', 'b'], count: 1 };
+    const [w] = trailWalks([leg], pointFor);
+    assert.ok(w, 'the walk resolves');
+    assert.deepEqual(w.pts[0], [0, 0], 'lands exactly on the first place');
+    assert.deepEqual(w.pts[w.pts.length - 1], [100, 0], 'lands exactly on the second');
+    assert.match(w.d, /^M0 0/);
+    const [again] = trailWalks([leg], pointFor);
+    assert.deepEqual(again.pts, w.pts, 'seeded: the same journey walks the same way');
+    assert.equal(trailWalks([{ a: 'x', b: 'y', key: 'x|y', dir: ['x', 'y'] }], pointFor).length, 0,
+        'ends that left the map are skipped, not fatal');
+});
+
+test('trailWalks: repeat journeys bow apart, never on top of each other', () => {
+    const items = {
+        a: { n: { id: 'a' }, ax: 0, ay: 0 },
+        b: { n: { id: 'b' }, ax: 100, ay: 0 },
+    };
+    const pointFor = id => items[id] || null;
+    const legs = [1, 2].map(count => ({ a: 'a', b: 'b', key: 'a|b', dir: ['a', 'b'], count }));
+    const walks = trailWalks(legs, pointFor);
+    assert.equal(walks.length, 2);
+    assert.notDeepEqual(walks[0].pts, walks[1].pts, 'the second walk bows the other way');
+    for (const w of walks) {
+        assert.deepEqual(w.pts[0], [0, 0], 'still lands on its places');
+        assert.deepEqual(w.pts[w.pts.length - 1], [100, 0], 'still lands on its places');
+    }
 });

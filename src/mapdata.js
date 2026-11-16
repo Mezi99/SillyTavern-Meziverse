@@ -1009,6 +1009,46 @@ export function walkedPoints(ax, ay, bx, by, seed, bow = 0, steps = 8) {
 }
 
 /**
+ * One walk per journey leg - the single source behind the dotted trail,
+ * the lit road and the fog corridor. The walk wanders like a footpath
+ * (seeded: the same journey always walks the same way) and lands exactly
+ * on both places. Endpoints resolve through `pointFor` so every consumer
+ * lands on the same marks - trail stops included - and the same journey
+ * draws one line everywhere it appears.
+ *
+ * @param {Array<object>} legs `deriveLegs` output (legs carry dir/key/count)
+ * @param {(id:string) => ({ax:number,ay:number}|null)} pointFor endpoint resolver
+ * @returns {Array<{leg:object, from:object, to:object,
+ *                  pts:Array<[number,number]>, d:string}>}
+ */
+export function trailWalks(legs, pointFor) {
+    const seen = new Map();
+    const out = [];
+    for (const leg of legs || []) {
+        const dir = leg.dir || [leg.a, leg.b];
+        const from = pointFor(dir[0]);
+        const to = pointFor(dir[1]);
+        if (!from || !to || from === to) continue;
+        const pairKey = leg.key || [dir[0], dir[1]].sort().join('|');
+        const nth = seen.get(pairKey) || 0;
+        seen.set(pairKey, nth + 1);
+        const dx = to.ax - from.ax;
+        const dy = to.ay - from.ay;
+        const len = Math.hypot(dx, dy) || 1;
+        const bow = (nth % 2 ? -1 : 1) * (0.16 + nth * 0.08) * len * (hashFold(pairKey) % 2 ? 1 : -1);
+        const seed = hashFold(pairKey) + nth * 977;
+        out.push({
+            leg,
+            from,
+            to,
+            pts: walkedPoints(from.ax, from.ay, to.ax, to.ay, seed, bow),
+            d: walkedPath(from.ax, from.ay, to.ax, to.ay, seed, bow),
+        });
+    }
+    return out;
+}
+
+/**
  * The world group's CSS transform, at full precision. The terrain canvas is
  * drawn with the same view values, so rounding here would slide the chart
  * off the land - every zoom tick would move the pins relative to the coast.

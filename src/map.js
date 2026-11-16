@@ -22,7 +22,7 @@ import {
     hashFold,
     layoutAtlas,
     travelMode,
-    walkedPath,
+    trailWalks,
     worldMatrix,
 } from './mapdata.js';
 import { recordSrc } from './backgrounds.js';
@@ -81,6 +81,7 @@ let terrainCanvas = null;
 let terrainStory = null;
 let terrainRaf = 0;
 let terrainQuality = -1;
+let chartWalks = null;
 
 /* The terrain record: the map's land as one small JSON per chat - derived
    by code from the watcher's own pictures and words, kept in the chat's
@@ -744,32 +745,20 @@ function renderChart(mode) {
     });
     parts.push(`<g class="mzc-names">${names.join('')}</g>`);
 
-    /* journeys: dotted legs, thicker the more travelled, the latest flowing */
+    /* journeys: dotted legs, thicker the more travelled, the latest flowing.
+       The walks are shared with the terrain's roads and fog corridors - one
+       journey, one line everywhere it appears on the map. */
     const legSvg = [];
     const recent = derived.legs.slice().sort((a, b) => b.order - a.order);
     const lastKey = recent[0] && recent[0].key;
     const shown = new Set(mini ? recent.slice(0, 4).map(leg => leg.key) : derived.legs.map(leg => leg.key));
-    const seen = new Map();
-    derived.legs.forEach(leg => {
+    const walks = trailWalks(derived.legs, pointFor);
+    if (!deck) chartWalks = walks;
+    walks.forEach(({ leg, d }) => {
         if (deck || !trails || !shown.has(leg.key)) return;
-        const from = pointFor(leg.dir[0]);
-        const to = pointFor(leg.dir[1]);
-        if (!from || !to || from === to) return;
-
-        const pairKey = [from.n.id, to.n.id].sort().join('|');
-        const nth = seen.get(pairKey) || 0;
-        seen.set(pairKey, nth + 1);
-
-        const dx = to.ax - from.ax;
-        const dy = to.ay - from.ay;
-        const len = Math.hypot(dx, dy) || 1;
-        const bow = (nth % 2 ? -1 : 1) * (0.16 + nth * 0.08) * len * (hashFold(pairKey) % 2 ? 1 : -1);
         const width = Math.min(2.2, 1.2 + leg.count * 0.25);
         const isLast = leg.key === lastKey;
 
-        // a walked path, not a ruled line: the journey wanders like a
-        // footpath and lands exactly on both places
-        const d = walkedPath(from.ax, from.ay, to.ax, to.ay, hashFold(pairKey) + nth * 977, bow);
         legSvg.push(`<path class="mzc-leg${isLast ? ' is-last' : ''}${sel && (leg.a === sel || leg.b === sel) ? ' is-sel' : ''}" d="${d}" style="stroke-width:${f1(width)}px"/>`);
     });
     parts.push(`<g class="mzc-legs">${legSvg.join('')}</g>`);
@@ -1419,7 +1408,7 @@ function drawTerrain() {
     const signature = `${lastSignature}|${layoutDepth}`;
     if (terrainStory !== signature) {
         terrainStory = signature;
-        terrain.updateScene({ layout, atlas, derived, record: terrainRecordForDraw(signature) });
+        terrain.updateScene({ layout, atlas, derived, walks: chartWalks, record: terrainRecordForDraw(signature) });
     }
     /* quality: the settings row speaks, a slow frame steps down and is
        remembered - one land, whatever the GPU can carry */
