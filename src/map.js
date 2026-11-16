@@ -26,6 +26,7 @@ import {
 import { recordSrc } from './backgrounds.js';
 import { bgStore, chatMessages, currentChatId, on, personaName } from './st.js';
 import { mapMiniOn, mapOn, saveSettings, settings } from './settings.js';
+import { createTerrain, deriveTerrainRecord } from './terrain.js';
 
 const LOG = '[Meziverse map]';
 
@@ -69,9 +70,24 @@ let deckLayout = null;
 let insideBaseS = 1;
 let lastSize = null;
 
+/* The land under the chart: a shader canvas behind the SVG, decoration
+   only - every hit-test stays on the map above it. The Flat look is
+   today's chart, and the flat chart is also where the map lives whenever
+   the land cannot draw (no WebGL, a lost context, the deck). */
+let terrain = null;
+let terrainCanvas = null;
+let terrainStory = null;
+let terrainRaf = 0;
+let mapLook = 'ink';
+
 /** The layout the chart is drawing right now: the deck when inside a ship. */
 function activeLayout() {
     return insideKey && deckLayout ? deckLayout : layout;
+}
+
+/** The land is under the chart: true only where the shader draws. */
+function terrainOn() {
+    return !!terrain && !!terrainCanvas && mapLook !== 'flat' && !insideKey;
 }
 
 const svg = name => `<svg class="ico" aria-hidden="true"><use href="#mz-i-${name}"/></svg>`;
@@ -162,6 +178,10 @@ const WIN_HTML = `
         <div data-mz-map-chart style="position:absolute;inset:0"></div>
         <div class="mz-map-cart"><b data-mz-map-ctitle></b><small data-mz-map-csub></small></div>
         <div class="mz-map-tools">
+            <div class="mz-map-seg" role="group" aria-label="Map look">
+                <button type="button" aria-pressed="true" data-mz-map-look="ink">Ink</button>
+                <button type="button" aria-pressed="false" data-mz-map-look="flat">Flat</button>
+            </div>
             <div class="mz-map-seg">
                 <button type="button" aria-pressed="true" data-mz-map-layer="trails">${svg('m-route')}Journeys</button>
                 <button type="button" aria-pressed="true" data-mz-map-layer="flags">Flags</button>
@@ -822,7 +842,7 @@ function renderChart(mode) {
 function fullSvg(width, height, mode = 'full') {
     const out = renderChart(mode);
     const tier = view.s < 0.5 ? 0 : view.s < 1.1 ? 1 : 2;
-    return `<svg class="mzc" data-style="contour" data-zoom="${tier}" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="Map of the story's places">${out.defs}<g class="mzc-world" style="transform-origin:0 0;transform:translate(${f1(view.tx)}px,${f1(view.ty)}px) scale(${f1(view.s)})"><rect class="mzc-ground" x="-6000" y="-6000" width="12000" height="12000"/>${out.body}</g></svg>`;
+    return `<svg class="mzc${terrainOn() ? ' has-terrain' : ''}" data-style="contour" data-zoom="${tier}" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="Map of the story's places">${out.defs}<g class="mzc-world" style="transform-origin:0 0;transform:translate(${f1(view.tx)}px,${f1(view.ty)}px) scale(${f1(view.s)})"><rect class="mzc-ground" x="-6000" y="-6000" width="12000" height="12000"/>${out.body}</g></svg>`;
 }
 
 function miniSvg() {
@@ -1134,8 +1154,81 @@ function renderDetail() {
 
 /* ---------- the chart on screen: pan and zoom ---------- */
 
+/* ---------- the land under the chart ---------- */
+
+function ensureTerrain() {
+    if (terrain || terrainCanvas || !els.stage) return;
+    const canvas = document.createElement('canvas');
+    canvas.className = 'mz-terrain';
+    canvas.setAttribute('aria-hidden', 'true');
+    canvas.hidden = true;
+    els.stage.prepend(canvas);
+    const make = () => {
+        terrain = createTerrain(canvas, { quality: matchMedia('(pointer:coarse)').matches ? 1 : 2 });
+        if (terrain) terrainStory = null;
+    };
+    make();
+    if (!terrain) {
+        canvas.remove();
+        terrainCanvas = null;
+        return;
+    }
+    terrainCanvas = canvas;
+    /* a GPU reset is not the map's problem: the land goes away whole and
+       comes back when the browser is ready, and the chart never notices */
+    canvas.addEventListener('webglcontextlost', event => {
+        event.preventDefault();
+        terrain = null;
+        terrainStory = null;
+    });
+    canvas.addEventListener('webglcontextrestored', () => {
+        make();
+        renderWin();
+    });
+}
+
+function scheduleTerrain() {
+    if (!terrainRaf) {
+        terrainRaf = requestAnimationFrame(() => {
+            terrainRaf = 0;
+            drawTerrain();
+        });
+    }
+}
+
+function drawTerrain() {
+    ensureTerrain();
+    if (!terrainCanvas) return;
+    const on = terrainOn() && !win.hidden && document.visibilityState !== 'hidden' && atlas && layout;
+    terrainCanvas.hidden = !on;
+    if (!on) return;
+    /* the story texture is baked per (chat, depth) - rare, and never stale */
+    const signature = `${lastSignature}|${layoutDepth}`;
+    if (terrainStory !== signature) {
+        terrainStory = signature;
+        terrain.updateScene({
+            layout,
+            atlas,
+            derived,
+            record: deriveTerrainRecord({
+                regions: (layout.roots || []).map(root => ({ fold: root.n.fold, name: root.n.name })),
+                observations: atlas.observations || [],
+            }),
+        });
+    }
+    terrain.draw({
+        width: els.stage.clientWidth,
+        height: els.stage.clientHeight,
+        dpr: window.devicePixelRatio || 1,
+        tx: view.tx,
+        ty: view.ty,
+        s: view.s,
+    });
+}
+
 function drawChart() {
     if (win.hidden || !atlas) return;
+    ensureTerrain();
     const width = els.stage.clientWidth;
     const height = els.stage.clientHeight;
     if (lastSize && (lastSize.w !== width || lastSize.h !== height)) {
@@ -1152,6 +1245,7 @@ function drawChart() {
     }
     els.chart.innerHTML = (insideKey ? deckBar() : '') + fullSvg(width, height, insideKey ? 'deck' : 'full');
     bindChart();
+    scheduleTerrain();
 }
 
 /** The deck's exit bar: the ship's name, and the way back to the world. */
@@ -1166,6 +1260,7 @@ function applyTransform() {
     const world = chart.querySelector('.mzc-world');
     if (world) world.style.transform = `translate(${f1(view.tx)}px,${f1(view.ty)}px) scale(${f1(view.s)})`;
     chart.dataset.zoom = view.s < 0.5 ? 0 : view.s < 1.1 ? 1 : 2;
+    scheduleTerrain();
 }
 
 function fit() {
@@ -1637,6 +1732,10 @@ function wireWin() {
             saveSettings();
             ensure();
             view.placed = false;
+            renderWin();
+        } else if (button.dataset.mzMapLook) {
+            mapLook = button.dataset.mzMapLook;
+            win.querySelectorAll('[data-mz-map-look]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mzMapLook === mapLook)));
             renderWin();
         } else if (button.dataset.mzMapLayer) {
             if (button.dataset.mzMapLayer === 'trails') trails = !trails;

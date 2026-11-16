@@ -438,3 +438,458 @@ export function fogReveal(layout, atlas, derived) {
     }
     return { spots, ribbons };
 }
+
+/* ---------- the renderer ----------
+ *
+ * One fullscreen triangle, one fragment shader: the terrain IS the map's
+ * own layout seen as land. The territory blobs become the landmasses
+ * (regionField reproduces the exact seeded outlines the SVG draws), the
+ * journey legs become roads and clearings in the fog, and everything the
+ * story knows about itself arrives baked: towns, roads and reveal are
+ * painted into a small texture on the CPU whenever the atlas changes, so
+ * no per-pixel loop ever grows with the story. Only noise is analytic.
+ *
+ * Adapted from the mockup's shader (MapPlanA) and Abyssal Garden's look
+ * techniques - caustics, hillshading, the adaptive pixel budget. Ink is
+ * the v1 look; more looks are branches on this same ground.
+ */
+
+export const TERRAIN_QUALITY = [
+    { name: 'Low', res: 0.5, oct: 4, px: 0.45e6 },
+    { name: 'Medium', res: 0.75, oct: 6, px: 0.9e6 },
+    { name: 'High', res: 1, oct: 8, px: 1.9e6 },
+];
+
+/* Same little generator mapdata seeds its packing with - two modules, one
+   deterministic world. */
+const randomFrom = seed => {
+    let s = seed >>> 0 || 1;
+    return () => {
+        s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+        return s / 4294967296;
+    };
+};
+
+const TERRAIN_VS = `#version 300 es
+in vec2 a;void main(){gl_Position=vec4(a,0.,1.);}`;
+
+const TERRAIN_FS = `#version 300 es
+precision highp float;
+#define MAXR 24
+#define SIG 28.
+out vec4 fragColor;
+uniform vec2 uRes,uCenter,uSeedV;
+uniform float uZ,uScale,uTime,uOct,uFog,uNight;
+uniform vec3 uAcc,uSea,uShallow,uTownC,uTint,uSun;
+uniform int uNR;
+uniform vec4 uReg[MAXR],uRegB[MAXR],uRegP[MAXR];
+uniform vec3 uRC[MAXR*3];
+uniform sampler2D uStory;
+uniform vec4 uStoryRect;
+uniform vec4 uWeather;
+
+float h21(vec2 p){vec3 q=fract(vec3(p.xyx)*.1031);q+=dot(q,q.yzx+33.33);return fract((q.x+q.y)*q.z);}
+float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(h21(i),h21(i+vec2(1,0)),f.x),mix(h21(i+vec2(0,1)),h21(i+vec2(1,1)),f.x),f.y);}
+float fbm(vec2 p,float oct){float a=.5,s=0.,n=0.;for(int i=0;i<8;i++){if(float(i)>=oct)break;s+=a*vn(p);n+=a;p=p*2.03+vec2(17.1,31.7);a*=.5;}return s/n;}
+float ss(float a,float b,float x){float t=clamp((x-a)/(b-a),0.,1.);return t*t*(3.-2.*t);}
+
+/* the same radial blob the SVG draws, as a field: positive inside */
+void regionField(vec2 p,out float S,out int rid){
+  float best=-1e4;int bi=0;
+  for(int i=0;i<MAXR;i++){if(i>=uNR)break;
+    vec4 r=uReg[i],b=uRegB[i];vec2 q=p-r.xy;q.y/=.9;
+    float t=atan(q.y,q.x);
+    float k=1.+b.w*(sin(2.*t+b.x)*.55+sin(3.*t+b.y)*.3+sin(5.*t+b.z)*.2);
+    float d=r.z*k-length(q);
+    if(d>best){best=d;bi=i;}
+  }
+  rid=bi;S=.5+best/(2.*SIG);
+}
+
+/* land height, 0.30 is the sea line */
+float elev(vec2 p,float towns,float oct,out float landV,out int rid,out float mount){
+  float S;regionField(p,S,rid);
+  vec2 sp=p+uSeedV;
+  float wob=(fbm(sp*.016,min(oct,3.))-.5)*.6;
+  if(oct>4.5)wob+=(fbm(sp*.05+5.,4.)-.5)*.09;
+  float land=S+wob;landV=land;
+  vec4 P=uRegP[rid];
+  float rug=clamp(P.x,0.,1.5);
+  vec2 q=sp+(vec2(fbm(sp*.012+3.,3.),fbm(sp*.012+9.,3.))-.5)*60.;
+  float n=fbm(q*.011,oct);
+  float rd=1.-abs(fbm(q*.013+2.,3.)*2.-1.);rd*=rd;
+  float rd2=1.-abs(fbm(q*.03+4.,min(oct,5.))*2.-1.);
+  float massif=ss(.38,.66,fbm(q*.0065+7.,3.)+.2*(rug-.4));
+  mount=(rd*.75+rd2*.25)*massif;
+  float inland=ss(.55,1.05,land),isLand=ss(.46,.54,land);
+  float rel=(mount*rug*.6+(n-.5)*.22)*inland*(1.-.9*towns);
+  float h=.30*ss(-.1,.5,land)+isLand*(.012+.05*inland+rel);
+  float lk=fbm(sp*.017+31.,3.);
+  float lake=1.-ss(.0,.07,lk-(.235+P.z*.13));
+  h-=lake*.12*inland*(1.-towns)*(1.-mount);
+  return h;
+}
+
+float caus(vec2 uv,float t){ /* tiling caustic, after Abyssal Garden's water */
+  vec2 p=uv*6.2831853,i=p;float c=0.;
+  for(int n=1;n<=4;n++){float tt=t*(1.-3.5/float(n));i=p+vec2(cos(tt-i.x)+sin(tt+i.y),sin(tt-i.y)+cos(tt+i.x));float s=sin(i.x+tt),k=cos(i.y+tt);c+=abs(s*k)/(1.25*sqrt(s*s+k*k)+1e-4);}
+  c=1.17-pow(c/4.,1.4);return pow(abs(c),8.);
+}
+vec2 vor(vec2 p){vec2 i=floor(p),f=fract(p);float d1=9.,d2=9.,id=0.;
+  for(int y=-1;y<=1;y++)for(int x=-1;x<=1;x++){vec2 o=vec2(float(x),float(y)),c=i+o;vec2 r=o+.12+.76*vec2(h21(c),h21(c+17.3))-f;float d=dot(r,r);if(d<d1){d2=d1;d1=d;id=h21(c+5.1);}else if(d<d2)d2=d;}
+  return vec2(sqrt(d2)-sqrt(d1),id);}
+float lines(float v,float w){float g=abs(fract(v-.5)-.5)/(fwidth(v)*w+1e-5);return 1.-min(g,1.);}
+
+void main(){
+  vec2 px=vec2(gl_FragCoord.x,uRes.y-gl_FragCoord.y);
+  vec2 p=uCenter+(px-.5*uRes)/uScale;
+  vec2 sp=p+uSeedV;
+  float px1=1./uScale;
+  float t=uTime;
+
+  /* the story, baked: town glow, roads, fog reveal */
+  vec2 suv=(p-uStoryRect.xy)/uStoryRect.zw;
+  float inTex=step(0.,suv.x)*step(suv.x,1.)*step(0.,suv.y)*step(suv.y,1.);
+  vec3 story=inTex>.5?texture(uStory,suv).rgb:vec3(0.);
+  float towns=story.r;
+
+  float landV,mountV;int rid;
+  float h0=elev(p,towns,uOct,landV,rid,mountV);
+  float eps=2.*px1;float d1,d2;int r2;float m2;
+  float hx=elev(p+vec2(eps,0),towns,min(uOct,6.),d1,r2,m2);
+  float hy=elev(p+vec2(0,eps),towns,min(uOct,6.),d2,r2,m2);
+  vec2 g=vec2(hx-h0,hy-h0)/eps;
+  vec3 nrm=normalize(vec3(-g.x*70.,-g.y*70.,1.));
+  vec3 lightDir=normalize(vec3(uSun.x*.8-.45,-uSun.y*.8-.45,max(uSun.z,.15)+.55));
+  float sh=clamp(dot(nrm,lightDir),0.,1.);
+  float isWater=1.-ss(.296,.304,h0);
+  float road=story.g*(1.-isWater);
+  vec4 P=uRegP[rid];
+  vec3 Lc=uRC[rid*3],Fc=uRC[rid*3+1],Hc=uRC[rid*3+2];
+  float hh=h0-.30;
+  float fm=ss(.46,.62,fbm(sp*.028+11.,uOct)+(P.y-.5)*.55)*(1.-ss(.14,.26,hh))*(1.-ss(.1,.4,towns));
+  float tw=ss(.32,.46,towns);
+  float zf=ss(.55,1.5,uZ);
+
+  /* the ink look: dark land, accent contour lines, a lit shore */
+  vec3 land=mix(vec3(.07,.13,.125),vec3(.15,.25,.225),ss(0.,.3,hh));
+  land=mix(land,Lc*.32+vec3(.03),.22);
+  land=mix(land,Fc*.30+vec3(.02),fm*.45);
+  land*=.72+.6*sh;
+  land*=.95+.1*vn(sp*.1)+.05*(vn(sp*.45)-.5)*zf;
+  float lv=hh*10.;
+  float cl=lines(lv,1.0)*(1.-isWater)*ss(.01,.03,hh)*zf;
+  float idx=lines(lv/4.,1.2)*(1.-isWater)*ss(.01,.03,hh);
+  land+=uAcc*(cl*.09+idx*.15);
+  vec2 vv=tw>.01?vor(sp/15.):vec2(1.,.5);float blk=vv.y;float street=1.-ss(.0,.11,vv.x);
+  vec3 tc=uTownC*(.36+.1*mix(.5,blk,zf))*(1.-.3*street*zf);
+  land=mix(land,tc,tw*.8);
+  land=mix(land,uAcc*.9,road*.55);
+  vec3 wat=mix(uSea*.9,uShallow*.6,ss(.10,.30,h0));
+  wat+=uAcc*caus(sp*.012,t*.5+3.)*.06*ss(.12,.30,h0)*(1.-.6*uNight);
+  vec3 col=mix(wat,land,1.-isWater);
+  float glow=exp(-abs(h0-.30)*60.);
+  col+=uAcc*glow*.14;
+  float cs=1.-min(abs(h0-.30)/(fwidth(h0)*1.1+1e-5),1.);
+  col=mix(col,uAcc*.9,cs*.5);
+
+  /* the sky: the story's hour over the land */
+  col*=uTint;
+
+  /* fog of war: clouds over everything the story has not earned */
+  if(uFog>.5){
+    float cn=fbm(sp*.014+vec2(t*.6,t*.25),4.);
+    vec2 ruv=suv+(cn-.5)*.03;
+    float rev=inTex>.5?texture(uStory,ruv).b:0.;
+    float cloud=.8+.4*fbm(sp*.02+vec2(-t*.8,t*.3)+7.,5.);
+    col=mix(col,vec3(.05,.075,.082)*cloud,(1.-rev)*.88);
+  }
+
+  /* the weather: one overlay per sky */
+  if(uWeather.y>.001){
+    float k=uWeather.x,s=uWeather.y;
+    if(k<1.5){float streak=smoothstep(.86,1.,fract((px.x*.4+px.y*1.35+t*240.)/22.));col*=1.-.22*streak*s;col*=1.-.12*s;}
+    else if(k<2.5){vec2 cell=fract(px/2.6+vec2(0.,t*70.))-.5;float flake=step(.965,h21(floor(px/2.6+vec2(0.,t*70.))))*ss(.2,0.,length(cell));col=mix(col,vec3(.92,.94,.97),flake*s*.8);col=mix(col,vec3(.75,.78,.84),s*.12);}
+    else if(k<3.5){float streak=smoothstep(.9,1.,fract((px.x*.25+px.y*1.5+t*320.)/26.));col*=1.-.17*streak*s;col*=1.-.08*s;}
+    else if(k<4.5){col=mix(col,vec3(.42,.46,.5),s*.28);}
+    else{col=mix(col,vec3(.52,.4,.26),s*.22);col+=(h21(px*.7)-.5)*.04*s;}
+  }
+
+  col+=(h21(gl_FragCoord.xy)-.5)/255.;
+  fragColor=vec4(col,1.);
+}`;
+
+const hexToRgb = hex => {
+    const n = parseInt(String(hex || '').replace('#', ''), 16) || 0;
+    return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+};
+
+const WEATHER_ID = { storm: 1, snow: 2, rain: 3, fog: 4, sand: 5 };
+
+/**
+ * The GL controller: one per map window, thrown away on context loss and
+ * quietly rebuilt. Everything it draws is decoration - the map above it
+ * keeps every click and never learns it exists.
+ *
+ * @param {HTMLCanvasElement} canvas where the land goes
+ * @param {{quality?:number}} [opts] initial quality tier index
+ */
+export function createTerrain(canvas, { quality = 2 } = {}) {
+    const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, powerPreference: 'low-power' });
+    if (!gl) return null;
+
+    const compile = (type, source) => {
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader));
+        return shader;
+    };
+
+    let prog = null;
+    const U = {};
+    try {
+        prog = gl.createProgram();
+        gl.attachShader(prog, compile(gl.VERTEX_SHADER, TERRAIN_VS));
+        gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, TERRAIN_FS));
+        gl.linkProgram(prog);
+        if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+    } catch (error) {
+        console.error('[Meziverse] terrain shader:', error);
+        return null;
+    }
+    gl.useProgram(prog);
+
+    const buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    const loc = gl.getAttribLocation(prog, 'a');
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    const uniformCount = gl.getProgramParameter(prog, gl.ACTIVE_UNIFORMS);
+    for (let i = 0; i < uniformCount; i += 1) {
+        const info = gl.getActiveUniform(prog, i);
+        U[info.name.replace(/\[0\]$/, '')] = gl.getUniformLocation(prog, info.name);
+    }
+
+    const storyTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, storyTex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.uniform1i(U.uStory, 0);
+
+    /* scene state, set by updateScene and then read frame after frame */
+    let scene = null;
+    let qIndex = Math.max(0, Math.min(TERRAIN_QUALITY.length - 1, quality));
+    let draws = 0;
+
+    /* ---------- the story, baked on the CPU ----------
+       One texture, three channels: town glow (R), roads (G), fog reveal (B).
+       Painted with canvas gradients - cheap, and the shader never loops the
+       story no matter how many places it grows. */
+    const bakeStory = ({ layout, atlas, derived, record }) => {
+        const bounds = layout.bounds || { x0: -500, x1: 500, y0: -500, y1: 500 };
+        const margin = 260;
+        const rect = [bounds.x0 - margin, bounds.y0 - margin,
+            (bounds.x1 - bounds.x0) + margin * 2, (bounds.y1 - bounds.y0) + margin * 2];
+        const size = Math.max(256, Math.min(1024, Math.round(Math.max(rect[2], rect[3]) / 2.5)));
+        const toX = x => (x - rect[0]) / rect[2] * size;
+        const toY = y => (y - rect[1]) / rect[3] * size;
+        const scale = Math.min(rect[2], rect[3]) > 0 ? size / Math.max(rect[2], rect[3]) : 1;
+
+        const passes = [];
+        for (let channel = 0; channel < 3; channel += 1) {
+            const el = document.createElement('canvas');
+            el.width = size;
+            el.height = size;
+            const ctx = el.getContext('2d');
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, size, size);
+            ctx.globalCompositeOperation = 'lighter';
+            passes.push({ el, ctx });
+        }
+        const glow = (ctx, x, y, r, alpha) => {
+            const gradient = ctx.createRadialGradient(x, y, 0, x, y, Math.max(1, r));
+            gradient.addColorStop(0, `rgba(255,255,255,${alpha})`);
+            gradient.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(x - r, y - r, r * 2, r * 2);
+        };
+        const line = (ctx, ax, ay, bx, by, width, alpha) => {
+            ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
+            ctx.lineWidth = Math.max(1, width);
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(ax, ay);
+            ctx.lineTo(bx, by);
+            ctx.stroke();
+        };
+
+        /* towns: the glow of places - pins bright, their lands dim */
+        const items = Object.values(layout.items || {});
+        for (const item of items) {
+            const node = atlas.nodes[item.n && item.n.id];
+            if (!node || node.kind === 'transient') continue;
+            const x = toX(item.ax);
+            const y = toY(item.ay);
+            if (item.pin) {
+                const level = Number.isFinite(node.level) ? node.level : 3;
+                const sizeW = level <= 1 ? 46 : level === 2 ? 34 : 24;
+                glow(passes[0].ctx, x, y, sizeW * scale, 0.9);
+            } else {
+                glow(passes[0].ctx, x, y, item.r * 0.85 * scale, node.level === 1 ? 0.35 : 0.5);
+            }
+        }
+
+        /* roads: the same-region legs the story walked */
+        const rootOf = id => {
+            let node = atlas.nodes[id];
+            while (node && node.parentId) node = atlas.nodes[node.parentId];
+            return node;
+        };
+        for (const leg of (derived && derived.legs) || []) {
+            const a = layout.items[leg.a];
+            const b = layout.items[leg.b];
+            if (!a || !b) continue;
+            const ra = rootOf(leg.a);
+            const rb = rootOf(leg.b);
+            if (!ra || ra.id !== rb?.id) continue;
+            if (Math.hypot(a.ax - b.ax, a.ay - b.ay) > 340) continue;
+            line(passes[1].ctx, toX(a.ax), toY(a.ay), toX(b.ax), toY(b.ay), 2.5 * scale, 0.9);
+        }
+
+        /* reveal: the fog the trail earns */
+        const reveal = fogReveal(layout, atlas, derived);
+        for (const spot of reveal.spots) {
+            glow(passes[2].ctx, toX(spot.ax), toY(spot.ay), spot.r * scale, spot.w);
+        }
+        for (const ribbon of reveal.ribbons) {
+            line(passes[2].ctx, toX(ribbon.ax), toY(ribbon.ay), toX(ribbon.bx), toY(ribbon.by),
+                (40 + 70 * ribbon.w) * scale, 0.85);
+        }
+
+        /* the three channels, one texture */
+        const pixels = new Uint8Array(size * size * 4);
+        const data = passes.map(pass => pass.ctx.getImageData(0, 0, size, size).data);
+        for (let i = 0; i < size * size; i += 1) {
+            pixels[i * 4] = data[0][i * 4];
+            pixels[i * 4 + 1] = data[1][i * 4];
+            pixels[i * 4 + 2] = data[2][i * 4];
+            pixels[i * 4 + 3] = 255;
+        }
+        gl.bindTexture(gl.TEXTURE_2D, storyTex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, size, size, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+
+        return rect;
+    };
+
+    /**
+     * A new story (or record): rebuild the uniform arrays and rebake the
+     * story texture. Rare - only when the atlas or the record changes.
+     *
+     * @param {object} sceneIn
+     * @param {object} sceneIn.layout `layoutAtlas` output
+     * @param {object} sceneIn.atlas `buildAtlas` output
+     * @param {object} [sceneIn.derived] `deriveLegs` output
+     * @param {object} [sceneIn.record] the terrain record (see the module doc)
+     */
+    const updateScene = ({ layout, atlas, derived = null, record = null }) => {
+        const roots = (layout.roots || []).slice(0, 24);
+        const reg = new Float32Array(24 * 4);
+        const regB = new Float32Array(24 * 4);
+        const regP = new Float32Array(24 * 4);
+        const rc = new Float32Array(24 * 9);
+        roots.forEach((root, i) => {
+            const fold = root.n.fold;
+            const region = (record && record.regions && record.regions[fold])
+                || { ...ratiosFromText([], fold), colors: paletteFromSamples([], fold) };
+            const rand = randomFrom(hashFold(fold));
+            reg.set([root.ax, root.ay, root.r, 0], i * 4);
+            regB.set([rand() * 6, rand() * 6, rand() * 6, 0.12], i * 4);
+            regP.set([region.rugged, region.forest, region.water, 0], i * 4);
+            (region.colors || []).slice(0, 3).forEach((color, k) => rc.set(hexToRgb(color), i * 9 + k * 3));
+        });
+        const storyRect = bakeStory({ layout, atlas, derived, record });
+        const rec = record || {};
+        scene = {
+            reg, regB, regP, rc,
+            nRegions: roots.length,
+            storyRect,
+            sea: hexToRgb(rec.sea || '#143a45'),
+            shallow: hexToRgb(rec.shallow || '#2b7b82'),
+            town: hexToRgb(rec.town || '#b9b2a4'),
+            seed: [(rec.seed || 0) * 91.7 + 3.1, (rec.seed || 0) * 53.3 + 8.9],
+        };
+        gl.uniform4fv(U.uReg, scene.reg);
+        gl.uniform4fv(U.uRegB, scene.regB);
+        gl.uniform4fv(U.uRegP, scene.regP);
+        gl.uniform3fv(U.uRC, scene.rc);
+        gl.uniform4fv(U.uStoryRect, scene.storyRect);
+        gl.uniform1i(U.uNR, scene.nRegions);
+        gl.uniform3fv(U.uSea, scene.sea);
+        gl.uniform3fv(U.uShallow, scene.shallow);
+        gl.uniform3fv(U.uTownC, scene.town);
+        gl.uniform2f(U.uSeedV, scene.seed[0], scene.seed[1]);
+    };
+
+    /**
+     * One frame. Static unless the caller hands time in - the land only
+     * moves when the story's sky says so.
+     */
+    const draw = ({
+        width, height, dpr = 1, tx = 0, ty = 0, s = 1,
+        time = 0, sky = null, weather = null, fog = false, acc = '#77c2aa',
+    }) => {
+        if (!scene) return;
+        const q = TERRAIN_QUALITY[qIndex];
+        let k = dpr * q.res;
+        if (width * height * k * k > q.px) k = Math.sqrt(q.px / Math.max(1, width * height));
+        const w = Math.max(2, Math.round(width * k));
+        const h = Math.max(2, Math.round(height * k));
+        if (canvas.width !== w || canvas.height !== h) {
+            canvas.width = w;
+            canvas.height = h;
+        }
+        gl.viewport(0, 0, w, h);
+        const skyNow = sky || { tint: [1, 1, 1], sun: [0, 0, 1], night: 0 };
+        gl.uniform2f(U.uRes, w, h);
+        gl.uniform2f(U.uCenter, (width / 2 - tx) / s, (height / 2 - ty) / s);
+        gl.uniform1f(U.uScale, s * (w / Math.max(1, width)));
+        gl.uniform1f(U.uZ, s);
+        gl.uniform1f(U.uTime, time);
+        gl.uniform1f(U.uOct, Math.min(q.oct, Math.max(3, Math.round(3 + Math.log2(Math.max(0.5, s)) * 1.5 + (q.oct - 4) / 2))));
+        gl.uniform1f(U.uFog, fog ? 1 : 0);
+        gl.uniform1f(U.uNight, skyNow.night || 0);
+        gl.uniform3fv(U.uTint, skyNow.tint);
+        gl.uniform3fv(U.uSun, skyNow.sun);
+        gl.uniform3fv(U.uAcc, hexToRgb(acc));
+        gl.uniform4f(U.uWeather, weather && weather.kind ? WEATHER_ID[weather.kind] || 0 : 0,
+            weather ? weather.strength || 0 : 0, 0, 0);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+        /* Sparse timing: a slow frame steps the quality down once. The
+           measurement stalls the pipe, so it is rare on purpose. */
+        draws += 1;
+        if (draws % 16 === 0 && qIndex > 0) {
+            const t0 = performance.now();
+            const probe = new Uint8Array(4);
+            gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, probe);
+            if (performance.now() - t0 > 26) qIndex -= 1;
+        }
+    };
+
+    return {
+        ok: true,
+        updateScene,
+        draw,
+        dispose() {
+            gl.deleteTexture(storyTex);
+            gl.deleteProgram(prog);
+            gl.deleteBuffer(buffer);
+        },
+        get quality() { return qIndex; },
+        setQuality(index) { qIndex = Math.max(0, Math.min(TERRAIN_QUALITY.length - 1, index)); },
+    };
+}

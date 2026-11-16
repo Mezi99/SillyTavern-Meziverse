@@ -37,6 +37,14 @@
 .mzc-city { fill: var(--mzc-land-2); stroke: var(--mzc-edge); stroke-dasharray: 5 4; }
 .mzc-plot { fill: var(--mzc-land-3); stroke: color-mix(in srgb, var(--mz-accent) 30%, transparent); }
 .mzc-mobile { fill: color-mix(in srgb, var(--mz-accent) 7%, var(--mzc-land-3)); stroke: color-mix(in srgb, var(--mz-accent) 45%, transparent); stroke-dasharray: 9 6; }
+/* the land is a shader under the chart: over it the SVG is pure overlay -
+   outlines and names only, the ground already painted */
+.mzc.has-terrain .mzc-ground { fill: none; }
+.mzc.has-terrain .mzc-region,
+.mzc.has-terrain .mzc-city,
+.mzc.has-terrain .mzc-plot,
+.mzc.has-terrain .mzc-mobile { fill: color-mix(in srgb, var(--mz-accent) 5%, transparent); }
+.mz-terrain { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
 
 /* the ship: an entity on the world map - its picture, its glyph, its rooms */
 .mzc-ship { cursor: pointer; }
