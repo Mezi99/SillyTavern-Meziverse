@@ -1009,6 +1009,19 @@ export function walkedPoints(ax, ay, bx, by, seed, bow = 0, steps = 8) {
 }
 
 /**
+ * The world group's CSS transform, at full precision. The terrain canvas is
+ * drawn with the same view values, so rounding here would slide the chart
+ * off the land - every zoom tick would move the pins relative to the coast.
+ * Keep the rounding for path data, never for the transform.
+ *
+ * @param {{tx:number,ty:number,s:number}} view the map view
+ * @returns {string} a CSS `transform` value
+ */
+export function worldMatrix(view) {
+    return `translate(${view.tx.toFixed(2)}px,${view.ty.toFixed(2)}px) scale(${view.s.toFixed(5)})`;
+}
+
+/**
  * `walkedPoints` as a smooth SVG path (quadratics through the midpoints).
  *
  * @returns {string} the `d` attribute

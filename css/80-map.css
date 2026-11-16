@@ -247,8 +247,10 @@
 .mz-map-stage::after { content: ""; position: absolute; inset: 11px; z-index: 2; border: 1px solid color-mix(in srgb, var(--mz-text) 9%, transparent); border-radius: 3px; pointer-events: none; }
 .mz-map-stage .mzc { cursor: grab; }
 .mz-map-stage .mzc.is-panning { cursor: grabbing; }
-.mzc-world { transition: transform 420ms var(--mz-ease); }
-.mzc.is-panning .mzc-world, .mzc.is-wheel .mzc-world { transition: none; }
+/* no CSS transition here: the view glides in JS (glideTo in map.js) so the
+   land and the chart share every frame - a transition would move the SVG
+   alone and the two would drift apart while zooming */
+.mzc-world { transition: none; }
 
 .mz-map-cart { position: absolute; z-index: 3; top: 22px; left: 22px; display: grid; gap: 2px; padding: 8px 14px 9px; border: 1px solid var(--mz-line-strong); border-radius: var(--mz-r); background: color-mix(in srgb, var(--mz-surface-solid) 84%, transparent); backdrop-filter: blur(6px); pointer-events: none; }
 .mz-map-cart b { font-size: var(--mz-text-sm); font-weight: 600; letter-spacing: .2em; text-transform: uppercase; }

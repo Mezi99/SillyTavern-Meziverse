@@ -23,6 +23,7 @@ import {
     layoutAtlas,
     travelMode,
     walkedPath,
+    worldMatrix,
 } from './mapdata.js';
 import { recordSrc } from './backgrounds.js';
 import { bgStore, chatMessages, currentChatId, on, personaName, saveTerrainRecord, terrainStore } from './st.js';
@@ -860,7 +861,7 @@ function renderChart(mode) {
 function fullSvg(width, height, mode = 'full') {
     const out = renderChart(mode);
     const tier = view.s < 0.5 ? 0 : view.s < 1.1 ? 1 : 2;
-    return `<svg class="mzc${terrainOn() ? ' has-terrain' : terrainLayerOn() ? ' has-veil' : ''}" data-style="contour" data-zoom="${tier}" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="Map of the story's places">${out.defs}<g class="mzc-world" style="transform-origin:0 0;transform:translate(${f1(view.tx)}px,${f1(view.ty)}px) scale(${f1(view.s)})"><rect class="mzc-ground" x="-6000" y="-6000" width="12000" height="12000"/>${out.body}</g></svg>`;
+    return `<svg class="mzc${terrainOn() ? ' has-terrain' : terrainLayerOn() ? ' has-veil' : ''}" data-style="contour" data-zoom="${tier}" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="Map of the story's places">${out.defs}<g class="mzc-world" style="transform-origin:0 0;transform:${worldMatrix(view)}"><rect class="mzc-ground" x="-6000" y="-6000" width="12000" height="12000"/>${out.body}</g></svg>`;
 }
 
 function miniSvg() {
@@ -1489,7 +1490,7 @@ function applyTransform() {
     const chart = els.chart.querySelector('.mzc');
     if (!chart) return;
     const world = chart.querySelector('.mzc-world');
-    if (world) world.style.transform = `translate(${f1(view.tx)}px,${f1(view.ty)}px) scale(${f1(view.s)})`;
+    if (world) world.style.transform = worldMatrix(view);
     chart.dataset.zoom = view.s < 0.5 ? 0 : view.s < 1.1 ? 1 : 2;
     scheduleTerrain();
 }
@@ -1509,23 +1510,67 @@ function fitScale() {
 
 const zoomMin = () => Math.min(0.35, fitScale() * 0.85);
 
-function fit() {
+/** Where fit() would put the view - the target a glide can fly to. */
+function fitTarget() {
     const width = els.stage.clientWidth;
     const height = els.stage.clientHeight;
     const bounds = activeLayout().bounds;
     const spanX = bounds.x1 - bounds.x0;
     const spanY = bounds.y1 - bounds.y0;
-    view.s = fitScale();
-    view.tx = width / 2 - (bounds.x0 + spanX / 2) * view.s;
-    view.ty = height / 2 - (bounds.y0 + spanY / 2) * view.s + 16;
+    const s = fitScale();
+    return {
+        s,
+        tx: width / 2 - (bounds.x0 + spanX / 2) * s,
+        ty: height / 2 - (bounds.y0 + spanY / 2) * s + 16,
+    };
+}
+
+function fit() {
+    Object.assign(view, fitTarget());
+}
+
+/** Where centerOn() would put the view - the target a glide can fly to. */
+function centerTarget(x, y, scale) {
+    const width = els.stage.clientWidth;
+    const height = els.stage.clientHeight;
+    return { s: scale, tx: width / 2 - x * scale, ty: height / 2 - y * scale };
 }
 
 function centerOn(x, y, scale) {
-    const width = els.stage.clientWidth;
-    const height = els.stage.clientHeight;
-    view.s = scale;
-    view.tx = width / 2 - x * view.s;
-    view.ty = height / 2 - y * view.s;
+    Object.assign(view, centerTarget(x, y, scale));
+}
+
+/* The view glides in JS so the land and the chart share every frame. A CSS
+   transition here would move the SVG alone while the terrain jumps to the
+   final view - the two drifting apart is exactly what "the land is a
+   separate picture" feels like. */
+let glideRaf = 0;
+
+function glideCancel() {
+    if (glideRaf) cancelAnimationFrame(glideRaf);
+    glideRaf = 0;
+}
+
+function glideTo(target, ms = 420) {
+    glideCancel();
+    if (settings().reducedMotion) {
+        Object.assign(view, target);
+        applyTransform();
+        return;
+    }
+    const from = { tx: view.tx, ty: view.ty, s: view.s };
+    const t0 = performance.now();
+    const step = now => {
+        const k = Math.min(1, (now - t0) / ms);
+        const e = 1 - (1 - k) ** 3;
+        view.s = from.s * (target.s / from.s) ** e;
+        view.tx = from.tx + (target.tx - from.tx) * e;
+        view.ty = from.ty + (target.ty - from.ty) * e;
+        applyTransform();
+        if (k < 1) glideRaf = requestAnimationFrame(step);
+        else glideRaf = 0;
+    };
+    glideRaf = requestAnimationFrame(step);
 }
 
 function zoomBy(direction) {
@@ -1537,10 +1582,11 @@ function zoomBy(direction) {
         exitInside();
         return;
     }
-    view.tx = width - (width - view.tx) * (next / view.s);
-    view.ty = height - (height - view.ty) * (next / view.s);
-    view.s = next;
-    applyTransform();
+    glideTo({
+        s: next,
+        tx: width - (width - view.tx) * (next / view.s),
+        ty: height - (height - view.ty) * (next / view.s),
+    });
 }
 
 /**
@@ -1576,6 +1622,7 @@ function bindChart() {
 
     chart.addEventListener('pointerdown', event => {
         if (event.button > 0) return;
+        glideCancel();
         pan = { x: event.clientX, y: event.clientY, tx: view.tx, ty: view.ty, moved: false };
         try { chart.setPointerCapture(event.pointerId); } catch { /* the pointer went away mid-gesture */ }
     });
@@ -1620,6 +1667,7 @@ function bindChart() {
     });
     chart.addEventListener('wheel', event => {
         event.preventDefault();
+        glideCancel();
         const rect = chart.getBoundingClientRect();
         const px = event.clientX - rect.left;
         const py = event.clientY - rect.top;
@@ -1670,7 +1718,7 @@ function select(key, panThere) {
 
     if (panThere && selectedKey) {
         const item = anchorOf(selectedKey);
-        if (item) centerOn(item.ax, item.ay, Math.max(view.s, item.pin ? 1.4 : 0.9));
+        if (item) glideTo(centerTarget(item.ax, item.ay, Math.max(view.s, item.pin ? 1.4 : 0.9)));
     }
     renderIndex();
     renderDetail();
@@ -1996,13 +2044,11 @@ function wireWin() {
         } else if (button.dataset.mzMapZoom) {
             zoomBy(Number(button.dataset.mzMapZoom));
         } else if (button.hasAttribute('data-mz-map-fit')) {
-            fit();
-            applyTransform();
+            glideTo(fitTarget());
         } else if (button.hasAttribute('data-mz-map-now')) {
             const item = (insideKey ? activeLayout().anchor(derived?.nowId || '') : nowAnchor()) || null;
             if (item) {
-                centerOn(item.ax, item.ay, Math.max(view.s, 1.3));
-                applyTransform();
+                glideTo(centerTarget(item.ax, item.ay, Math.max(view.s, 1.3)));
             }
         }
     });

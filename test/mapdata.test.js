@@ -14,6 +14,7 @@ import {
     travelMode,
     walkedPath,
     walkedPoints,
+    worldMatrix,
 } from '../src/mapdata.js';
 
 const obs = (...chains) => chains.map((chain, i) => ({
@@ -774,4 +775,15 @@ test('walkedPath: an SVG path from place to place', () => {
     assert.match(d, /^M0 0Q/);
     assert.match(d, /L100 50$/);
     assert.ok(d.includes('Q'), 'the walk bends between its steps');
+});
+
+test('worldMatrix: the transform carries the exact scale the land is drawn at', () => {
+    const m = worldMatrix({ tx: -237.4321, ty: 88.888, s: 0.437 });
+    const s = Number(/scale\(([\d.]+)\)/.exec(m)[1]);
+    const t = /translate\(([\d.-]+)px,([\d.-]+)px\)/.exec(m);
+    assert.ok(Math.abs(s - 0.437) < 1e-4, `the scale is the view's to 4 decimals: ${s}`);
+    assert.ok(Math.abs(Number(t[1]) - -237.4321) < 0.011, 'tx survives');
+    assert.ok(Math.abs(Number(t[2]) - 88.888) < 0.011, 'ty survives');
+    // a rounded scale would slide the chart off the land at any odd zoom
+    assert.notEqual(m, 'translate(-237.4px,88.9px) scale(0.4)');
 });
