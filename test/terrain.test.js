@@ -227,7 +227,7 @@ test('fogReveal: the trail paints the world open', () => {
     const byId = Object.fromEntries(spots.map(s => [s.id, s]));
     assert.ok(byId.a.w >= 0.5, 'a place responses happened at breathes clear');
     assert.ok(byId.a.r > byId.b.r * 1.5, 'more turns, a wider clearing');
-    assert.equal(byId.b.w, 0.22, 'passed through: the veil stays thin');
+    assert.equal(byId.b.w, 0.18, 'passed through: the veil stays thin');
     assert.equal(byId.c.w, 1, 'the story\\u2019s now is always clear');
 });
 

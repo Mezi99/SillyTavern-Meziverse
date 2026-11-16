@@ -476,6 +476,10 @@ const FRAME_HTML = `
                     <span class="mz-set-label"><b>Terrain motion</b><button type="button" class="mz-hint" data-tip="Drifting clouds and water shimmer while the map is open." aria-label="Drifting clouds and water shimmer while the map is open.">i</button></span>
                     <button class="mz-switch" type="button" role="switch" aria-checked="false" aria-label="Terrain motion" data-mz-action="map-terrain-anim"><i></i></button>
                 </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Fog of war</b><button type="button" class="mz-hint" data-tip="Clouds part along the journey trail and around the places the story stood still in." aria-label="Clouds part along the journey trail and around the places the story stood still in.">i</button></span>
+                    <button class="mz-switch" type="button" role="switch" aria-checked="false" aria-label="Fog of war" data-mz-action="map-terrain-fog"><i></i></button>
+                </div>
                 <div class="mz-adv-field">
                     <div class="mz-adv-label"><span>Terrain record</span><button class="mz-btn-ghost mz-btn-mini" type="button" data-mz-action="terrain-reseed">Reseed noise</button><button class="mz-btn-ghost mz-btn-mini" type="button" data-mz-action="terrain-rederive">Re-derive</button></div>
                     <textarea class="mz-textarea" rows="6" data-mz="terrain-record" aria-label="Terrain record" spellcheck="false"></textarea>
@@ -1277,6 +1281,11 @@ function applyMap() {
     }
     for (const button of root.querySelectorAll('[data-mz-action="map-terrain-anim"]')) {
         const isOn = !!settings().mapTerrainAnim;
+        button.classList.toggle('is-on', isOn);
+        button.setAttribute('aria-checked', String(isOn));
+    }
+    for (const button of root.querySelectorAll('[data-mz-action="map-terrain-fog"]')) {
+        const isOn = !!settings().mapTerrainFog;
         button.classList.toggle('is-on', isOn);
         button.setAttribute('aria-checked', String(isOn));
     }
@@ -2570,6 +2579,11 @@ function wireActions() {
                 break;
             case 'map-terrain-anim':
                 settings().mapTerrainAnim = !settings().mapTerrainAnim;
+                applyMap();
+                saveSettings();
+                break;
+            case 'map-terrain-fog':
+                settings().mapTerrainFog = !settings().mapTerrainFog;
                 applyMap();
                 saveSettings();
                 break;

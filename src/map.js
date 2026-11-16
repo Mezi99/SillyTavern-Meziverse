@@ -98,6 +98,13 @@ function terrainOn() {
     return !!terrain && !!terrainCanvas && settings().mapTerrain !== 'flat' && !insideKey;
 }
 
+/** The canvas draws for the land - and, over the flat chart, for the fog
+    veil alone. */
+function terrainLayerOn() {
+    if (!terrain || !terrainCanvas || insideKey) return false;
+    return settings().mapTerrain !== 'flat' || !!settings().mapTerrainFog;
+}
+
 const svg = name => `<svg class="ico" aria-hidden="true"><use href="#mz-i-${name}"/></svg>`;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const esc = value => String(value ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
@@ -193,6 +200,7 @@ const WIN_HTML = `
             <div class="mz-map-seg">
                 <button type="button" aria-pressed="true" data-mz-map-layer="trails">${svg('m-route')}Journeys</button>
                 <button type="button" aria-pressed="true" data-mz-map-layer="flags">Flags</button>
+                <button type="button" aria-pressed="false" data-mz-map-layer="fog">Fog</button>
             </div>
             <div class="mz-map-seg is-round">
                 <button type="button" title="Zoom out" aria-label="Zoom out" data-mz-map-zoom="-1">\u2212</button>
@@ -850,7 +858,7 @@ function renderChart(mode) {
 function fullSvg(width, height, mode = 'full') {
     const out = renderChart(mode);
     const tier = view.s < 0.5 ? 0 : view.s < 1.1 ? 1 : 2;
-    return `<svg class="mzc${terrainOn() ? ' has-terrain' : ''}" data-style="contour" data-zoom="${tier}" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="Map of the story's places">${out.defs}<g class="mzc-world" style="transform-origin:0 0;transform:translate(${f1(view.tx)}px,${f1(view.ty)}px) scale(${f1(view.s)})"><rect class="mzc-ground" x="-6000" y="-6000" width="12000" height="12000"/>${out.body}</g></svg>`;
+    return `<svg class="mzc${terrainOn() ? ' has-terrain' : terrainLayerOn() ? ' has-veil' : ''}" data-style="contour" data-zoom="${tier}" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="Map of the story's places">${out.defs}<g class="mzc-world" style="transform-origin:0 0;transform:translate(${f1(view.tx)}px,${f1(view.ty)}px) scale(${f1(view.s)})"><rect class="mzc-ground" x="-6000" y="-6000" width="12000" height="12000"/>${out.body}</g></svg>`;
 }
 
 function miniSvg() {
@@ -976,6 +984,9 @@ function syncLookChips() {
     const look = settings().mapTerrain === 'flat' ? 'flat' : 'ink';
     win.querySelectorAll('[data-mz-map-look]').forEach(button => {
         button.setAttribute('aria-pressed', String(button.dataset.mzMapLook === look));
+    });
+    win.querySelectorAll('[data-mz-map-layer="fog"]').forEach(button => {
+        button.setAttribute('aria-pressed', String(!!settings().mapTerrainFog));
     });
 }
 
@@ -1398,7 +1409,7 @@ function scheduleTerrain() {
 function drawTerrain() {
     ensureTerrain();
     if (!terrainCanvas) return;
-    const on = terrainOn() && !win.hidden && document.visibilityState !== 'hidden' && atlas && layout;
+    const on = terrainLayerOn() && !win.hidden && document.visibilityState !== 'hidden' && atlas && layout;
     terrainCanvas.hidden = !on;
     if (!on) return;
     /* the story texture is baked per (chat, depth) - rare, and never stale */
@@ -1423,6 +1434,8 @@ function drawTerrain() {
         ty: view.ty,
         s: view.s,
         time: animate ? performance.now() / 1000 : 0,
+        fog: !!settings().mapTerrainFog,
+        fogOnly: settings().mapTerrain === 'flat',
     });
     if (terrain.quality !== terrainQuality) {
         terrainQuality = terrain.quality;
@@ -1946,9 +1959,15 @@ function wireWin() {
             saveSettings();
             renderWin();
         } else if (button.dataset.mzMapLayer) {
-            if (button.dataset.mzMapLayer === 'trails') trails = !trails;
-            else flagsShown = !flagsShown;
-            button.setAttribute('aria-pressed', String(button.dataset.mzMapLayer === 'trails' ? trails : flagsShown));
+            const layer = button.dataset.mzMapLayer;
+            if (layer === 'trails') trails = !trails;
+            else if (layer === 'flags') flagsShown = !flagsShown;
+            else if (layer === 'fog') {
+                settings().mapTerrainFog = !settings().mapTerrainFog;
+                saveSettings();
+            }
+            button.setAttribute('aria-pressed', String(
+                layer === 'trails' ? trails : layer === 'flags' ? flagsShown : !!settings().mapTerrainFog));
             renderWin();
         } else if (button.dataset.mzMapZoom) {
             zoomBy(Number(button.dataset.mzMapZoom));

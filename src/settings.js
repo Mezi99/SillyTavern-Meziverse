@@ -92,6 +92,10 @@ const DEFAULTS = {
     // Terrain motion: drifting clouds and water shimmer while the map is
     // open. Off draws one still frame; reduced motion is always still.
     mapTerrainAnim: false,
+    // Fog of war: the clouds part along the journey trail and around the
+    // places the story stood still in. Works on both looks - over Flat it
+    // is a veil on the plain chart.
+    mapTerrainFog: false,
     // Story requests: a `<music>` tag in a reply starts playback when the
     // reply lands. Off leaves playback to the player's own input.
     musicAuto: true,

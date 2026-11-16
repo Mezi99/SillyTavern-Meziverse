@@ -38,8 +38,11 @@
 .mzc-plot { fill: var(--mzc-land-3); stroke: color-mix(in srgb, var(--mz-accent) 30%, transparent); }
 .mzc-mobile { fill: color-mix(in srgb, var(--mz-accent) 7%, var(--mzc-land-3)); stroke: color-mix(in srgb, var(--mz-accent) 45%, transparent); stroke-dasharray: 9 6; }
 /* the land is a shader under the chart: over it the SVG is pure overlay -
-   outlines and names only, the ground already painted */
-.mzc.has-terrain .mzc-ground { fill: none; }
+   outlines and names only, the ground already painted. Over the flat chart
+   with fog on, the same ground steps aside (the stage paints it) so the
+   veil alone rides above it. */
+.mzc.has-terrain .mzc-ground,
+.mzc.has-veil .mzc-ground { fill: none; }
 .mzc.has-terrain .mzc-region,
 .mzc.has-terrain .mzc-city,
 .mzc.has-terrain .mzc-plot,

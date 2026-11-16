@@ -425,14 +425,14 @@ export function fogReveal(layout, atlas, derived) {
         if (!stops && !isNow) {
             // passed through: the trail crossed this land, but the story
             // never stood still in it - a thin veil stays over it
-            spots.push({ id: node.id, ax: item.ax, ay: item.ay, r: r2(item.r * 1.5), w: 0.22 });
+            spots.push({ id: node.id, ax: item.ax, ay: item.ay, r: r2(item.r * 2.2), w: 0.18 });
             continue;
         }
         spots.push({
             id: node.id,
             ax: item.ax,
             ay: item.ay,
-            r: r2(item.r * (2.3 + 0.35 * Math.log2(1 + stops)) * (isNow ? 1.35 : 1)),
+            r: r2(item.r * (3.2 + 0.5 * Math.log2(1 + stops)) * (isNow ? 1.4 : 1)),
             w: isNow ? 1 : r2(clamp(0.5 + 0.16 * stops, 0.5, 1)),
         });
     }
@@ -479,7 +479,7 @@ precision highp float;
 #define SIG 28.
 out vec4 fragColor;
 uniform vec2 uRes,uCenter,uSeedV;
-uniform float uZ,uScale,uTime,uOct,uFog,uNight;
+uniform float uZ,uScale,uTime,uOct,uFog,uFogOnly,uNight;
 uniform vec3 uAcc,uSea,uShallow,uTownC,uTint,uSun;
 uniform int uNR;
 uniform vec4 uReg[MAXR],uRegB[MAXR],uRegP[MAXR];
@@ -597,12 +597,15 @@ void main(){
   col*=uTint;
 
   /* fog of war: clouds over everything the story has not earned */
+  float fogA=0.;
+  vec3 fogC=vec3(0.);
   if(uFog>.5){
     float cn=fbm(sp*.014+vec2(t*.6,t*.25),4.);
     vec2 ruv=suv+(cn-.5)*.03;
     float rev=inTex>.5?texture(uStory,ruv).b:0.;
     float cloud=.8+.4*fbm(sp*.02+vec2(-t*.8,t*.3)+7.,5.);
-    col=mix(col,vec3(.05,.075,.082)*cloud,(1.-rev)*.88);
+    fogC=vec3(.05,.075,.082)*cloud;
+    fogA=(1.-rev)*.88;
   }
 
   /* the weather: one overlay per sky */
@@ -615,6 +618,13 @@ void main(){
     else{col=mix(col,vec3(.52,.4,.26),s*.22);col+=(h21(px*.7)-.5)*.04*s;}
   }
 
+  if(uFogOnly>.5){
+    /* the flat chart keeps its own ground: the veil alone rides above it */
+    fragColor=vec4(fogC,fogA);
+    return;
+  }
+
+  col=mix(col,fogC,fogA);
   col+=(h21(gl_FragCoord.xy)-.5)/255.;
   fragColor=vec4(col,1.);
 }`;
@@ -635,7 +645,9 @@ const WEATHER_ID = { storm: 1, snow: 2, rain: 3, fog: 4, sand: 5 };
  * @param {{quality?:number}} [opts] initial quality tier index
  */
 export function createTerrain(canvas, { quality = 2 } = {}) {
-    const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, powerPreference: 'low-power' });
+    /* alpha so the flat chart can keep its own ground and wear only the fog
+       veil above it - straight (un-premultiplied) alpha keeps that veil honest */
+    const gl = canvas.getContext('webgl2', { antialias: false, alpha: true, premultipliedAlpha: false, powerPreference: 'low-power' });
     if (!gl) return null;
 
     const compile = (type, source) => {
@@ -767,7 +779,7 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
         }
         for (const ribbon of reveal.ribbons) {
             line(passes[2].ctx, toX(ribbon.ax), toY(ribbon.ay), toX(ribbon.bx), toY(ribbon.by),
-                (40 + 70 * ribbon.w) * scale, 0.85);
+                (60 + 150 * ribbon.w) * scale, 0.85);
         }
 
         /* the three channels, one texture */
@@ -840,7 +852,7 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
      */
     const draw = ({
         width, height, dpr = 1, tx = 0, ty = 0, s = 1,
-        time = 0, sky = null, weather = null, fog = false, acc = '#77c2aa',
+        time = 0, sky = null, weather = null, fog = false, fogOnly = false, acc = '#77c2aa',
     }) => {
         if (!scene) return;
         const q = TERRAIN_QUALITY[qIndex];
@@ -861,6 +873,7 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
         gl.uniform1f(U.uTime, time);
         gl.uniform1f(U.uOct, Math.min(q.oct, Math.max(3, Math.round(3 + Math.log2(Math.max(0.5, s)) * 1.5 + (q.oct - 4) / 2))));
         gl.uniform1f(U.uFog, fog ? 1 : 0);
+        gl.uniform1f(U.uFogOnly, fogOnly ? 1 : 0);
         gl.uniform1f(U.uNight, skyNow.night || 0);
         gl.uniform3fv(U.uTint, skyNow.tint);
         gl.uniform3fv(U.uSun, skyNow.sun);
