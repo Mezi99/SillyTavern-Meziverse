@@ -473,8 +473,8 @@ const FRAME_HTML = `
                     </div>
                 </div>
                 <div class="mz-set-row">
-                    <span class="mz-set-label"><b>Terrain motion</b><button type="button" class="mz-hint" data-tip="Drifting clouds and water shimmer while the map is open." aria-label="Drifting clouds and water shimmer while the map is open.">i</button></span>
-                    <button class="mz-switch" type="button" role="switch" aria-checked="false" aria-label="Terrain motion" data-mz-action="map-terrain-anim"><i></i></button>
+                    <span class="mz-set-label"><b>Drifting fog and water</b><button type="button" class="mz-hint" data-tip="The fog drifts and the water shimmers while the map is open. Off draws one still frame." aria-label="The fog drifts and the water shimmers while the map is open. Off draws one still frame.">i</button></span>
+                    <button class="mz-switch" type="button" role="switch" aria-checked="false" aria-label="Drifting fog and water" data-mz-action="map-terrain-anim"><i></i></button>
                 </div>
                 <div class="mz-set-row">
                     <span class="mz-set-label"><b>Fog of war</b><button type="button" class="mz-hint" data-tip="Clouds part along the journey trail and around the places the story stood still in." aria-label="Clouds part along the journey trail and around the places the story stood still in.">i</button></span>

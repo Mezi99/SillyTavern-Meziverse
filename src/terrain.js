@@ -606,8 +606,11 @@ void main(){
   vec3 fogC=vec3(0.);
   if(uFog>.5){
     float cn=fbm(sp*.014+vec2(t*.6,t*.25),4.);
-    vec2 ruv=suv+(cn-.5)*.03;
-    float rev=inTex>.5?texture(uStory,ruv).b:0.;
+    /* the drift in world units, not UV: a house and a travel world get the
+       same fog character */
+    vec2 ruv=suv+(cn-.5)*70./uStoryRect.zw;
+    /* the rim is a defined edge before the drift, so it visibly swirls */
+    float rev=inTex>.5?smoothstep(.3,.7,texture(uStory,ruv).b):0.;
     float cloud=.8+.4*fbm(sp*.02+vec2(-t*.8,t*.3)+7.,5.);
     fogC=vec3(.05,.075,.082)*cloud;
     fogA=(1.-rev)*.88;
@@ -728,10 +731,9 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
             ctx.globalCompositeOperation = 'lighter';
             passes.push({ el, ctx });
         }
-        const glow = (ctx, x, y, r, alpha) => {
+        const glow = (ctx, x, y, r, alpha, stops = [[0, 1], [1, 0]]) => {
             const gradient = ctx.createRadialGradient(x, y, 0, x, y, Math.max(1, r));
-            gradient.addColorStop(0, `rgba(255,255,255,${alpha})`);
-            gradient.addColorStop(1, 'rgba(255,255,255,0)');
+            for (const [at, v] of stops) gradient.addColorStop(at, `rgba(255,255,255,${alpha * v})`);
             ctx.fillStyle = gradient;
             ctx.fillRect(x - r, y - r, r * 2, r * 2);
         };
@@ -793,13 +795,16 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
             ridge(passes[1].ctx, step.pts);
         }
 
-        /* reveal: the fog the trail earns */
+        /* reveal: the fog the trail earns. The holes get a defined rim
+           (eased falloff) so the drifting lookup visibly swirls it - a
+           smooth ramp displaced is nothing you can see */
         const reveal = fogReveal(layout, atlas, derived, trail);
         for (const spot of reveal.spots) {
-            glow(passes[2].ctx, toX(spot.ax), toY(spot.ay), spot.r * scale, spot.w);
+            glow(passes[2].ctx, toX(spot.ax), toY(spot.ay), spot.r * scale, spot.w,
+                [[0, 1], [0.45, 0.95], [0.75, 0.4], [1, 0]]);
         }
         for (const ribbon of reveal.ribbons) {
-            walk(passes[2].ctx, ribbon.pts, (60 + 150 * ribbon.w) * scale, 0.85);
+            walk(passes[2].ctx, ribbon.pts, (24 + 60 * ribbon.w) * scale, 0.85);
         }
 
         /* the three channels, one texture */

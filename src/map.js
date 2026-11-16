@@ -82,6 +82,9 @@ let terrainStory = null;
 let terrainRaf = 0;
 let terrainQuality = -1;
 let chartWalks = null;
+let terrainT0 = performance.now();
+let terrainDirty = true;
+let terrainLastDraw = 0;
 
 /* The terrain record: the map's land as one small JSON per chat - derived
    by code from the watcher's own pictures and words, kept in the chat's
@@ -110,6 +113,9 @@ function terrainLayerOn() {
 
 const svg = name => `<svg class="ico" aria-hidden="true"><use href="#mz-i-${name}"/></svg>`;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+/* the alignment guard: ?mzmapdebug=1 draws red outlines over the land */
+const ALIGN_DEBUG = new URLSearchParams(location.search).has('mzmapdebug');
 const esc = value => String(value ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
 const trunc = (value, max) => {
     const text = String(value ?? '');
@@ -351,6 +357,7 @@ export function openMapWin(nodeKey = null) {
     win.hidden = false;
     win.setAttribute('aria-hidden', 'false');
     frameEl?.classList.add('is-mapwin-open');
+    terrainT0 = performance.now();
     view.placed = false;
     renderWin();
     if (selectedKey) {
@@ -721,11 +728,14 @@ function renderChart(mode) {
 
     /* territories: region, city, plot - biggest first so smaller sit on top */
     const terr = [];
+    const align = [];
     containers.slice().sort((a, b) => b.r - a.r).forEach(item => {
         const level = item.n.level;
         const cls = item.n.kind === 'mobile' ? 'mobile' : level === 0 ? 'region' : level === 1 ? 'city' : 'plot';
         const amp = level === 0 ? 0.12 : level === 1 ? 0.09 : 0.07;
-        terr.push(`<path class="mzc-terr mzc-${cls}${sel === item.n.id ? ' is-sel' : ''}" data-node="${esc(item.n.key)}" d="${blob(item.ax, item.ay, item.r, hashFold(item.n.fold), amp)}"/>`);
+        const d = blob(item.ax, item.ay, item.r, hashFold(item.n.fold), amp);
+        terr.push(`<path class="mzc-terr mzc-${cls}${sel === item.n.id ? ' is-sel' : ''}" data-node="${esc(item.n.key)}" d="${d}"/>`);
+        if (ALIGN_DEBUG) align.push(`<path d="${d}"/>`);
     });
     parts.push(`<g class="mzc-lands">${terr.join('')}</g>`);
 
@@ -842,6 +852,10 @@ function renderChart(mode) {
     }
 
     const defs = `<defs>${[...clipR].map(r => `<clipPath id="mzc-c${r}"><circle r="${r}"/></clipPath>`).join('')}</defs>`;
+    /* the alignment guard (?mzmapdebug=1): the territories again, in red,
+       riding over the land - if a red outline ever leaves its coast at any
+       zoom, the chart and the terrain disagree about where things are */
+    if (ALIGN_DEBUG) parts.push(`<g class="mzc-align">${align.join('')}</g>`);
     return { defs, body: parts.join('') };
 }
 
@@ -1418,6 +1432,15 @@ function drawTerrain() {
         terrain.setQuality(wantQuality);
     }
     const animate = settings().mapTerrainAnim && !settings().reducedMotion;
+    const nowMs = performance.now();
+    /* the drift breathes at about 30fps - but a fresh view (or scene) draws
+       at once: only the idle animation is ever paced */
+    if (animate && !terrainDirty && nowMs - terrainLastDraw < 32) {
+        scheduleTerrain();
+        return;
+    }
+    terrainDirty = false;
+    terrainLastDraw = nowMs;
     /* the sky over the land: the scene's own hour and weather - dawn light,
        night tint, rain on the hills - or a plain day when the story has
        said nothing. The flat chart stays itself. */
@@ -1430,7 +1453,7 @@ function drawTerrain() {
         tx: view.tx,
         ty: view.ty,
         s: view.s,
-        time: animate ? performance.now() / 1000 : 0,
+        time: animate ? (performance.now() - terrainT0) / 1000 : 0,
         fog: !!settings().mapTerrainFog,
         fogOnly: settings().mapTerrain === 'flat',
         sky: skyOn && scene ? skyFor(scene.hour) : null,
@@ -1466,6 +1489,7 @@ function drawChart() {
     }
     els.chart.innerHTML = (insideKey ? deckBar() : '') + fullSvg(width, height, insideKey ? 'deck' : 'full');
     bindChart();
+    terrainDirty = true;
     scheduleTerrain();
 }
 
@@ -1481,6 +1505,7 @@ function applyTransform() {
     const world = chart.querySelector('.mzc-world');
     if (world) world.style.transform = worldMatrix(view);
     chart.dataset.zoom = view.s < 0.5 ? 0 : view.s < 1.1 ? 1 : 2;
+    terrainDirty = true;
     scheduleTerrain();
 }
 

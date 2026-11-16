@@ -89,13 +89,14 @@ const DEFAULTS = {
     // Terrain quality tier: 0 low, 1 medium, 2 high - a pixel budget and
     // an octave count. A slow frame steps the tier down and remembers it.
     mapTerrainQ: 2,
-    // Terrain motion: drifting clouds and water shimmer while the map is
-    // open. Off draws one still frame; reduced motion is always still.
-    mapTerrainAnim: false,
+    // Terrain motion: the fog drifts and the water shimmers while the map
+    // is open - the mockup's living land, on out of the box. Off draws one
+    // still frame; reduced motion is always still.
+    mapTerrainAnim: true,
     // Fog of war: the clouds part along the journey trail and around the
     // places the story stood still in. Works on both looks - over Flat it
     // is a veil on the plain chart.
-    mapTerrainFog: false,
+    mapTerrainFog: true,
     // Sky and weather: the land follows the scene's own hour and weather -
     // dawn light, night tint, rain or dust on the hills. The Ink land only;
     // the flat chart stays itself.
