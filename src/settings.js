@@ -96,6 +96,10 @@ const DEFAULTS = {
     // places the story stood still in. Works on both looks - over Flat it
     // is a veil on the plain chart.
     mapTerrainFog: false,
+    // Sky and weather: the land follows the scene's own hour and weather -
+    // dawn light, night tint, rain or dust on the hills. The Ink land only;
+    // the flat chart stays itself.
+    mapTerrainSky: true,
     // Story requests: a `<music>` tag in a reply starts playback when the
     // reply lands. Off leaves playback to the player's own input.
     musicAuto: true,

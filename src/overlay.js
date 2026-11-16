@@ -480,6 +480,10 @@ const FRAME_HTML = `
                     <span class="mz-set-label"><b>Fog of war</b><button type="button" class="mz-hint" data-tip="Clouds part along the journey trail and around the places the story stood still in." aria-label="Clouds part along the journey trail and around the places the story stood still in.">i</button></span>
                     <button class="mz-switch" type="button" role="switch" aria-checked="false" aria-label="Fog of war" data-mz-action="map-terrain-fog"><i></i></button>
                 </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Sky and weather</b><button type="button" class="mz-hint" data-tip="The land follows the scene's hour and weather - dawn light, night tint, rain or dust." aria-label="The land follows the scene's hour and weather - dawn light, night tint, rain or dust.">i</button></span>
+                    <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Sky and weather" data-mz-action="map-terrain-sky"><i></i></button>
+                </div>
                 <div class="mz-adv-field">
                     <div class="mz-adv-label"><span>Terrain record</span><button class="mz-btn-ghost mz-btn-mini" type="button" data-mz-action="terrain-reseed">Reseed noise</button><button class="mz-btn-ghost mz-btn-mini" type="button" data-mz-action="terrain-rederive">Re-derive</button></div>
                     <textarea class="mz-textarea" rows="6" data-mz="terrain-record" aria-label="Terrain record" spellcheck="false"></textarea>
@@ -1286,6 +1290,11 @@ function applyMap() {
     }
     for (const button of root.querySelectorAll('[data-mz-action="map-terrain-fog"]')) {
         const isOn = !!settings().mapTerrainFog;
+        button.classList.toggle('is-on', isOn);
+        button.setAttribute('aria-checked', String(isOn));
+    }
+    for (const button of root.querySelectorAll('[data-mz-action="map-terrain-sky"]')) {
+        const isOn = settings().mapTerrainSky !== false;
         button.classList.toggle('is-on', isOn);
         button.setAttribute('aria-checked', String(isOn));
     }
@@ -2584,6 +2593,11 @@ function wireActions() {
                 break;
             case 'map-terrain-fog':
                 settings().mapTerrainFog = !settings().mapTerrainFog;
+                applyMap();
+                saveSettings();
+                break;
+            case 'map-terrain-sky':
+                settings().mapTerrainSky = settings().mapTerrainSky === false;
                 applyMap();
                 saveSettings();
                 break;

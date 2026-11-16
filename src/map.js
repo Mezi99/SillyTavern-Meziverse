@@ -26,7 +26,7 @@ import {
 import { recordSrc } from './backgrounds.js';
 import { bgStore, chatMessages, currentChatId, on, personaName, saveTerrainRecord, terrainStore } from './st.js';
 import { mapMiniOn, mapOn, saveSettings, settings } from './settings.js';
-import { TERRAIN_QUALITY, createTerrain, deriveTerrainRecord, validateTerrainRecord } from './terrain.js';
+import { TERRAIN_QUALITY, createTerrain, deriveTerrainRecord, skyFor, validateTerrainRecord, weatherFx } from './terrain.js';
 
 const LOG = '[Meziverse map]';
 
@@ -1426,6 +1426,11 @@ function drawTerrain() {
         terrain.setQuality(wantQuality);
     }
     const animate = settings().mapTerrainAnim && !settings().reducedMotion;
+    /* the sky over the land: the scene's own hour and weather - dawn light,
+       night tint, rain on the hills - or a plain day when the story has
+       said nothing. The flat chart stays itself. */
+    const scene = atlas.observations?.[atlas.observations.length - 1] || null;
+    const skyOn = !!settings().mapTerrainSky && settings().mapTerrain !== 'flat';
     terrain.draw({
         width: els.stage.clientWidth,
         height: els.stage.clientHeight,
@@ -1436,6 +1441,9 @@ function drawTerrain() {
         time: animate ? performance.now() / 1000 : 0,
         fog: !!settings().mapTerrainFog,
         fogOnly: settings().mapTerrain === 'flat',
+        sky: skyOn && scene ? skyFor(scene.hour) : null,
+        weather: skyOn && scene ? weatherFx(scene.weather) : null,
+        acc: getComputedStyle(win).getPropertyValue('--mz-accent').trim() || '#77c2aa',
     });
     if (terrain.quality !== terrainQuality) {
         terrainQuality = terrain.quality;

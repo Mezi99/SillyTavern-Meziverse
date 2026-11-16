@@ -364,8 +364,8 @@ const WEATHER_KINDS = [
     ['storm', /\b(thunder|storm|gale|hurricane|typhoon|tempest)/],
     ['snow', /\b(snow|blizzard|sleet|hail|flurr)/],
     ['rain', /\b(rain|drizzle|shower|downpour|rainy|wet)/],
-    ['fog', /\b(fog|mist|haze|smog|murk)/],
     ['sand', /\b(sand|dust|sirocco)/],
+    ['fog', /\b(fog|mist|haze|smog|murk|overcast|cloud|grey|drab)/],
 ];
 
 /**
@@ -611,11 +611,11 @@ void main(){
   /* the weather: one overlay per sky */
   if(uWeather.y>.001){
     float k=uWeather.x,s=uWeather.y;
-    if(k<1.5){float streak=smoothstep(.86,1.,fract((px.x*.4+px.y*1.35+t*240.)/22.));col*=1.-.22*streak*s;col*=1.-.12*s;}
-    else if(k<2.5){vec2 cell=fract(px/2.6+vec2(0.,t*70.))-.5;float flake=step(.965,h21(floor(px/2.6+vec2(0.,t*70.))))*ss(.2,0.,length(cell));col=mix(col,vec3(.92,.94,.97),flake*s*.8);col=mix(col,vec3(.75,.78,.84),s*.12);}
-    else if(k<3.5){float streak=smoothstep(.9,1.,fract((px.x*.25+px.y*1.5+t*320.)/26.));col*=1.-.17*streak*s;col*=1.-.08*s;}
-    else if(k<4.5){col=mix(col,vec3(.42,.46,.5),s*.28);}
-    else{col=mix(col,vec3(.52,.4,.26),s*.22);col+=(h21(px*.7)-.5)*.04*s;}
+    if(k<1.5){float streak=smoothstep(.72,1.,fract((px.x*.4+px.y*1.35+t*240.)/22.));col*=1.-.5*streak*s;col*=1.-.3*s;}
+    else if(k<2.5){vec2 cell=fract(px/4.+vec2(0.,t*70.))-.5;float flake=step(.94,h21(floor(px/4.+vec2(0.,t*70.))))*ss(.28,0.,length(cell));col=mix(col,vec3(.92,.94,.97),flake*s);col=mix(col,vec3(.75,.78,.84),s*.3);}
+    else if(k<3.5){float streak=smoothstep(.78,1.,fract((px.x*.25+px.y*1.5+t*320.)/26.));col*=1.-.45*streak*s;col*=1.-.22*s;}
+    else if(k<4.5){col=mix(col,vec3(.42,.46,.5),s*.5);}
+    else{col=mix(col,vec3(.52,.4,.26),s*.38);col+=(h21(px*.7)-.5)*.06*s;}
   }
 
   if(uFogOnly>.5){

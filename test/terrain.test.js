@@ -192,6 +192,9 @@ test('weatherFx: one overlay per sky, strongest word wins', () => {
     assert.deepEqual(weatherFx('snowing'), { kind: 'snow', strength: 0.55 });
     assert.deepEqual(weatherFx('thunder and rain'), { kind: 'storm', strength: 0.55 });
     assert.deepEqual(weatherFx('drizzle, drizzle, heavy drizzle'), { kind: 'rain', strength: 0.85 });
+    assert.deepEqual(weatherFx('Dust haze, 28\u00b0C'), { kind: 'sand', strength: 0.55 });
+    assert.deepEqual(weatherFx('Grey overcast, 46\u00b0F'), { kind: 'fog', strength: 0.7 }, 'grey AND overcast: the veil thickens');
+    assert.deepEqual(weatherFx('Cool autumn night, 16\u00b0C'), { kind: null, strength: 0 }, 'a temperature is not a weather');
     assert.deepEqual(weatherFx('clear skies'), { kind: null, strength: 0 });
     assert.deepEqual(weatherFx(''), { kind: null, strength: 0 });
 });
