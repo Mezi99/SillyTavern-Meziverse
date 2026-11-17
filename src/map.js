@@ -672,7 +672,9 @@ function renderChart(mode) {
             });
         }
 
-        /* Pass two: the icons and the stop marks, drawn from the settled map */
+        /* Pass two: the icons and the stop marks, drawn from the settled map.
+           Where a marker already stands, a trail mark steps aside. */
+        const taken = lay.order.filter(item => item.pin).map(item => [item.ax, item.ay]);
         for (const node of Object.values(nodes)) {
             if (node.kind !== 'mobile') continue;
 
@@ -702,6 +704,7 @@ function renderChart(mode) {
             const img = rich ? thumbOf(node) : '';
             if (img) clipR.add(r);
             if (markers) markers.push([x, y]);
+            taken.push([x, y]);
             ships.push(`<g class="mzc-ship${isNow ? ' is-now' : ''}${sel === node.id ? ' is-sel' : ''}${rich ? '' : ' is-plain'}" data-node="${esc(node.key)}" transform="translate(${f1(x)} ${f1(y)})" tabindex="${mini ? -1 : 0}" role="button" aria-label="${esc(node.name)}">
             ${isNow ? `<circle class="mzc-ping" r="${r + 5}"/><circle class="mzc-ping p2" r="${r + 5}"/>` : ''}
             <circle class="mzc-pin-disc" r="${r}"/>
@@ -730,14 +733,30 @@ function renderChart(mode) {
                     const placeNode = nodes[id];
                     if (!p || !placeNode) continue;
                     const mr = 7;
-                    if (markers) markers.push([p.ax, p.ay]);
-                    marks.push(`<g class="mzc-stopmark${sel === id ? ' is-sel' : ''}" data-node="${esc(placeNode.key)}" transform="translate(${f1(p.ax)} ${f1(p.ay)})" tabindex="0" role="button" aria-label="${esc(placeNode.name)}">
+                    /* a trail mark stands beside whatever already marks the
+                       spot - a pin or a berth - never stacked on top of it */
+                    let mx = p.ax;
+                    let my = p.ay;
+                    if (taken.some(([tx, ty]) => Math.hypot(tx - mx, ty - my) < 26)) {
+                        for (const [ox, oy] of [[22, -16], [-22, -16], [22, 16], [-22, 16], [0, -30]]) {
+                            if (!taken.some(([tx, ty]) => Math.hypot(tx - (p.ax + ox), ty - (p.ay + oy)) < 26)) {
+                                mx = p.ax + ox;
+                                my = p.ay + oy;
+                                break;
+                            }
+                        }
+                    }
+                    taken.push([mx, my]);
+                    if (markers) markers.push([mx, my]);
+                    /* the mark is the vehicle's history: clicking it opens
+                       the ship and its turns, not the place it crossed */
+                    marks.push(`<g class="mzc-stopmark${sel === node.id ? ' is-sel' : ''}" data-node="${esc(node.key)}" transform="translate(${f1(mx)} ${f1(my)})" tabindex="0" role="button" aria-label="${esc(node.name)} at ${esc(placeNode.name)}">
                     <circle class="mzc-pin-disc" r="${mr}"/>
                     ${icon(glyph, 0, 0, 8)}
                     <circle class="mzc-pin-ring" r="${mr}"/>
                     ${count > 1 ? `<g class="mzc-count mzc-count--sm" transform="translate(${f1(mr * 0.8)} ${f1(-mr * 0.8)})"><circle r="6"/><text y="2.2" text-anchor="middle" font-size="8">${count}</text></g>` : ''}
                     ${labelSvg(placeNode.name, mr + 11, 14)}
-                    <title>${esc(placeNode.name)} \u00b7 ${count}\u00d7 on the road</title></g>`);
+                    <title>${esc(node.name)} \u00b7 ${esc(placeNode.name)} \u00b7 ${count}\u00d7 on the road</title></g>`);
                 }
             }
         }
@@ -865,7 +884,7 @@ function renderChart(mode) {
         ${flag && !mini ? `<g class="mzc-flagdot" transform="translate(${f1(-r * 0.78)} ${f1(-r * 0.78)})"><circle r="6.5"/><text y="3.2" text-anchor="middle">!</text></g>` : ''}
         ${parked && !mini ? `<g class="mzc-parked" transform="translate(${f1(r * 0.8)} ${f1(-r * 0.8)})"><circle r="8"/>${icon(`m-${travelMode(parked.name).glyph}`, 0, 0, 10)}</g>` : ''}
         ${people.length ? `<g class="mzc-people">${people.map((name, k) => `<g transform="translate(${f1(-(people.length - 1) * 7 + k * 14)} ${-r - 11})"><circle r="7"/><text y="3" text-anchor="middle">${esc(name[0])}</text></g>`).join('')}</g>` : ''}
-        ${label ? labelSvg(node.name, r + 14, mini ? 16 : 18) : ''}
+        ${label && !item.hub ? labelSvg(node.name, r + 14, mini ? 16 : 18) : ''}
         <title>${esc(node.name)}</title></g>`);
     });
     parts.push(`<g class="mzc-pins">${pins.join('')}</g>`);
