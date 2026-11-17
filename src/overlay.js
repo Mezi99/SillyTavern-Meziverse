@@ -458,9 +458,9 @@ const FRAME_HTML = `
                     </div>
                 </div>
                 <div class="mz-set-row">
-                    <span class="mz-set-label"><b>Land</b><button type="button" class="mz-hint" data-tip="Ink paints the story's terrain under the map; Flat is the plain chart." aria-label="Ink paints the story's terrain under the map; Flat is the plain chart.">i</button></span>
+                    <span class="mz-set-label"><b>Land</b><button type="button" class="mz-hint" data-tip="Terrain paints the story's land under the map; Flat is the plain chart." aria-label="Terrain paints the story's land under the map; Flat is the plain chart.">i</button></span>
                     <div class="mz-seg" role="group" aria-label="Map land">
-                        <button type="button" data-mz-pick-mapland="ink">Ink</button>
+                        <button type="button" data-mz-pick-mapland="ink">Terrain</button>
                         <button type="button" data-mz-pick-mapland="flat">Flat</button>
                     </div>
                 </div>
@@ -1289,9 +1289,13 @@ function applyMap() {
         button.setAttribute('aria-checked', String(isOn));
     }
     for (const button of root.querySelectorAll('[data-mz-action="map-terrain-fog"]')) {
-        const isOn = !!settings().mapTerrainFog;
+        /* there is no fog in Flat - the veil needs the land to ride over */
+        const flat = settings().mapTerrain === 'flat';
+        const isOn = !flat && !!settings().mapTerrainFog;
         button.classList.toggle('is-on', isOn);
         button.setAttribute('aria-checked', String(isOn));
+        button.disabled = flat;
+        button.setAttribute('aria-disabled', String(flat));
     }
     for (const button of root.querySelectorAll('[data-mz-action="map-terrain-sky"]')) {
         const isOn = settings().mapTerrainSky !== false;

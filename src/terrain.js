@@ -456,24 +456,17 @@ export function townSources(layout, atlas, derived) {
  */
 export function roadCurves(layout, atlas, derived, walks = null) {
     const items = (layout && layout.items) || {};
-    const nodes = (atlas && atlas.nodes) || {};
     /* resolve exactly like the SVG's pointFor: the layout's anchor (pins and
        hubs first) - never a raw blob centre, or the road runs beside the
        trail instead of under it */
     const pointFor = id => (layout && layout.anchor ? layout.anchor(id) : items[id]) || null;
     const trail = walks || trailWalks((derived && derived.legs) || [], pointFor);
-    const rootOf = id => {
-        let node = nodes[id];
-        while (node && node.parentId) node = nodes[node.parentId];
-        return node;
-    };
     const curves = [];
     for (const step of trail) {
-        const { leg, from, to } = step;
-        const ra = rootOf(leg.a);
-        const rb = rootOf(leg.b);
-        if (!ra || ra.id !== rb?.id) continue;
-        if (Math.hypot(from.ax - to.ax, from.ay - to.ay) > 340) continue;
+        const { leg } = step;
+        /* land journeys only: the rides keep their dotted trail (and in Flat
+           mode there are no paths at all - every leg stays dotted there) */
+        if (leg.vehicle || leg.mode) continue;
         curves.push(walkSegments(step.pts));
     }
     return curves;

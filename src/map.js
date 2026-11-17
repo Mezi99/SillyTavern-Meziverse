@@ -206,7 +206,7 @@ const WIN_HTML = `
         <div class="mz-map-cart"><b data-mz-map-ctitle></b><small data-mz-map-csub></small></div>
         <div class="mz-map-tools">
             <div class="mz-map-seg" role="group" aria-label="Map look">
-                <button type="button" aria-pressed="true" data-mz-map-look="ink">Ink</button>
+                <button type="button" aria-pressed="true" data-mz-map-look="ink">Terrain</button>
                 <button type="button" aria-pressed="false" data-mz-map-look="flat">Flat</button>
             </div>
             <div class="mz-map-seg">
@@ -804,8 +804,9 @@ function renderChart(mode) {
         if (deck || !trails || !shown.has(leg.key)) return;
         const width = Math.min(2.2, 1.2 + leg.count * 0.25);
         const isLast = leg.key === lastKey;
+        const ride = !!(leg.vehicle || leg.mode);
 
-        legSvg.push(`<path class="mzc-leg${isLast ? ' is-last' : ''}${sel && (leg.a === sel || leg.b === sel) ? ' is-sel' : ''}" d="${d}" style="stroke-width:${f1(width)}px"/>`);
+        legSvg.push(`<path class="mzc-leg${ride ? '' : ' is-land'}${isLast ? ' is-last' : ''}${sel && (leg.a === sel || leg.b === sel) ? ' is-sel' : ''}" d="${d}" style="stroke-width:${f1(width)}px"/>`);
     });
     parts.push(`<g class="mzc-legs">${legSvg.join('')}</g>`);
 
@@ -1042,8 +1043,12 @@ function syncLookChips() {
     win.querySelectorAll('[data-mz-map-look]').forEach(button => {
         button.setAttribute('aria-pressed', String(button.dataset.mzMapLook === look));
     });
+    /* there is no fog in Flat - the veil needs the land to ride over */
+    const flat = look === 'flat';
     win.querySelectorAll('[data-mz-map-layer="fog"]').forEach(button => {
-        button.setAttribute('aria-pressed', String(!!settings().mapTerrainFog));
+        button.setAttribute('aria-pressed', String(!flat && !!settings().mapTerrainFog));
+        button.disabled = flat;
+        button.setAttribute('aria-disabled', String(flat));
     });
 }
 
@@ -1507,7 +1512,7 @@ function drawTerrain() {
         s: view.s,
         interact: performance.now() - lastViewChange < 140,
         time: animate ? (performance.now() - terrainT0) / 1000 : 0,
-        fog: !!settings().mapTerrainFog,
+        fog: !!settings().mapTerrainFog && settings().mapTerrain !== 'flat',
         fogOnly: settings().mapTerrain === 'flat',
         sky: skyOn && scene ? skyFor(scene.hour) : null,
         weather: skyOn && scene ? weatherFx(scene.weather) : null,
@@ -2125,7 +2130,7 @@ function wireWin() {
             const layer = button.dataset.mzMapLayer;
             if (layer === 'trails') trails = !trails;
             else if (layer === 'flags') flagsShown = !flagsShown;
-            else if (layer === 'fog') {
+            else if (layer === 'fog' && settings().mapTerrain !== 'flat') {
                 settings().mapTerrainFog = !settings().mapTerrainFog;
                 saveSettings();
             }

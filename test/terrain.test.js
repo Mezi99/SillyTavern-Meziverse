@@ -287,13 +287,13 @@ test('roadCurves: the road lies on the trail the SVG draws', () => {
     } };
     const derived = { legs: [
         { a: 'a', b: 'b', key: 'a|b', dir: ['a', 'b'], count: 1 },
-        { a: 'a', b: 'c', key: 'a|c', dir: ['a', 'c'], count: 1 },
-        { a: 'b', b: 'c', key: 'b|c', dir: ['b', 'c'], count: 1 },
+        { a: 'a', b: 'c', key: 'a|c', dir: ['a', 'c'], count: 1, vehicle: 'ship' },
+        { a: 'b', b: 'c', key: 'b|c', dir: ['b', 'c'], count: 1, mode: { glyph: 'rocket' } },
     ], nowId: 'b' };
     const curves = roadCurves(layout, atlas, derived);
-    // only the same-region leg draws a road (a-b); a-c is cross-region and
-    // b-c is both cross-region and long - the mockup's exact rules
-    assert.equal(curves.length, 1, `one walk, one road: ${curves.length}`);
+    // only the land journey draws a path (a-b); the rides keep their dotted
+    // trail - one journey kind, one line style
+    assert.equal(curves.length, 1, `one land walk, one road: ${curves.length}`);
     const pts = curves[0];
     assert.equal(pts.length, 44, 'the walk, sampled smooth');
     assert.deepEqual(pts[0], [0, 0], 'lands on its place');

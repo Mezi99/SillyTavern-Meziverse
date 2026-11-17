@@ -101,6 +101,12 @@
 [data-mz-map-chart] .mzc[data-zoom="0"] .mzc-open { display: none; }
 [data-mz-map-chart] .mzc[data-zoom="1"] .mzc-leg { stroke-dasharray: 1.5 5; }
 [data-mz-map-chart] .mzc[data-zoom="1"] .mzc-leg.is-last { stroke-dasharray: 6 5; }
+/* Terrain mode: a land journey is a solid walked path (the lit road carries
+   it underneath) - only the rides keep the dotted trail. Flat keeps every
+   leg dotted: there are no paths there. */
+.mzc.has-terrain .mzc-leg.is-land { stroke-dasharray: none; stroke-opacity: .5; }
+.mzc.has-terrain .mzc-leg.is-land.is-last { stroke-dasharray: none; animation: none; stroke-opacity: .85; }
+.mzc.has-terrain .mzc-leg.is-land.is-sel { stroke-opacity: .95; }
 /* the alignment guard (?mzmapdebug=1): the territories in red over the
    land - if they leave their coast, the two renderers disagree */
 .mzc-align path { fill: none; stroke: #ff5d5d; stroke-width: 1.2px; vector-effect: non-scaling-stroke; pointer-events: none; }
