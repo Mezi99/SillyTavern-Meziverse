@@ -650,6 +650,38 @@ test('layout: revisiting a place moves nothing at all', () => {
     assert.deepEqual(coordsOf(a), coordsOf(b));
 });
 
+test('layout: a huge world loses no place, and no place is ever NaN', () => {
+    /* two trees big enough that one root demands more clearance from its
+       sibling than the ring sweep reaches - the case that used to drop the
+       item (undefined x), poison bounds, and freeze the map at
+       translate(NaN NaN). Long stories run to worlds like this. */
+    const tree = (root, depth) => {
+        const chains = [];
+        const walk = path => {
+            if (path.length === depth) { chains.push(path); return; }
+            walk([...path, `${path.join(' ')}-a`]);
+            walk([...path, `${path.join(' ')}-b`]);
+        };
+        walk([root]);
+        return chains;
+    };
+    const make = () => buildAtlas(obs(...tree('Rome', 6), ...tree('Peru', 6)));
+    const layout = layoutAtlas(make(), { depth: 99 });
+
+    const placed = Object.keys(layout.items).filter(key => !key.startsWith('hub:'));
+    assert.equal(placed.length, Object.keys(make().nodes).length,
+        'every place is placed - a dropped one has no position');
+    for (const item of layout.order) {
+        assert.ok(Number.isFinite(item.ax) && Number.isFinite(item.ay), `${item.n.key} stands somewhere finite`);
+        assert.ok(Number.isFinite(item.r), `${item.n.key} has a finite size`);
+    }
+    for (const side of ['x0', 'x1', 'y0', 'y1']) {
+        assert.ok(Number.isFinite(layout.bounds[side]), `bounds.${side} is finite`);
+    }
+    assert.deepEqual(coordsOf(layoutAtlas(make(), { depth: 99 })), coordsOf(layout),
+        'the stand-in slot is seeded, not random');
+});
+
 test('layout: depth collapses children into the parent pin, and the anchor follows', () => {
     const atlas = buildAtlas(obs(
         ['USA', 'New York City', 'Jammie\u2019s house', 'Kitchen'],
@@ -788,6 +820,9 @@ test('worldMatrix: the transform carries the exact scale the land is drawn at', 
     assert.ok(Math.abs(Number(t[2]) - 88.888) < 0.011, 'ty survives');
     // a rounded scale would slide the chart off the land at any odd zoom
     assert.notEqual(m, 'translate(-237.4px,88.9px) scale(0.4)');
+    // a broken view must degrade, never freeze the map at translate(NaN NaN)
+    assert.ok(!worldMatrix({ tx: NaN, ty: NaN, s: 0 }).includes('NaN'));
+    assert.ok(!worldMatrix({ tx: 5 }).includes('NaN'));
 });
 
 test('trailWalks: one journey, one walk everywhere', () => {

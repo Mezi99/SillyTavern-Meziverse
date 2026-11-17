@@ -1593,13 +1593,22 @@ function applyTransform() {
     scheduleTerrain();
 }
 
+/** The chart's world extents - finite always. A NaN bounds would flow into
+    fitScale (Math.max(0.02, NaN) is NaN), then into the view, and freeze the
+    map at translate(NaN NaN). */
+function viewBounds() {
+    const bounds = activeLayout().bounds;
+    if (bounds && [bounds.x0, bounds.x1, bounds.y0, bounds.y1].every(Number.isFinite)) return bounds;
+    return { x0: 0, x1: 1, y0: 0, y1: 1 };
+}
+
 /** The scale fit() would pick. The zoom floor lives just below it, so every
     map can always zoom back out to its own fitted world - a house and a
     travel world keep their own floors. */
 function fitScale() {
     const width = els.stage.clientWidth;
     const height = els.stage.clientHeight;
-    const bounds = activeLayout().bounds;
+    const bounds = viewBounds();
     const margin = 70;
     return Math.max(0.02, Math.min(1.25,
         Math.min((width - margin * 2) / Math.max(1, bounds.x1 - bounds.x0),
@@ -1612,7 +1621,7 @@ const zoomMin = () => Math.min(0.35, fitScale() * 0.85);
 function fitTarget() {
     const width = els.stage.clientWidth;
     const height = els.stage.clientHeight;
-    const bounds = activeLayout().bounds;
+    const bounds = viewBounds();
     const spanX = bounds.x1 - bounds.x0;
     const spanY = bounds.y1 - bounds.y0;
     const s = fitScale();
@@ -1656,7 +1665,13 @@ function glideTo(target, ms = 420) {
         applyTransform();
         return;
     }
-    const from = { tx: view.tx, ty: view.ty, s: view.s };
+    /* a broken view (s = 0, or a NaN from some earlier failure) would make
+       the interpolation NaN too - the map freezes at translate(NaN NaN) */
+    const from = {
+        tx: Number.isFinite(view.tx) ? view.tx : target.tx,
+        ty: Number.isFinite(view.ty) ? view.ty : target.ty,
+        s: Number.isFinite(view.s) && view.s > 0 ? view.s : target.s,
+    };
     const t0 = performance.now();
     const step = now => {
         const k = Math.min(1, (now - t0) / ms);

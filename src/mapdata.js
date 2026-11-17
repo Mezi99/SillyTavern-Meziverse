@@ -1088,7 +1088,12 @@ export function trailWalks(legs, pointFor) {
  * @returns {string} a CSS `transform` value
  */
 export function worldMatrix(view) {
-    return `translate(${view.tx.toFixed(2)}px,${view.ty.toFixed(2)}px) scale(${view.s.toFixed(5)})`;
+    /* total: a NaN here freezes the map at translate(NaN NaN), so a broken
+       view degrades to the world's origin at unit scale instead */
+    const tx = Number.isFinite(view.tx) ? view.tx : 0;
+    const ty = Number.isFinite(view.ty) ? view.ty : 0;
+    const s = Number.isFinite(view.s) && view.s > 0 ? view.s : 1;
+    return `translate(${tx.toFixed(2)}px,${ty.toFixed(2)}px) scale(${s.toFixed(5)})`;
 }
 
 /**
@@ -1158,6 +1163,17 @@ function pack(items, gap, seed) {
                 return;
             }
         }
+
+        /* The sweep found no slot (huge siblings can demand more clearance
+           than the sweep reaches). Never drop the item: a place with no
+           position turns into NaN, and one NaN poisons bounds - which takes
+           the whole chart's view down with it. Stand it beyond every placed
+           edge on its own seeded angle: distance from the cluster's farthest
+           edge is >= its own clearance, so this slot is always free. */
+        const far = placed.reduce((m, p) => Math.max(m, Math.hypot(p.x, p.y) + p.r), 0) + item.r + gap + 2;
+        item.x = Math.cos(start) * far;
+        item.y = Math.sin(start) * far;
+        placed.push(item);
     });
 
     return placed.length
@@ -1224,6 +1240,12 @@ export function layoutAtlas(atlas, { depth = 4, inside = '', landings = null } =
 
     const out = { items: {}, order: [], roots, bounds: null };
     const walk = (item, ox, oy) => {
+        /* a place always stands somewhere finite: a NaN here would poison
+           bounds, then fitScale, then the whole chart's view */
+        if (!Number.isFinite(item.x) || !Number.isFinite(item.y)) {
+            item.x = 0;
+            item.y = 0;
+        }
         item.ax = ox + item.x;
         item.ay = oy + item.y;
         /* a hub shares its node with the blob that holds it - keep both */
@@ -1233,7 +1255,7 @@ export function layoutAtlas(atlas, { depth = 4, inside = '', landings = null } =
     };
     roots.forEach(root => walk(root, 0, 0));
 
-    const all = out.order;
+    const all = out.order.filter(i => Number.isFinite(i.ax) && Number.isFinite(i.ay) && Number.isFinite(i.r));
     out.bounds = all.length ? {
         x0: Math.min(...all.map(i => i.ax - i.r)),
         x1: Math.max(...all.map(i => i.ax + i.r)),
