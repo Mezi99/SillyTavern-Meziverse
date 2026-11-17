@@ -47,6 +47,7 @@ let drag = null;
 let miniSizing = false;
 let winDrag = null;
 let winSizing = false;
+let resizeQueued = false;
 let queued = false;
 
 /* Derived state: the atlas and its legs are cached by a chat signature, the
@@ -704,7 +705,8 @@ function renderChart(mode) {
             ships.push(`<g class="mzc-ship${isNow ? ' is-now' : ''}${sel === node.id ? ' is-sel' : ''}${rich ? '' : ' is-plain'}" data-node="${esc(node.key)}" transform="translate(${f1(x)} ${f1(y)})" tabindex="${mini ? -1 : 0}" role="button" aria-label="${esc(node.name)}">
             ${isNow ? `<circle class="mzc-ping" r="${r + 5}"/><circle class="mzc-ping p2" r="${r + 5}"/>` : ''}
             <circle class="mzc-pin-disc" r="${r}"/>
-            ${img ? `<image href="${esc(img)}" x="${-r}" y="${-r}" width="${2 * r}" height="${2 * r}" clip-path="url(#mzc-c${r})" preserveAspectRatio="xMidYMid slice" draggable="false"/>` : icon(glyph, 0, 0, r * 1.15)}
+            ${icon(glyph, 0, 0, r * 1.15)}
+            ${img ? `<image href="${esc(img)}" x="${-r}" y="${-r}" width="${2 * r}" height="${2 * r}" clip-path="url(#mzc-c${r})" preserveAspectRatio="xMidYMid slice" draggable="false"/>` : ''}
             <circle class="mzc-pin-ring" r="${r}"/>
             ${rich ? `<g class="mzc-shipglyph" transform="translate(${f1(r * 0.82)} ${f1(-r * 0.82)})"><circle r="8"/>${icon(glyph, 0, 0, 11)}</g>` : ''}
             ${rich && !mini ? `<g class="mzc-count" transform="translate(${f1(-r * 0.82)} ${f1(r * 0.82)})"><circle r="7.5"/><text y="3" text-anchor="middle">${kids}</text></g>` : ''}
@@ -727,11 +729,11 @@ function renderChart(mode) {
                     const p = id === endId ? null : wayPoints.get(id);
                     const placeNode = nodes[id];
                     if (!p || !placeNode) continue;
-                    const mr = 8;
+                    const mr = 7;
                     if (markers) markers.push([p.ax, p.ay]);
                     marks.push(`<g class="mzc-stopmark${sel === id ? ' is-sel' : ''}" data-node="${esc(placeNode.key)}" transform="translate(${f1(p.ax)} ${f1(p.ay)})" tabindex="0" role="button" aria-label="${esc(placeNode.name)}">
                     <circle class="mzc-pin-disc" r="${mr}"/>
-                    ${icon(glyph, 0, 0, 10)}
+                    ${icon(glyph, 0, 0, 8)}
                     <circle class="mzc-pin-ring" r="${mr}"/>
                     ${count > 1 ? `<g class="mzc-count mzc-count--sm" transform="translate(${f1(mr * 0.8)} ${f1(-mr * 0.8)})"><circle r="6"/><text y="2.2" text-anchor="middle" font-size="8">${count}</text></g>` : ''}
                     ${labelSvg(placeNode.name, mr + 11, 14)}
@@ -849,7 +851,8 @@ function renderChart(mode) {
         pins.push(`<g class="mzc-pin lv${Math.min(node.level ?? 3, 3)}${!stopped ? ' is-passed' : ''}${isNow ? ' is-now' : ''}${isSel ? ' is-sel' : ''}${flag ? ' is-flag' : ''}${mini && !label ? ' is-quiet' : ''}" data-node="${esc(node.key)}" transform="translate(${f1(item.ax)} ${f1(item.ay)})" style="--age:${f1(Math.max(0, Math.min(1, age)))}" tabindex="${mini ? -1 : 0}" role="button" aria-label="${esc(node.name)}">
         ${isNow ? `<circle class="mzc-ping" r="${r + 4}"/><circle class="mzc-ping p2" r="${r + 4}"/>` : ''}
         <circle class="mzc-pin-disc" r="${r}"/>
-        ${img ? `<image href="${esc(img)}" x="${-r}" y="${-r}" width="${2 * r}" height="${2 * r}" clip-path="url(#${clip})" preserveAspectRatio="xMidYMid slice" draggable="false"/>` : (stopped ? icon('map', 0, 0, r * 0.9) : '')}
+        ${stopped ? icon('map', 0, 0, r * 0.9) : ''}
+        ${img ? `<image href="${esc(img)}" x="${-r}" y="${-r}" width="${2 * r}" height="${2 * r}" clip-path="url(#${clip})" preserveAspectRatio="xMidYMid slice" draggable="false"/>` : ''}
         <circle class="mzc-pin-ring" r="${r}"/>
         ${hiddenKids && !mini ? `<g class="mzc-count" transform="translate(${f1(r * 0.78)} ${f1(r * 0.78)})"><circle r="7.5"/><text y="3" text-anchor="middle">${hiddenKids}</text></g>` : ''}
         ${flag && !mini ? `<g class="mzc-flagdot" transform="translate(${f1(-r * 0.78)} ${f1(-r * 0.78)})"><circle r="6.5"/><text y="3.2" text-anchor="middle">!</text></g>` : ''}
@@ -1685,6 +1688,12 @@ function bindChart() {
     const chart = els.chart.querySelector('.mzc');
     if (!chart) return;
 
+    /* a picture that never arrives falls back to the glyph beneath it -
+       never a broken-image icon */
+    chart.querySelectorAll('image').forEach(image => {
+        image.addEventListener('error', () => image.remove());
+    });
+
     chart.addEventListener('pointerdown', event => {
         if (event.button > 0) return;
         glideCancel();
@@ -2052,11 +2061,22 @@ function wireWinDrag() {
             const rect = win.getBoundingClientRect();
             win.style.width = `${clamp(start.w + event.clientX - start.x, 680, Math.max(680, frameRect.right - rect.left - EDGE))}px`;
             win.style.height = `${clamp(start.h + event.clientY - start.y, 440, Math.max(440, frameRect.bottom - rect.top - EDGE))}px`;
+            /* the chart and the land re-render at the new size as it grows -
+               CSS-stretching would scale the blobs but leave the terrain at
+               its old pixels */
+            if (!resizeQueued) {
+                resizeQueued = true;
+                requestAnimationFrame(() => {
+                    resizeQueued = false;
+                    drawChart();
+                });
+            }
         };
         const up = () => {
             els.winGrip.removeEventListener('pointermove', move);
             els.winGrip.removeEventListener('pointerup', up);
             winSizing = false;
+            drawChart();
             saveWinPlace();
         };
         els.winGrip.addEventListener('pointermove', move);

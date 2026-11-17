@@ -58,7 +58,10 @@
 
 /* the trail's past stops: small vehicle icons where the turns happened */
 .mzc-stopmark { cursor: pointer; }
-.mzc-stopmark .mzc-pin-label { opacity: .9; font-size: 9.5px; }
+/* a mark on the trail, not a node: outline-only, the vehicle glyph inside */
+.mzc-stopmark .mzc-pin-disc { fill: none; }
+.mzc-stopmark .mzc-pin-ring { stroke-width: 1px; stroke-dasharray: 2.5 2.5; }
+.mzc-stopmark .mzc-pin-label { opacity: .8; font-size: 9px; }
 .mzc-stopmark:hover .mzc-pin-ring, .mzc-stopmark.is-sel .mzc-pin-ring { stroke: var(--mz-accent); stroke-width: 2; }
 .mzc-stopmark .mzc-count text { font-size: 8px; }
 .mzc-ship.is-plain { color: var(--mz-accent); }

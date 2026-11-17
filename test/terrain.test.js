@@ -6,7 +6,7 @@ import {
     deriveTerrainRecord,
     paletteFromSamples,
     ratiosFromText,
-    roadSegments,
+    roadCurves,
     skyFor,
     townSources,
     validateTerrainRecord,
@@ -266,7 +266,7 @@ test('townSources: wears the real atlas without a stumble', () => {
     for (const ter of ters) assert.ok(ter.r > 0 && ter.w > 0);
 });
 
-test('roadSegments: the road lies on the trail the SVG draws', () => {
+test('roadCurves: the road lies on the trail the SVG draws', () => {
     const layout = { items: {
         reg: { n: { id: 'reg' }, ax: 0, ay: 0, r: 400 },
         reg2: { n: { id: 'reg2' }, ax: 200, ay: 200, r: 200 },
@@ -286,12 +286,13 @@ test('roadSegments: the road lies on the trail the SVG draws', () => {
         { a: 'a', b: 'c', key: 'a|c', dir: ['a', 'c'], count: 1 },
         { a: 'b', b: 'c', key: 'b|c', dir: ['b', 'c'], count: 1 },
     ], nowId: 'b' };
-    const segs = roadSegments(layout, atlas, derived);
+    const curves = roadCurves(layout, atlas, derived);
     // only the same-region leg draws a road (a-b); a-c is cross-region and
     // b-c is both cross-region and long - the mockup's exact rules
-    assert.equal(segs.length, 43, `one walk, its chain of segments: ${segs.length}`);
-    for (const seg of segs) {
-        assert.ok(seg.every(Number.isFinite), 'plain numbers');
-        assert.ok(Math.max(seg[0], seg[2]) <= 101 && Math.min(seg[0], seg[2]) >= -1, 'only the near pair');
-    }
+    assert.equal(curves.length, 1, `one walk, one road: ${curves.length}`);
+    const pts = curves[0];
+    assert.equal(pts.length, 44, 'the walk, sampled smooth');
+    assert.deepEqual(pts[0], [0, 0], 'lands on its place');
+    assert.deepEqual(pts[pts.length - 1], [100, 0], 'reaches the other exactly');
+    for (const [x, y] of pts) assert.ok(Number.isFinite(x) && Number.isFinite(y), 'plain numbers');
 });

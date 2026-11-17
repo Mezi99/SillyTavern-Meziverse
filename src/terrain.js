@@ -441,17 +441,18 @@ export function townSources(layout, atlas, derived) {
 }
 
 /**
- * The road's line segments: the same-region legs the story walked, sampled
+ * The road's walks: the same-region legs the story walked, each as points
  * along the very curve the SVG's dotted trail draws - so the lit road lies
- * on the trail to the pixel. Each segment is [ax, ay, bx, by].
+ * on the trail to the pixel. The renderer budgets segments per frame; the
+ * curves let it sample finer up close and coarser at fit.
  *
  * @param {object} layout `layoutAtlas` output (items with ax/ay)
  * @param {object} atlas `buildAtlas` output (nodes carry parentId)
  * @param {object} derived `deriveLegs` output (legs)
  * @param {Array<object>} [walks] `trailWalks` output (derived here when omitted)
- * @returns {Array<[number, number, number, number]>}
+ * @returns {Array<Array<[number, number]>>} one point list per road
  */
-export function roadSegments(layout, atlas, derived, walks = null) {
+export function roadCurves(layout, atlas, derived, walks = null) {
     const items = (layout && layout.items) || {};
     const nodes = (atlas && atlas.nodes) || {};
     /* resolve exactly like the SVG's pointFor: the layout's anchor (pins and
@@ -464,17 +465,16 @@ export function roadSegments(layout, atlas, derived, walks = null) {
         while (node && node.parentId) node = nodes[node.parentId];
         return node;
     };
-    const segs = [];
+    const curves = [];
     for (const step of trail) {
         const { leg, from, to } = step;
         const ra = rootOf(leg.a);
         const rb = rootOf(leg.b);
         if (!ra || ra.id !== rb?.id) continue;
         if (Math.hypot(from.ax - to.ax, from.ay - to.ay) > 340) continue;
-        const pts = walkSegments(step.pts);
-        for (let i = 1; i < pts.length; i += 1) segs.push([pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]]);
+        curves.push(walkSegments(step.pts));
     }
-    return segs;
+    return curves;
 }
 
 /* ---------- fog of war: what the story has earned ----------
@@ -625,9 +625,14 @@ void main(){
   float sh=clamp(dot(nrm,lightDir),0.,1.);
   float isWater=1.-ss(.296,.304,h0);
   /* the road: the mockup's field, verbatim - a fine hand-trodden line
-     along the very walks the dotted trail draws */
-  float roadAA=px1*.9;
-  float road=roadField(p,1.5*clamp(uTowns,.3,1.4),roadAA)*(1.-isWater)*step(.01,uTowns);
+     along the very walks the dotted trail draws. It keeps a screen-space
+     floor: the mockup's delicacy up close, still visible at fit on a
+     travel world */
+  float roadW=max(1.5*clamp(uTowns,.3,1.4),px1*1.4);
+  float roadAA=max(px1*.9,roadW*.32);
+  /* no water mask: the road follows the walked trail, and the trail does
+     not stop at the water's edge either */
+  float road=roadField(p,roadW,roadAA)*step(.01,uTowns);
   vec4 P=uRegP[rid];
   vec3 Lc=uRC[rid*3],Fc=uRC[rid*3+1],Hc=uRC[rid*3+2];
   float hh=h0-.30;
@@ -802,7 +807,7 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
             nRegions: roots.length,
             pins: towns.pins,
             ters: towns.ters,
-            legs: roadSegments(layout, atlas, derived, walks),
+            legs: roadCurves(layout, atlas, derived, walks),
             sea: hexToRgb(rec.sea || '#143a45'),
             shallow: hexToRgb(rec.shallow || '#2b7b82'),
             town: hexToRgb(rec.town || '#b9b2a4'),
@@ -885,15 +890,27 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
         gl.uniform1i(U.uNP, np);
         gl.uniform4fv(U.uTer, terBuf);
         gl.uniform1i(U.uNT, nt);
-        /* the roads: culled like the towns, capped per tier */
-        const legCap = qIndex >= 2 ? 64 : qIndex === 1 ? 48 : 32;
+        /* the roads: culled like the towns, with a per-road share of the
+           segment budget - a close-up road runs smooth, an overview samples
+           coarser, and every road reaches its node exactly */
+        const visible = scene.legs.filter(pts => pts.some(([qx, qy]) => qx > x0 && qx < x1 && qy > y0 && qy < y1));
+        const legMax = legBuf.length / 4;
+        const per = Math.max(1, Math.floor(legMax / Math.max(1, visible.length)));
         let nl = 0;
-        for (const seg of scene.legs) {
-            if (nl >= legCap) break;
-            if (Math.max(seg[0], seg[2]) < x0 || Math.min(seg[0], seg[2]) > x1
-                || Math.max(seg[1], seg[3]) < y0 || Math.min(seg[1], seg[3]) > y1) continue;
-            legBuf.set(seg, nl * 4);
-            nl += 1;
+        for (const pts of visible) {
+            const emit = (a, b) => {
+                if (nl >= legMax) return;
+                legBuf.set([a[0], a[1], b[0], b[1]], nl * 4);
+                nl += 1;
+            };
+            const n = pts.length - 1;
+            const stride = Math.max(1, Math.ceil(n / per));
+            let prev = 0;
+            for (let i = stride; i < n; i += stride) {
+                emit(pts[prev], pts[i]);
+                prev = i;
+            }
+            emit(pts[prev], pts[n]);
         }
         gl.uniform4fv(U.uLeg, legBuf);
         gl.uniform1i(U.uNL, nl);
