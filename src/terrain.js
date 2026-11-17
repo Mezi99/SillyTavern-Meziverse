@@ -386,6 +386,58 @@ export function weatherFx(text) {
     return { kind: null, strength: 0 };
 }
 
+/* ---------- the towns: where the story stood ---------- */
+
+/**
+ * The town field's sources: the pins the story actually stood in, and the
+ * city / plot territories those pins belong to - never regions, never a
+ * whole blob (the mockup paints towns at places, not across lands). Each
+ * pin carries the fog clearing it earns (200 now / 160 stopped / 112
+ * passed), so one list serves both fields.
+ *
+ * @param {object} layout `layoutAtlas` output (items with ax/ay/r/pin)
+ * @param {object} atlas `buildAtlas` output (nodes carry stops/level/kind)
+ * @param {object} derived `deriveLegs` output (nowId)
+ * @returns {{pins:Array<{ax:number,ay:number,size:number,r:number}>,
+ *            ters:Array<{ax:number,ay:number,r:number,w:number}>}}
+ */
+export function townSources(layout, atlas, derived) {
+    const items = (layout && layout.items) || {};
+    const nodes = (atlas && atlas.nodes) || {};
+    const pins = [];
+    const terIds = new Set();
+    for (const item of Object.values(items)) {
+        if (!item.pin) continue;
+        const id = item.n && item.n.id;
+        const node = nodes[id];
+        if (!node || node.kind === 'mobile' || node.kind === 'transient') continue;
+        const now = derived && derived.nowId === id;
+        const stops = node.stops || 0;
+        if (!stops && !now) continue;
+        const level = Number.isFinite(node.level) ? node.level : 3;
+        pins.push({
+            ax: item.ax,
+            ay: item.ay,
+            size: level <= 1 ? 46 : level === 2 ? 34 : 24,
+            r: now ? 200 : stops ? 160 : 112,
+        });
+        for (let at = node; at; at = at.parentId ? nodes[at.parentId] : null) {
+            if (at.kind === 'mobile' || at.kind === 'transient') continue;
+            const holder = items[at.id];
+            const lvl = Number.isFinite(at.level) ? at.level : 3;
+            if (holder && !holder.pin && (lvl === 1 || lvl === 2)) terIds.add(at.id);
+        }
+    }
+    const ters = [];
+    for (const id of terIds) {
+        const item = items[id];
+        const node = nodes[id];
+        if (!item || !node) continue;
+        ters.push({ ax: item.ax, ay: item.ay, r: item.r, w: node.level === 1 ? 0.55 : 0.8 });
+    }
+    return { pins, ters };
+}
+
 /* ---------- fog of war: what the story has earned ---------- */
 
 /**
@@ -477,6 +529,8 @@ in vec2 a;void main(){gl_Position=vec4(a,0.,1.);}`;
 const TERRAIN_FS = `#version 300 es
 precision highp float;
 #define MAXR 24
+#define MAXP 48
+#define MAXT 20
 #define SIG 28.
 out vec4 fragColor;
 uniform vec2 uRes,uCenter,uSeedV;
@@ -488,6 +542,9 @@ uniform vec3 uRC[MAXR*3];
 uniform sampler2D uStory;
 uniform vec4 uStoryRect;
 uniform vec4 uWeather;
+uniform vec4 uPin[MAXP],uTer[MAXT];
+uniform int uNP,uNT;
+uniform float uRelief,uWater,uForest,uTowns;
 
 float h21(vec2 p){vec3 q=fract(vec3(p.xyx)*.1031);q+=dot(q,q.yzx+33.33);return fract((q.x+q.y)*q.z);}
 float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(h21(i),h21(i+vec2(1,0)),f.x),mix(h21(i+vec2(0,1)),h21(i+vec2(1,1)),f.x),f.y);}
@@ -507,6 +564,15 @@ void regionField(vec2 p,out float S,out int rid){
   rid=bi;S=.5+best/(2.*SIG);
 }
 
+/* where the towns are: the mockup's field, verbatim - pin gaussians and
+   city/plot discs, MAX-combined so stacking never grows the town */
+float townField(vec2 p){
+  float t=0.;
+  for(int i=0;i<MAXP;i++){if(i>=uNP)break;vec4 q=uPin[i];float d=length(p-q.xy);t=max(t,exp(-d*d/(q.z*q.z))*.95);}
+  for(int i=0;i<MAXT;i++){if(i>=uNT)break;vec4 q=uTer[i];float d=length(p-q.xy);t=max(t,(1.-ss(.15*q.z,q.z,d))*q.w);}
+  return t;
+}
+
 /* land height, 0.30 is the sea line */
 float elev(vec2 p,float towns,float oct,out float landV,out int rid,out float mount){
   float S;regionField(p,S,rid);
@@ -515,7 +581,7 @@ float elev(vec2 p,float towns,float oct,out float landV,out int rid,out float mo
   if(oct>4.5)wob+=(fbm(sp*.05+5.,4.)-.5)*.09;
   float land=S+wob;landV=land;
   vec4 P=uRegP[rid];
-  float rug=clamp(P.x,0.,1.5);
+  float rug=clamp(P.x*uRelief,0.,1.5);
   vec2 q=sp+(vec2(fbm(sp*.012+3.,3.),fbm(sp*.012+9.,3.))-.5)*60.;
   float n=fbm(q*.011,oct);
   float rd=1.-abs(fbm(q*.013+2.,3.)*2.-1.);rd*=rd;
@@ -526,7 +592,7 @@ float elev(vec2 p,float towns,float oct,out float landV,out int rid,out float mo
   float rel=(mount*rug*.6+(n-.5)*.22)*inland*(1.-.9*towns);
   float h=.30*ss(-.1,.5,land)+isLand*(.012+.05*inland+rel);
   float lk=fbm(sp*.017+31.,3.);
-  float lake=1.-ss(.0,.07,lk-(.235+P.z*.13));
+  float lake=1.-ss(.0,.07,lk-(.235+P.z*uWater*.13));
   h-=lake*.12*inland*(1.-towns)*(1.-mount);
   return h;
 }
@@ -548,11 +614,11 @@ void main(){
   float px1=1./uScale;
   float t=uTime;
 
-  /* the story, baked: town glow, roads, fog reveal */
+  /* the story, baked: roads and fog reveal - the towns are analytic */
   vec2 suv=(p-uStoryRect.xy)/uStoryRect.zw;
   float inTex=step(0.,suv.x)*step(suv.x,1.)*step(0.,suv.y)*step(suv.y,1.);
   vec3 story=inTex>.5?texture(uStory,suv).rgb:vec3(0.);
-  float towns=story.r;
+  float towns=townField(p);
 
   float landV,mountV;int rid;
   float h0=elev(p,towns,uOct,landV,rid,mountV);
@@ -560,7 +626,8 @@ void main(){
   float hx=elev(p+vec2(eps,0),towns,min(uOct,6.),d1,r2,m2);
   float hy=elev(p+vec2(0,eps),towns,min(uOct,6.),d2,r2,m2);
   vec2 g=vec2(hx-h0,hy-h0)/eps;
-  vec3 nrm=normalize(vec3(-g.x*70.,-g.y*70.,1.));
+  float shadeK=70.*clamp(uRelief,.2,1.6);
+  vec3 nrm=normalize(vec3(-g.x*shadeK,-g.y*shadeK,1.));
   vec3 lightDir=normalize(vec3(uSun.x*.8-.45,-uSun.y*.8-.45,max(uSun.z,.15)+.55));
   float sh=clamp(dot(nrm,lightDir),0.,1.);
   float isWater=1.-ss(.296,.304,h0);
@@ -572,8 +639,8 @@ void main(){
   vec4 P=uRegP[rid];
   vec3 Lc=uRC[rid*3],Fc=uRC[rid*3+1],Hc=uRC[rid*3+2];
   float hh=h0-.30;
-  float fm=ss(.46,.62,fbm(sp*.028+11.,uOct)+(P.y-.5)*.55)*(1.-ss(.14,.26,hh))*(1.-ss(.1,.4,towns));
-  float tw=ss(.32,.46,towns);
+  float fm=ss(.46,.62,fbm(sp*.028+11.,uOct)+(P.y*uForest-.5)*.55)*(1.-ss(.14,.26,hh))*(1.-ss(.1,.4,towns));
+  float tw=ss(.32,.46,towns)*uTowns;
   float zf=ss(.55,1.5,uZ);
 
   /* the ink look: dark land, accent contour lines, a lit shore */
@@ -702,6 +769,8 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
 
     /* scene state, set by updateScene and then read frame after frame */
     let scene = null;
+    const pinBuf = new Float32Array(48 * 4);
+    const terBuf = new Float32Array(20 * 4);
     let qIndex = Math.max(0, Math.min(TERRAIN_QUALITY.length - 1, quality));
     /* Session-only quality guard: a GPU timer (when the driver exposes one)
        watches what frames really cost. After warm-up, three genuinely slow
@@ -714,9 +783,9 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
     let warm = 4;
 
     /* ---------- the story, baked on the CPU ----------
-       One texture, three channels: town glow (R), roads (G), fog reveal (B).
-       Painted with canvas gradients - cheap, and the shader never loops the
-       story no matter how many places it grows. */
+       One texture, two channels: roads (G), fog reveal (B). The towns are
+       analytic (townField) - painted with canvas gradients, cheap, and the
+       shader never loops the story no matter how many places it grows. */
     const bakeStory = ({ layout, atlas, derived, walks = null, record = null }) => {
         const bounds = layout.bounds || { x0: -500, x1: 500, y0: -500, y1: 500 };
         const margin = 260;
@@ -770,22 +839,6 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
         const ridge = (ctx, points) => {
             for (const [w, a] of [[5, 0.16], [3.5, 0.22], [2.5, 0.3], [1.6, 0.4]]) walk(ctx, points, w, a);
         };
-
-        /* towns: the glow of places - pins bright, their lands dim */
-        const items = Object.values(layout.items || {});
-        for (const item of items) {
-            const node = atlas.nodes[item.n && item.n.id];
-            if (!node || node.kind === 'transient') continue;
-            const x = toX(item.ax);
-            const y = toY(item.ay);
-            if (item.pin) {
-                const level = Number.isFinite(node.level) ? node.level : 3;
-                const sizeW = level <= 1 ? 46 : level === 2 ? 34 : 24;
-                glow(passes[0].ctx, x, y, sizeW * scale, 0.9);
-            } else {
-                glow(passes[0].ctx, x, y, item.r * 0.85 * scale, node.level === 1 ? 0.35 : 0.5);
-            }
-        }
 
         /* roads: the same-region legs the story walked - the very walk the
            dotted trail draws, or the lit road would run beside it */
@@ -859,11 +912,14 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
             (region.colors || []).slice(0, 3).forEach((color, k) => rc.set(hexToRgb(color), i * 9 + k * 3));
         });
         const storyRect = bakeStory({ layout, atlas, derived, walks, record });
+        const towns = townSources(layout, atlas, derived);
         const rec = record || {};
         scene = {
             reg, regB, regP, rc,
             nRegions: roots.length,
             storyRect,
+            pins: towns.pins,
+            ters: towns.ters,
             sea: hexToRgb(rec.sea || '#143a45'),
             shallow: hexToRgb(rec.shallow || '#2b7b82'),
             town: hexToRgb(rec.town || '#b9b2a4'),
@@ -920,6 +976,39 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
         gl.uniform3fv(U.uAcc, hexToRgb(acc));
         gl.uniform4f(U.uWeather, weather && weather.kind ? WEATHER_ID[weather.kind] || 0 : 0,
             weather ? weather.strength || 0 : 0, 0, 0);
+
+        /* the story's towns: analytic, so all that matters is which ones the
+           window shows - culled to the view, capped per tier */
+        const sx = Math.max(0.01, s);
+        const cx = (width / 2 - tx) / sx;
+        const cy = (height / 2 - ty) / sx;
+        const x0 = cx - width / 2 / sx - 120, x1 = cx + width / 2 / sx + 120;
+        const y0 = cy - height / 2 / sx - 120, y1 = cy + height / 2 / sx + 120;
+        const pinCap = qIndex >= 2 ? 48 : qIndex === 1 ? 36 : 24;
+        const terCap = qIndex >= 2 ? 20 : qIndex === 1 ? 14 : 10;
+        let np = 0, nt = 0;
+        for (const pin of scene.pins) {
+            if (np >= pinCap) break;
+            if (pin.ax < x0 || pin.ax > x1 || pin.ay < y0 || pin.ay > y1) continue;
+            pinBuf.set([pin.ax, pin.ay, pin.size, pin.r], np * 4);
+            np += 1;
+        }
+        for (const ter of scene.ters) {
+            if (nt >= terCap) break;
+            if (ter.ax + ter.r < x0 || ter.ax - ter.r > x1 || ter.ay + ter.r < y0 || ter.ay - ter.r > y1) continue;
+            terBuf.set([ter.ax, ter.ay, ter.r, ter.w], nt * 4);
+            nt += 1;
+        }
+        gl.uniform4fv(U.uPin, pinBuf);
+        gl.uniform1i(U.uNP, np);
+        gl.uniform4fv(U.uTer, terBuf);
+        gl.uniform1i(U.uNT, nt);
+        /* the mockup's slider maxima as the fixed baseline: the look at the
+           strength the user liked - sliders can return as settings later */
+        gl.uniform1f(U.uRelief, 1.6);
+        gl.uniform1f(U.uWater, 2.0);
+        gl.uniform1f(U.uForest, 1.6);
+        gl.uniform1f(U.uTowns, 1.4);
 
         /* harvest the previous frame's GPU time before starting this one */
         if (timerExt && timerQuery && timerOut && gl.getQueryParameter(timerQuery, gl.QUERY_RESULT_AVAILABLE)) {

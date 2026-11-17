@@ -8,6 +8,7 @@ import {
     paletteFromSamples,
     ratiosFromText,
     skyFor,
+    townSources,
     validateTerrainRecord,
     weatherFx,
 } from '../src/terrain.js';
@@ -275,4 +276,43 @@ test('fogReveal: wears the real atlas without a stumble', () => {
     }
     const now = spots.find(spot => spot.w === 1);
     assert.ok(now, 'the now is always clear somewhere');
+});
+
+test('townSources: towns are places the story stood, never whole lands', () => {
+    const layout = { items: {
+        reg: { n: { id: 'reg' }, ax: 0, ay: 0, r: 300 },
+        city: { n: { id: 'city' }, ax: 10, ay: 10, r: 120 },
+        plot: { n: { id: 'plot' }, ax: 14, ay: 12, r: 40 },
+        pin: { n: { id: 'pin' }, ax: 15, ay: 13, r: 12, pin: true },
+        passed: { n: { id: 'passed' }, ax: 200, ay: 0, r: 12, pin: true },
+        now: { n: { id: 'now' }, ax: 100, ay: 0, r: 12, pin: true },
+    } };
+    const atlas = { nodes: {
+        reg: { id: 'reg', level: 0, kind: 'region' },
+        city: { id: 'city', level: 1, kind: 'city', parentId: 'reg' },
+        plot: { id: 'plot', level: 2, kind: 'plot', parentId: 'city' },
+        pin: { id: 'pin', level: 3, kind: 'place', parentId: 'plot', stops: 2 },
+        passed: { id: 'passed', level: 3, kind: 'place', parentId: 'reg', stops: 0 },
+        now: { id: 'now', level: 3, kind: 'place', parentId: 'reg', stops: 0 },
+    } };
+    const { pins, ters } = townSources(layout, atlas, { nowId: 'now' });
+    assert.deepEqual(pins.map(p => p.ax).sort((a, b) => a - b), [15, 100],
+        'the stopped pin and the now pin - never the passed one');
+    const now = pins.find(p => p.ax === 100);
+    const stopped = pins.find(p => p.ax === 15);
+    assert.equal(now.r, 200, 'the now pin earns the widest clearing');
+    assert.equal(stopped.r, 160, 'a stopped pin, the middle clearing');
+    assert.equal(stopped.size, 24, 'a plot pin is a small town');
+    assert.deepEqual(ters.map(t => t.ax).sort((a, b) => a - b), [10, 14],
+        'the visited chain lights its city and plot');
+    assert.ok(!ters.some(t => t.r === 300), 'regions never glow');
+    assert.equal(ters.find(t => t.ax === 10).w, 0.55, 'cities glow softer than plots');
+});
+
+test('townSources: nothing the story stood in, no towns at all', () => {
+    const layout = { items: { only: { n: { id: 'only' }, ax: 1, ay: 2, r: 12, pin: true } } };
+    const atlas = { nodes: { only: { id: 'only', level: 3, kind: 'place', stops: 0 } } };
+    const { pins, ters } = townSources(layout, atlas, { nowId: null });
+    assert.equal(pins.length, 0);
+    assert.equal(ters.length, 0);
 });
