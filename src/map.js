@@ -85,6 +85,8 @@ let chartWalks = null;
 let terrainT0 = performance.now();
 let terrainDirty = true;
 let terrainLastDraw = 0;
+let lastViewChange = 0;
+let idleTimer = 0;
 
 /* The terrain record: the map's land as one small JSON per chat - derived
    by code from the watcher's own pictures and words, kept in the chat's
@@ -1453,6 +1455,7 @@ function drawTerrain() {
         tx: view.tx,
         ty: view.ty,
         s: view.s,
+        interact: performance.now() - lastViewChange < 140,
         time: animate ? (performance.now() - terrainT0) / 1000 : 0,
         fog: !!settings().mapTerrainFog,
         fogOnly: settings().mapTerrain === 'flat',
@@ -1460,13 +1463,12 @@ function drawTerrain() {
         weather: skyOn && scene ? weatherFx(scene.weather) : null,
         acc: getComputedStyle(win).getPropertyValue('--mz-accent').trim() || '#77c2aa',
     });
-    if (terrain.quality !== terrainQuality) {
-        terrainQuality = terrain.quality;
-        settings().mapTerrainQ = terrain.quality;
-        saveSettings();
-    }
     // how many frames the land has drawn - the quiet proof it is alive
     terrainCanvas.dataset.draws = String((Number(terrainCanvas.dataset.draws) || 0) + 1);
+    if (ALIGN_DEBUG) {
+        const badge = els.chart.querySelector('[data-mz-align-badge]');
+        if (badge) badge.textContent = `${terrainCanvas.width}\u00d7${terrainCanvas.height} \u00b7 ${TERRAIN_QUALITY[terrain.quality].name}`;
+    }
     if (animate) scheduleTerrain();
 }
 
@@ -1487,7 +1489,8 @@ function drawChart() {
         view.placed = true;
         if (insideKey) insideBaseS = view.s;
     }
-    els.chart.innerHTML = (insideKey ? deckBar() : '') + fullSvg(width, height, insideKey ? 'deck' : 'full');
+    els.chart.innerHTML = (ALIGN_DEBUG ? '<div class="mz-align-badge" data-mz-align-badge></div>' : '')
+        + (insideKey ? deckBar() : '') + fullSvg(width, height, insideKey ? 'deck' : 'full');
     bindChart();
     terrainDirty = true;
     scheduleTerrain();
@@ -1506,6 +1509,13 @@ function applyTransform() {
     if (world) world.style.transform = worldMatrix(view);
     chart.dataset.zoom = view.s < 0.5 ? 0 : view.s < 1.1 ? 1 : 2;
     terrainDirty = true;
+    lastViewChange = performance.now();
+    /* the land draws soft while the hand moves, then once more sharp */
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+        terrainDirty = true;
+        scheduleTerrain();
+    }, 150);
     scheduleTerrain();
 }
 

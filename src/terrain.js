@@ -456,9 +456,9 @@ export function fogReveal(layout, atlas, derived, walks = null) {
  */
 
 export const TERRAIN_QUALITY = [
-    { name: 'Low', res: 0.5, oct: 4, px: 0.45e6 },
-    { name: 'Medium', res: 0.75, oct: 6, px: 0.9e6 },
-    { name: 'High', res: 1, oct: 8, px: 1.9e6 },
+    { name: 'Low', res: 0.6, oct: 4, px: 0.45e6 },
+    { name: 'Medium', res: 0.85, oct: 6, px: 0.9e6 },
+    { name: 'High', res: 1, oct: 8, px: 4e6 },
 ];
 
 /* Same little generator mapdata seeds its packing with - two modules, one
@@ -655,7 +655,7 @@ const WEATHER_ID = { storm: 1, snow: 2, rain: 3, fog: 4, sand: 5 };
 export function createTerrain(canvas, { quality = 2 } = {}) {
     /* alpha so the flat chart can keep its own ground and wear only the fog
        veil above it - straight (un-premultiplied) alpha keeps that veil honest */
-    const gl = canvas.getContext('webgl2', { antialias: false, alpha: true, premultipliedAlpha: false, powerPreference: 'low-power' });
+    const gl = canvas.getContext('webgl2', { antialias: false, alpha: true, premultipliedAlpha: false, powerPreference: 'high-performance' });
     if (!gl) return null;
 
     const compile = (type, source) => {
@@ -703,7 +703,15 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
     /* scene state, set by updateScene and then read frame after frame */
     let scene = null;
     let qIndex = Math.max(0, Math.min(TERRAIN_QUALITY.length - 1, quality));
-    let draws = 0;
+    /* Session-only quality guard: a GPU timer (when the driver exposes one)
+       watches what frames really cost. After warm-up, three genuinely slow
+       frames in a row step the tier down for this session only - it is never
+       written to settings, so the quality the user chose returns next open. */
+    const timerExt = gl.getExtension('EXT_disjoint_timer_query_webgl2');
+    const timerQuery = timerExt ? gl.createQuery() : null;
+    let timerOut = false;
+    let slowStreak = 0;
+    let warm = 4;
 
     /* ---------- the story, baked on the CPU ----------
        One texture, three channels: town glow (R), roads (G), fog reveal (B).
@@ -871,6 +879,8 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
         gl.uniform3fv(U.uShallow, scene.shallow);
         gl.uniform3fv(U.uTownC, scene.town);
         gl.uniform2f(U.uSeedV, scene.seed[0], scene.seed[1]);
+        warm = 4;
+        slowStreak = 0;
     };
 
     /**
@@ -878,12 +888,15 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
      * moves when the story's sky says so.
      */
     const draw = ({
-        width, height, dpr = 1, tx = 0, ty = 0, s = 1,
+        width, height, dpr = 1, tx = 0, ty = 0, s = 1, interact = false,
         time = 0, sky = null, weather = null, fog = false, fogOnly = false, acc = '#77c2aa',
     }) => {
         if (!scene) return;
         const q = TERRAIN_QUALITY[qIndex];
-        let k = dpr * q.res;
+        /* full resolution at rest; while the hand is moving the land draws
+           at 0.6 so pans and zooms stay fluid, and the caller's idle timer
+           repaints the settled frame sharp */
+        let k = dpr * (interact ? 0.6 : q.res);
         if (width * height * k * k > q.px) k = Math.sqrt(q.px / Math.max(1, width * height));
         const w = Math.max(2, Math.round(width * k));
         const h = Math.max(2, Math.round(height * k));
@@ -907,16 +920,28 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
         gl.uniform3fv(U.uAcc, hexToRgb(acc));
         gl.uniform4f(U.uWeather, weather && weather.kind ? WEATHER_ID[weather.kind] || 0 : 0,
             weather ? weather.strength || 0 : 0, 0, 0);
-        gl.drawArrays(gl.TRIANGLES, 0, 3);
 
-        /* Sparse timing: a slow frame steps the quality down once. The
-           measurement stalls the pipe, so it is rare on purpose. */
-        draws += 1;
-        if (draws % 16 === 0 && qIndex > 0) {
-            const t0 = performance.now();
-            const probe = new Uint8Array(4);
-            gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, probe);
-            if (performance.now() - t0 > 26) qIndex -= 1;
+        /* harvest the previous frame's GPU time before starting this one */
+        if (timerExt && timerQuery && timerOut && gl.getQueryParameter(timerQuery, gl.QUERY_RESULT_AVAILABLE)) {
+            timerOut = false;
+            const ns = gl.getQueryParameter(timerQuery, gl.QUERY_RESULT);
+            if (!gl.getParameter(timerExt.GPU_DISJOINT_EXT)) {
+                if (warm > 0) warm -= 1;
+                else if (ns > 40e6 && qIndex > 0) {
+                    slowStreak += 1;
+                    if (slowStreak >= 3) {
+                        slowStreak = 0;
+                        qIndex -= 1;
+                    }
+                } else slowStreak = 0;
+            }
+        }
+        const timed = !!(timerExt && timerQuery && !timerOut);
+        if (timed) gl.beginQuery(timerExt.TIME_ELAPSED_EXT, timerQuery);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        if (timed) {
+            gl.endQuery(timerExt.TIME_ELAPSED_EXT);
+            timerOut = true;
         }
     };
 
@@ -928,8 +953,9 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
             gl.deleteTexture(storyTex);
             gl.deleteProgram(prog);
             gl.deleteBuffer(buffer);
+            if (timerQuery) gl.deleteQuery(timerQuery);
         },
         get quality() { return qIndex; },
-        setQuality(index) { qIndex = Math.max(0, Math.min(TERRAIN_QUALITY.length - 1, index)); },
+        setQuality(index) { qIndex = Math.max(0, Math.min(TERRAIN_QUALITY.length - 1, index)); warm = 4; slowStreak = 0; },
     };
 }
