@@ -43,10 +43,19 @@
    veil alone rides above it. */
 .mzc.has-terrain .mzc-ground,
 .mzc.has-veil .mzc-ground { fill: none; }
+/* the land keeps its own colours: no theme wash over the terrain, and the
+   structural lines are light tints of the land itself (--mzc-tint, set per
+   territory from the record). The theme accent stays reserved for state. */
 .mzc.has-terrain .mzc-region,
 .mzc.has-terrain .mzc-city,
 .mzc.has-terrain .mzc-plot,
-.mzc.has-terrain .mzc-mobile { fill: color-mix(in srgb, var(--mz-accent) 5%, transparent); }
+.mzc.has-terrain .mzc-mobile { fill: transparent; }
+.mzc.has-terrain .mzc-region { stroke: color-mix(in srgb, var(--mzc-tint, #8fb89a) 55%, transparent); }
+.mzc.has-terrain .mzc-city { stroke: color-mix(in srgb, var(--mzc-tint, #8fb89a) 45%, transparent); }
+.mzc.has-terrain .mzc-plot { stroke: color-mix(in srgb, var(--mzc-tint, #8fb89a) 38%, transparent); }
+.mzc.has-terrain .mzc-mobile { stroke: color-mix(in srgb, var(--mzc-tint, #8fb89a) 55%, transparent); }
+.mzc.has-terrain .mzc-ring { stroke: color-mix(in srgb, var(--mzc-tint, #8fb89a) 16%, transparent); }
+.mzc.has-terrain { --mzc-trail: color-mix(in srgb, var(--mzc-tint, #8fb89a) 70%, white); }
 .mz-terrain { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
 
 /* the ship: an entity on the world map - its picture, its glyph, its rooms */

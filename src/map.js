@@ -28,7 +28,7 @@ import {
 import { recordSrc } from './backgrounds.js';
 import { bgStore, chatMessages, currentChatId, on, personaName, saveTerrainRecord, terrainStore } from './st.js';
 import { mapMiniOn, mapOn, saveSettings, settings } from './settings.js';
-import { TERRAIN_QUALITY, createTerrain, deriveTerrainRecord, skyFor, validateTerrainRecord, weatherFx } from './terrain.js';
+import { TERRAIN_QUALITY, createTerrain, deriveTerrainRecord, inkTint, mapInk, skyFor, validateTerrainRecord, weatherFx } from './terrain.js';
 
 const LOG = '[Meziverse map]';
 
@@ -747,11 +747,17 @@ function renderChart(mode) {
     const parts = [];
 
     /* ground and the contour rings that make land look like land */
+    const rec = terrainStore() || {};
+    const rootFoldOf = id => {
+        let node = nodes[id];
+        while (node && node.parentId) node = nodes[node.parentId];
+        return node ? node.fold : '';
+    };
     const containers = lay.order.filter(item => !item.pin);
     const rings = [];
     containers.filter(item => item.n.level === 0).forEach(item => {
         for (let k = 3; k >= 1; k -= 1) {
-            rings.push(`<path class="mzc-ring r${k}" d="${blob(item.ax, item.ay, item.r + k * 15, hashFold(item.n.fold) + k, 0.11)}"/>`);
+            rings.push(`<path class="mzc-ring r${k}" style="--mzc-tint:${inkTint(rec, item.n.fold)}" d="${blob(item.ax, item.ay, item.r + k * 15, hashFold(item.n.fold) + k, 0.11)}"/>`);
         }
     });
     parts.push(`<g class="mzc-rings">${rings.join('')}</g>`);
@@ -764,7 +770,7 @@ function renderChart(mode) {
         const cls = item.n.kind === 'mobile' ? 'mobile' : level === 0 ? 'region' : level === 1 ? 'city' : 'plot';
         const amp = level === 0 ? 0.12 : level === 1 ? 0.09 : 0.07;
         const d = blob(item.ax, item.ay, item.r, hashFold(item.n.fold), amp);
-        terr.push(`<path class="mzc-terr mzc-${cls}${sel === item.n.id ? ' is-sel' : ''}" data-node="${esc(item.n.key)}" d="${d}"/>`);
+        terr.push(`<path class="mzc-terr mzc-${cls}${sel === item.n.id ? ' is-sel' : ''}" data-node="${esc(item.n.key)}" style="--mzc-tint:${inkTint(rec, rootFoldOf(item.n.id))}" d="${d}"/>`);
         if (ALIGN_DEBUG) align.push(`<path d="${d}"/>`);
     });
     parts.push(`<g class="mzc-lands">${terr.join('')}</g>`);
@@ -909,7 +915,7 @@ function renderChart(mode) {
 function fullSvg(width, height, mode = 'full') {
     const out = renderChart(mode);
     const tier = view.s < 0.5 ? 0 : view.s < 1.1 ? 1 : 2;
-    return `<svg class="mzc${terrainOn() ? ' has-terrain' : terrainLayerOn() ? ' has-veil' : ''}" data-style="contour" data-zoom="${tier}" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="Map of the story's places">${out.defs}<g class="mzc-world" style="transform-origin:0 0;transform:${worldMatrix(view)}"><rect class="mzc-ground" x="-6000" y="-6000" width="12000" height="12000"/>${out.body}</g></svg>`;
+    return `<svg class="mzc${terrainOn() ? ' has-terrain' : terrainLayerOn() ? ' has-veil' : ''}" data-style="contour" data-zoom="${tier}" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="Map of the story's places" style="--mzc-tint:${mapInk(terrainStore() || {})}">${out.defs}<g class="mzc-world" style="transform-origin:0 0;transform:${worldMatrix(view)}"><rect class="mzc-ground" x="-6000" y="-6000" width="12000" height="12000"/>${out.body}</g></svg>`;
 }
 
 function miniSvg() {
@@ -1505,7 +1511,7 @@ function drawTerrain() {
         fogOnly: settings().mapTerrain === 'flat',
         sky: skyOn && scene ? skyFor(scene.hour) : null,
         weather: skyOn && scene ? weatherFx(scene.weather) : null,
-        acc: getComputedStyle(win).getPropertyValue('--mz-accent').trim() || '#77c2aa',
+        acc: mapInk(terrainStore() || {}),
     });
     // how many frames the land has drawn - the quiet proof it is alive
     terrainCanvas.dataset.draws = String((Number(terrainCanvas.dataset.draws) || 0) + 1);

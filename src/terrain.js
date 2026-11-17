@@ -246,8 +246,10 @@ export function deriveTerrainRecord({ regions = [], samplesByRegion = {}, textsB
     const temp = climateTemp(observations);
     const out = {
         seed: seed >>> 0,
-        sea: warmHex(SEA_BASE, temp),
-        shallow: warmHex(SHALLOW_BASE, temp),
+        // the water keeps its own teal: a warm shift here made every lake
+        // read as amber-rimmed blue glass (the mockup's water never warmed)
+        sea: SEA_BASE,
+        shallow: SHALLOW_BASE,
         town: warmHex(TOWN_BASE, temp),
         regions: {},
     };
@@ -635,6 +637,8 @@ void main(){
   float road=roadField(p,roadW,roadAA)*step(.01,uTowns);
   vec4 P=uRegP[rid];
   vec3 Lc=uRC[rid*3],Fc=uRC[rid*3+1],Hc=uRC[rid*3+2];
+  /* the map's ink: the derived sage leaned lightly on this region's own land */
+  vec3 ink=mix(uAcc,clamp(Lc*1.2,0.,1.),.25);
   float hh=h0-.30;
   float fm=ss(.46,.62,fbm(sp*.028+11.,uOct)+(P.y*uForest-.5)*.55)*(1.-ss(.14,.26,hh))*(1.-ss(.1,.4,towns));
   float tw=ss(.32,.46,towns)*uTowns;
@@ -649,18 +653,18 @@ void main(){
   float lv=hh*10.;
   float cl=lines(lv,1.0)*(1.-isWater)*ss(.01,.03,hh)*zf;
   float idx=lines(lv/4.,1.2)*(1.-isWater)*ss(.01,.03,hh);
-  land+=uAcc*(cl*.09+idx*.15);
+  land+=ink*(cl*.09+idx*.15);
   vec2 vv=tw>.01?vor(sp/15.):vec2(1.,.5);float blk=vv.y;float street=1.-ss(.0,.11,vv.x);
   vec3 tc=uTownC*(.36+.1*mix(.5,blk,zf))*(1.-.3*street*zf);
   land=mix(land,tc,tw*.8);
-  land=mix(land,uAcc*.9,road*.55);
+  land=mix(land,ink*.9,road*.55);
   vec3 wat=mix(uSea*.9,uShallow*.6,ss(.10,.30,h0));
-  wat+=uAcc*caus(sp*.012,t*.5+3.)*.06*ss(.12,.30,h0)*(1.-.6*uNight);
+  wat+=ink*caus(sp*.012,t*.5+3.)*.06*ss(.12,.30,h0)*(1.-.6*uNight);
   vec3 col=mix(wat,land,1.-isWater);
   float glow=exp(-abs(h0-.30)*60.);
-  col+=uAcc*glow*.14;
+  col+=ink*glow*.14;
   float cs=1.-min(abs(h0-.30)/(fwidth(h0)*1.1+1e-5),1.);
-  col=mix(col,uAcc*.9,cs*.5);
+  col=mix(col,ink*.9,cs*.5);
 
   /* the sky: the story's hour over the land */
   col*=uTint;
@@ -705,6 +709,43 @@ const hexToRgb = hex => {
     const n = parseInt(String(hex || '').replace('#', ''), 16) || 0;
     return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
 };
+
+const rgbToHex = values => `#${values.map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('')}`;
+
+/**
+ * A light tint of one region's own ground: the shader's dark green land the
+ * region colour tints, lifted to the sage the map reads as. To go back to
+ * the designer's jade (plus a theme hint), return '#77c2aa' here and from
+ * mapInk: two lines.
+ *
+ * @param {object} record the terrain record
+ * @param {string} fold the region's fold
+ * @returns {string} a light tint hex
+ */
+export function inkTint(record, fold) {
+    const colors = record && record.regions && record.regions[fold] && record.regions[fold].colors;
+    const [r, g, b] = hexToRgb((colors && colors[0]) || '#8c9b62').map(v => v * 255);
+    // the land the shader actually paints: a dark green, tinted by the region
+    const mix = [28 * 0.7 + r * 0.3, 48 * 0.7 + g * 0.3, 45 * 0.7 + b * 0.3];
+    return rgbToHex(mix.map(v => v * 1.8 + 42));
+}
+
+/**
+ * The map's structural ink: one tint over the whole chart (the trail, the
+ * shader's lines), the same sage averaged over the land's colours.
+ *
+ * @param {object} record the terrain record
+ * @returns {string} a hex colour
+ */
+export function mapInk(record) {
+    const bases = Object.values((record && record.regions) || {})
+        .map(region => (region.colors || [])[0])
+        .filter(Boolean);
+    const list = bases.length ? bases : ['#8c9b62'];
+    const avg = [0, 1, 2].map(i => list.reduce((sum, hex) => sum + hexToRgb(hex)[i] * 255, 0) / list.length);
+    const mix = [28 * 0.7 + avg[0] * 0.3, 48 * 0.7 + avg[1] * 0.3, 45 * 0.7 + avg[2] * 0.3];
+    return rgbToHex(mix.map(v => v * 1.8 + 42));
+}
 
 const WEATHER_ID = { storm: 1, snow: 2, rain: 3, fog: 4, sand: 5 };
 

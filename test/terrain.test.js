@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 import {
     climateTemp,
     deriveTerrainRecord,
+    inkTint,
+    mapInk,
     paletteFromSamples,
     ratiosFromText,
     roadCurves,
@@ -128,13 +130,15 @@ test('deriveTerrainRecord: one small record, derived the same every time', () =>
     }
 });
 
-test('deriveTerrainRecord: climate warms or cools the whole palette', () => {
+test('deriveTerrainRecord: climate warms the land and spares the water', () => {
     const base = { regions: REGIONS };
     const cold = deriveTerrainRecord({ ...base, observations: [{ weather: 'blizzard' }] });
     const hot = deriveTerrainRecord({ ...base, observations: [{ weather: 'desert heat' }] });
     const mild = deriveTerrainRecord(base);
-    assert.notEqual(cold.sea, hot.sea);
-    assert.notEqual(mild.regions.usa.colors[0], hot.regions.usa.colors[0]);
+    assert.equal(cold.sea, hot.sea, 'the water keeps its teal in any climate');
+    assert.equal(cold.shallow, hot.shallow);
+    assert.notEqual(cold.town, hot.town, 'the stones of the towns follow the climate');
+    assert.notEqual(mild.regions.usa.colors[0], hot.regions.usa.colors[0], 'the land itself warms');
     assert.deepEqual(mild, deriveTerrainRecord(base), 'the neutral case is stable');
 });
 
@@ -295,4 +299,21 @@ test('roadCurves: the road lies on the trail the SVG draws', () => {
     assert.deepEqual(pts[0], [0, 0], 'lands on its place');
     assert.deepEqual(pts[pts.length - 1], [100, 0], 'reaches the other exactly');
     for (const [x, y] of pts) assert.ok(Number.isFinite(x) && Number.isFinite(y), 'plain numbers');
+});
+
+test('map ink: the lines belong to the land, not the theme', () => {
+    const record = {
+        regions: {
+            green: { colors: ['#456b3b', '#2c4425', '#8c9b62'] },
+            sage: { colors: ['#8c9b62', '#456b3b', '#8d8779'] },
+        },
+    };
+    const tint = inkTint(record, 'green');
+    assert.match(tint, /^#[0-9a-f]{6}$/);
+    const rgb = [1, 3, 5].map(i => parseInt(tint.slice(i, i + 2), 16));
+    assert.ok(rgb[1] > rgb[2] && rgb[1] > 40, `a light green tint: ${tint}`);
+    assert.notEqual(inkTint(record, 'green'), inkTint(record, 'sage'), 'each region keeps its own ground colour');
+    assert.match(mapInk(record), /^#[0-9a-f]{6}$/);
+    assert.equal(mapInk(record), mapInk(record), 'deterministic');
+    assert.match(mapInk({}), /^#[0-9a-f]{6}$/, 'a story without colours still resolves');
 });
