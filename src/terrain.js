@@ -454,7 +454,11 @@ export function townSources(layout, atlas, derived) {
 export function roadSegments(layout, atlas, derived, walks = null) {
     const items = (layout && layout.items) || {};
     const nodes = (atlas && atlas.nodes) || {};
-    const trail = walks || trailWalks((derived && derived.legs) || [], id => items[id]);
+    /* resolve exactly like the SVG's pointFor: the layout's anchor (pins and
+       hubs first) - never a raw blob centre, or the road runs beside the
+       trail instead of under it */
+    const pointFor = id => (layout && layout.anchor ? layout.anchor(id) : items[id]) || null;
+    const trail = walks || trailWalks((derived && derived.legs) || [], pointFor);
     const rootOf = id => {
         let node = nodes[id];
         while (node && node.parentId) node = nodes[node.parentId];

@@ -395,6 +395,18 @@ function chatSignature() {
     return signature;
 }
 
+/** The nodes a journey can land on - the layout gives each a real pin (a
+    hub) so trails never end on an unmarked blob centre. */
+function landingsFrom(derived) {
+    const ids = new Set();
+    for (const leg of (derived && derived.legs) || []) {
+        if (leg.a) ids.add(leg.a);
+        if (leg.b) ids.add(leg.b);
+        for (const id of leg.dir || []) ids.add(id);
+    }
+    return ids;
+}
+
 function ensure() {
     const chatId = currentChatId();
     if (chatId !== lastChatId) {
@@ -426,12 +438,12 @@ function ensure() {
     const depth = depthValue();
     if (atlas && (layoutDepth !== depth || !layout)) {
         layoutDepth = depth;
-        layout = layoutAtlas(atlas, { depth });
+        layout = layoutAtlas(atlas, { depth, landings: landingsFrom(derived) });
     }
 
     if (atlas && insideKey) {
         const ship = findByKey(insideKey);
-        deckLayout = ship ? layoutAtlas(atlas, { depth: 99, inside: ship.id }) : null;
+        deckLayout = ship ? layoutAtlas(atlas, { depth: 99, inside: ship.id, landings: landingsFrom(derived) }) : null;
         if (!deckLayout || !deckLayout.order.length) {
             insideKey = null;
             deckLayout = null;
@@ -612,10 +624,15 @@ function renderChart(mode) {
        climbs out of inner blobs and into new ones as the story moves. */
     const clipR = new Set();
     const wayPoints = new Map();
+    const markers = ALIGN_DEBUG ? [] : null;
     const ships = [];
     const marks = [];
     const shipDrawn = new Set();
     if (!deck) {
+        /* Pass one: settle every vehicle's crossed positions ONCE - the
+           trail, the stop marks and the ship icons must all read the same
+           points or the lines leave from spots where nothing is drawn.
+           First writer wins; a place's own pin or hub wins outright. */
         for (const node of Object.values(nodes)) {
             if (node.kind !== 'mobile') continue;
             const seq = [];
@@ -623,12 +640,14 @@ function renderChart(mode) {
                 if (stop.positionId && seq[seq.length - 1] !== stop.positionId) seq.push(stop.positionId);
             }
             seq.forEach((id, i) => {
-                const item = lay.items[id];
-                if (!item) return;
-                if (item.pin) {
-                    wayPoints.set(id, { n: nodes[id], ax: item.ax, ay: item.ay, r: 12, pin: true });
+                if (wayPoints.has(id)) return;
+                const home = lay.items[`hub:${id}`] || lay.items[id];
+                if (!home) return;
+                if (home.pin) {
+                    wayPoints.set(id, { n: nodes[id], ax: home.ax, ay: home.ay, r: 12, pin: true });
                     return;
                 }
+                const item = home;
                 const prevItem = i > 0 ? lay.items[seq[i - 1]] : null;
                 const nextItem = i < seq.length - 1 ? lay.items[seq[i + 1]] : null;
                 let dx = 1;
@@ -650,6 +669,11 @@ function renderChart(mode) {
                 }
                 wayPoints.set(id, { n: nodes[id], ...(p || { ax: item.ax + dx * item.r * 0.5, ay: item.ay + dy * item.r * 0.5 }), r: 12, pin: true });
             });
+        }
+
+        /* Pass two: the icons and the stop marks, drawn from the settled map */
+        for (const node of Object.values(nodes)) {
+            if (node.kind !== 'mobile') continue;
 
             /* the icon: at the trail's head while moving, beside its berth
                when parked - and nowhere at all for a vehicle the story only
@@ -676,6 +700,7 @@ function renderChart(mode) {
             const rich = kids > 0;
             const img = rich ? thumbOf(node) : '';
             if (img) clipR.add(r);
+            if (markers) markers.push([x, y]);
             ships.push(`<g class="mzc-ship${isNow ? ' is-now' : ''}${sel === node.id ? ' is-sel' : ''}${rich ? '' : ' is-plain'}" data-node="${esc(node.key)}" transform="translate(${f1(x)} ${f1(y)})" tabindex="${mini ? -1 : 0}" role="button" aria-label="${esc(node.name)}">
             ${isNow ? `<circle class="mzc-ping" r="${r + 5}"/><circle class="mzc-ping p2" r="${r + 5}"/>` : ''}
             <circle class="mzc-pin-disc" r="${r}"/>
@@ -703,6 +728,7 @@ function renderChart(mode) {
                     const placeNode = nodes[id];
                     if (!p || !placeNode) continue;
                     const mr = 8;
+                    if (markers) markers.push([p.ax, p.ay]);
                     marks.push(`<g class="mzc-stopmark${sel === id ? ' is-sel' : ''}" data-node="${esc(placeNode.key)}" transform="translate(${f1(p.ax)} ${f1(p.ay)})" tabindex="0" role="button" aria-label="${esc(placeNode.name)}">
                     <circle class="mzc-pin-disc" r="${mr}"/>
                     ${icon(glyph, 0, 0, 10)}
@@ -765,7 +791,7 @@ function renderChart(mode) {
     const lastKey = recent[0] && recent[0].key;
     const shown = new Set(mini ? recent.slice(0, 4).map(leg => leg.key) : derived.legs.map(leg => leg.key));
     const walks = trailWalks(derived.legs, pointFor);
-    if (!deck) chartWalks = walks;
+    if (!deck) chartWalks = { sig: `${lastSignature}|${layoutDepth}`, walks };
     walks.forEach(({ leg, d }) => {
         if (deck || !trails || !shown.has(leg.key)) return;
         const width = Math.min(2.2, 1.2 + leg.count * 0.25);
@@ -819,6 +845,7 @@ function renderChart(mode) {
         const label = mini ? (isNow || recentIds.has(node.id)) : true;
         const hiddenKids = node.children.filter(id => nodes[id].kind !== 'mobile' && nodes[id].kind !== 'transient').length;
 
+        if (markers) markers.push([item.ax, item.ay]);
         pins.push(`<g class="mzc-pin lv${Math.min(node.level ?? 3, 3)}${!stopped ? ' is-passed' : ''}${isNow ? ' is-now' : ''}${isSel ? ' is-sel' : ''}${flag ? ' is-flag' : ''}${mini && !label ? ' is-quiet' : ''}" data-node="${esc(node.key)}" transform="translate(${f1(item.ax)} ${f1(item.ay)})" style="--age:${f1(Math.max(0, Math.min(1, age)))}" tabindex="${mini ? -1 : 0}" role="button" aria-label="${esc(node.name)}">
         ${isNow ? `<circle class="mzc-ping" r="${r + 4}"/><circle class="mzc-ping p2" r="${r + 4}"/>` : ''}
         <circle class="mzc-pin-disc" r="${r}"/>
@@ -856,8 +883,21 @@ function renderChart(mode) {
     const defs = `<defs>${[...clipR].map(r => `<clipPath id="mzc-c${r}"><circle r="${r}"/></clipPath>`).join('')}</defs>`;
     /* the alignment guard (?mzmapdebug=1): the territories again, in red,
        riding over the land - if a red outline ever leaves its coast at any
-       zoom, the chart and the terrain disagree about where things are */
-    if (ALIGN_DEBUG) parts.push(`<g class="mzc-align">${align.join('')}</g>`);
+       zoom, the chart and the terrain disagree about where things are -
+       and a red ring wherever a trail ends on nothing drawn */
+    if (ALIGN_DEBUG) {
+        parts.push(`<g class="mzc-align">${align.join('')}</g>`);
+        if (!deck) {
+            const orphan = [];
+            for (const { from, to } of walks) {
+                for (const pt of [from, to]) {
+                    if ((markers || []).some(([mx, my]) => Math.hypot(mx - pt.ax, my - pt.ay) < 14)) continue;
+                    orphan.push(`<circle cx="${f1(pt.ax)}" cy="${f1(pt.ay)}" r="16"/>`);
+                }
+            }
+            if (orphan.length) parts.push(`<g class="mzc-orphan">${orphan.join('')}</g>`);
+        }
+    }
     return { defs, body: parts.join('') };
 }
 
@@ -1424,7 +1464,8 @@ function drawTerrain() {
     const signature = `${lastSignature}|${layoutDepth}`;
     if (terrainStory !== signature) {
         terrainStory = signature;
-        terrain.updateScene({ layout, atlas, derived, walks: chartWalks, record: terrainRecordForDraw(signature) });
+        const fresh = chartWalks && chartWalks.sig === signature ? chartWalks.walks : null;
+        terrain.updateScene({ layout, atlas, derived, walks: fresh, record: terrainRecordForDraw(signature) });
     }
     /* quality: the settings row speaks, a slow frame steps down and is
        remembered - one land, whatever the GPU can carry */

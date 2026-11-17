@@ -92,6 +92,8 @@
 /* the alignment guard (?mzmapdebug=1): the territories in red over the
    land - if they leave their coast, the two renderers disagree */
 .mzc-align path { fill: none; stroke: #ff5d5d; stroke-width: 1.2px; vector-effect: non-scaling-stroke; pointer-events: none; }
+/* ...and the endpoint guard: a red ring wherever a trail ends on nothing */
+.mzc-orphan circle { fill: none; stroke: #ff5d5d; stroke-width: 2.4px; vector-effect: non-scaling-stroke; pointer-events: none; }
 /* ...and the resolution badge: canvas pixels and quality, so "why is it
    blurry" is answered at a glance */
 .mz-align-badge { position: absolute; top: 6px; left: 8px; z-index: 4; padding: 3px 7px; border-radius: 7px; background: color-mix(in srgb, var(--mz-surface-solid) 85%, transparent); color: #ff9d9d; font: 10px/1.4 ui-monospace, monospace; pointer-events: none; }

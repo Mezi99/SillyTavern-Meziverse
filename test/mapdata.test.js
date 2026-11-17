@@ -835,3 +835,48 @@ test('walkSegments: samples the exact curve the dotted trail draws', () => {
     }
     assert.deepEqual(walkSegments(pts, 4), seg, 'deterministic');
 });
+
+test('layoutAtlas hubs: a journey lands on a real pin even at a parent place', () => {
+    const base = { date: '', time: '', hour: null, weather: '', locationTag: '', present: [], last: false };
+    const observations = [
+        { ...base, chain: ['City', 'Station', 'Wing', 'Room'], at: { msgIndex: 0, tagIndex: 0 }, last: true },
+        { ...base, chain: ['City', 'Station'], at: { msgIndex: 1, tagIndex: 0 }, last: true },
+    ];
+    const atlas = buildAtlas(observations);
+    const derived = deriveLegs(atlas);
+    const landings = new Set();
+    for (const leg of derived.legs) {
+        landings.add(leg.a);
+        landings.add(leg.b);
+        for (const id of leg.dir || []) landings.add(id);
+    }
+    const layout = layoutAtlas(atlas, { depth: 99, landings });
+    const byName = name => Object.values(atlas.nodes).find(n => n.name === name);
+    const stationId = byName('Station').id;
+    const hub = layout.items[`hub:${stationId}`];
+    assert.ok(hub, 'the expanded place the journey reached gets its own pin');
+    assert.equal(hub.pin, true);
+    assert.equal(layout.items[stationId].pin, false, 'the blob itself is still the blob');
+    assert.equal(layout.anchor(stationId), hub, 'anchor lands on the hub, not the packing centre');
+    const blob = layout.items[stationId];
+    assert.ok(Math.hypot(hub.ax - blob.ax, hub.ay - blob.ay) < blob.r, 'the hub sits inside the blob');
+    for (const kid of blob.kids) {
+        if (kid === hub) continue;
+        assert.ok(Math.hypot(hub.ax - kid.ax, hub.ay - kid.ay) > kid.r, 'and clear of every child');
+    }
+    assert.equal(layout.anchor(byName('Room').id), layout.items[byName('Room').id], 'leaf pins land on themselves');
+    const again = layoutAtlas(atlas, { depth: 99, landings });
+    assert.deepEqual([again.items[`hub:${stationId}`].ax, again.items[`hub:${stationId}`].ay], [hub.ax, hub.ay],
+        'same story, same hub - the layout stays put');
+});
+
+test('layoutAtlas hubs: only where the story stood, passed or journeyed', () => {
+    const base = { date: '', time: '', hour: null, weather: '', locationTag: '', present: [], last: false };
+    const observations = [
+        { ...base, chain: ['City', 'Station', 'Wing', 'Room'], at: { msgIndex: 0, tagIndex: 0 }, last: true },
+    ];
+    const atlas = buildAtlas(observations);
+    const layout = layoutAtlas(atlas, { depth: 99, landings: new Set() });
+    const stationId = Object.values(atlas.nodes).find(n => n.name === 'Station').id;
+    assert.equal(layout.items[`hub:${stationId}`], undefined, 'a parent the story never stood in keeps no pin');
+});

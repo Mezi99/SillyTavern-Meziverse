@@ -1182,8 +1182,9 @@ function pack(items, gap, seed) {
  * @param {{depth?: number}} [options] 2, 3 or 4 levels, or 99 for everything
  * @returns {{items:Record<string,object>, order:object[], roots:object[], bounds:{x0:number,x1:number,y0:number,y1:number}, anchor:(id:string)=>object|null}}
  */
-export function layoutAtlas(atlas, { depth = 4, inside = '' } = {}) {
+export function layoutAtlas(atlas, { depth = 4, inside = '', landings = null } = {}) {
     const nodes = atlas?.nodes || {};
+    const landAt = landings instanceof Set ? landings : new Set(landings || []);
     const kidsOf = node => (node.children || [])
         .map(id => nodes[id])
         .filter(child => child && child.kind !== 'mobile' && child.kind !== 'transient');
@@ -1198,6 +1199,14 @@ export function layoutAtlas(atlas, { depth = 4, inside = '' } = {}) {
     const lay = node => {
         if (!expands(node)) return { n: node, r: PIN_R, pin: true, kids: [] };
         const subs = kidsOf(node).map(lay);
+        /* A place that is also a parent keeps a pin of its own when the story
+           stood, passed or journeyed there - without it a leg has nowhere real
+           to land and ends on the blob's packing centre, an unmarked spot.
+           The hub is packed among the children, so it never overlaps them and
+           always sits inside the blob. */
+        const wantsHub = node.kind !== 'mobile' && node.kind !== 'transient'
+            && (landAt.has(node.id) || (node.stops || 0) > 0);
+        if (wantsHub) subs.push({ n: node, r: PIN_R, pin: true, hub: true, kids: [] });
         const inner = pack(subs, levelOf(node) >= 2 ? 14 : 32, hashFold(node.fold));
         const pad = levelOf(node) === 0 ? PLACE_PAD.region : levelOf(node) === 1 ? PLACE_PAD.city : PLACE_PAD.plot;
         return { n: node, r: Math.max(inner + pad, PIN_R + pad), pin: false, kids: subs };
@@ -1217,7 +1226,8 @@ export function layoutAtlas(atlas, { depth = 4, inside = '' } = {}) {
     const walk = (item, ox, oy) => {
         item.ax = ox + item.x;
         item.ay = oy + item.y;
-        out.items[item.n.id] = item;
+        /* a hub shares its node with the blob that holds it - keep both */
+        out.items[item.hub ? `hub:${item.n.id}` : item.n.id] = item;
         out.order.push(item);
         item.kids.forEach(child => walk(child, item.ax, item.ay));
     };
@@ -1232,9 +1242,15 @@ export function layoutAtlas(atlas, { depth = 4, inside = '' } = {}) {
     } : { x0: 0, x1: 0, y0: 0, y1: 0 };
 
     out.anchor = id => {
+        /* the place's own pin (or hub) first, then the nearest pin or hub
+           above it, then the raw item - a leg must land on something drawn */
+        const hub = out.items[`hub:${id}`];
+        if (hub) return hub;
         for (let at = nodes[id]; at; at = at.parentId ? nodes[at.parentId] : null) {
             const item = out.items[at.id];
             if (item && item.pin) return item;
+            const up = out.items[`hub:${at.id}`];
+            if (up && at.id !== id) return up;
         }
         return out.items[id] || null;
     };
