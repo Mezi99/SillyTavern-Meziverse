@@ -413,14 +413,16 @@ export function townSources(layout, atlas, derived) {
         if (!node || node.kind === 'mobile' || node.kind === 'transient') continue;
         const now = derived && derived.nowId === id;
         const stops = node.stops || 0;
-        if (!stops && !now) continue;
+        const stood = !!(stops || now);
         const level = Number.isFinite(node.level) ? node.level : 3;
         pins.push({
             ax: item.ax,
             ay: item.ay,
-            size: level <= 1 ? 46 : level === 2 ? 34 : 24,
+            // passed-through places get no town glow - just their clearing
+            size: stood ? (level <= 1 ? 46 : level === 2 ? 34 : 24) : 0,
             r: now ? 200 : stops ? 160 : 112,
         });
+        if (!stood) continue;
         for (let at = node; at; at = at.parentId ? nodes[at.parentId] : null) {
             if (at.kind === 'mobile' || at.kind === 'transient') continue;
             const holder = items[at.id];
@@ -438,59 +440,9 @@ export function townSources(layout, atlas, derived) {
     return { pins, ters };
 }
 
-/* ---------- fog of war: what the story has earned ---------- */
-
-/**
- * Where the clouds part. The trail paints the world open: every journey leg
- * is a ribbon of clear sky, every place a response happened at breathes a
- * hole in the fog (the more turns, the wider), places only PASSED through
- * stay half-veiled, and the story's now is always clear. Deliberately dumb
- * geometry - the renderer smears it into cloud cover.
- *
- * @param {object} layout `layoutAtlas` output (items with ax/ay/r)
- * @param {object} atlas `buildAtlas` output (nodes carry visits/stops/kind)
- * @param {object} derived `deriveLegs` output (legs, nowId)
- * @param {Array<object>} [walks] `trailWalks` output - the map's own walks,
- *        so the cleared corridor follows the dotted trail exactly (derived
- *        here from the layout when omitted)
- * @returns {{spots:Array<{id:string,ax:number,ay:number,r:number,w:number}>,
- *            ribbons:Array<{pts:Array<[number,number]>,w:number}>}}
- */
-export function fogReveal(layout, atlas, derived, walks = null) {
-    const spots = [];
-    const ribbons = [];
-    const items = (layout && layout.items) || {};
-    const nodes = (atlas && atlas.nodes) || {};
-
-    const trail = walks || trailWalks((derived && derived.legs) || [], id => items[id]);
-    for (const walk of trail) {
-        ribbons.push({
-            pts: walk.pts,
-            w: r2(clamp(0.42 + 0.12 * (walk.leg.count || 1), 0.42, 1)),
-        });
-    }
-
-    for (const item of Object.values(items)) {
-        const node = nodes[item.n && item.n.id];
-        if (!node || node.kind === 'mobile' || node.kind === 'transient') continue;
-        const stops = node.stops || 0;
-        const isNow = derived && derived.nowId === node.id;
-        if (!stops && !isNow) {
-            // passed through: the trail crossed this land, but the story
-            // never stood still in it - a thin veil stays over it
-            spots.push({ id: node.id, ax: item.ax, ay: item.ay, r: r2(item.r * 2.2), w: 0.18 });
-            continue;
-        }
-        spots.push({
-            id: node.id,
-            ax: item.ax,
-            ay: item.ay,
-            r: r2(item.r * (3.2 + 0.5 * Math.log2(1 + stops)) * (isNow ? 1.4 : 1)),
-            w: isNow ? 1 : r2(clamp(0.5 + 0.16 * stops, 0.5, 1)),
-        });
-    }
-    return { spots, ribbons };
-}
+/* ---------- fog of war: what the story has earned ----------
+ * The fog is analytic now - the shader's pin loop breathes the clearings
+ * (see TERRAIN_FS). What remains here is the towns' source selection. */
 
 /* ---------- the renderer ----------
  *
@@ -568,7 +520,7 @@ void regionField(vec2 p,out float S,out int rid){
    city/plot discs, MAX-combined so stacking never grows the town */
 float townField(vec2 p){
   float t=0.;
-  for(int i=0;i<MAXP;i++){if(i>=uNP)break;vec4 q=uPin[i];float d=length(p-q.xy);t=max(t,exp(-d*d/(q.z*q.z))*.95);}
+  for(int i=0;i<MAXP;i++){if(i>=uNP)break;vec4 q=uPin[i];if(q.z>.5){float d=length(p-q.xy);t=max(t,exp(-d*d/(q.z*q.z))*.95);}}
   for(int i=0;i<MAXT;i++){if(i>=uNT)break;vec4 q=uTer[i];float d=length(p-q.xy);t=max(t,(1.-ss(.15*q.z,q.z,d))*q.w);}
   return t;
 }
@@ -673,11 +625,11 @@ void main(){
   vec3 fogC=vec3(0.);
   if(uFog>.5){
     float cn=fbm(sp*.014+vec2(t*.6,t*.25),4.);
-    /* the drift in world units, not UV: a house and a travel world get the
-       same fog character */
-    vec2 ruv=suv+(cn-.5)*70./uStoryRect.zw;
-    /* the rim is a defined edge before the drift, so it visibly swirls */
-    float rev=inTex>.5?smoothstep(.3,.7,texture(uStory,ruv).b):0.;
+    /* the mockup's fog, verbatim: every pin breathes its own hole in the
+       cloud (200 now / 160 stopped / 112 passed), and the drift bends the
+       rim before the edge is cut - so the edges swirl like cloud edges */
+    float rev=0.;
+    for(int i=0;i<MAXP;i++){if(i>=uNP)break;vec4 q=uPin[i];float d=length(p-q.xy)+(cn-.5)*70.;rev=max(rev,1.-ss(.52*q.w,q.w,d));}
     float cloud=.8+.4*fbm(sp*.02+vec2(-t*.8,t*.3)+7.,5.);
     fogC=vec3(.05,.075,.082)*cloud;
     fogA=(1.-rev)*.88;
@@ -783,9 +735,10 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
     let warm = 4;
 
     /* ---------- the story, baked on the CPU ----------
-       One texture, two channels: roads (G), fog reveal (B). The towns are
-       analytic (townField) - painted with canvas gradients, cheap, and the
-       shader never loops the story no matter how many places it grows. */
+       One texture, one channel left: roads (G). The towns and the fog are
+       analytic now; the roads follow in the next step. Painted with canvas
+       gradients - cheap, and the shader never loops the story no matter how
+       many places it grows. */
     const bakeStory = ({ layout, atlas, derived, walks = null, record = null }) => {
         const bounds = layout.bounds || { x0: -500, x1: 500, y0: -500, y1: 500 };
         const margin = 260;
@@ -808,12 +761,6 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
             ctx.globalCompositeOperation = 'lighter';
             passes.push({ el, ctx });
         }
-        const glow = (ctx, x, y, r, alpha, stops = [[0, 1], [1, 0]]) => {
-            const gradient = ctx.createRadialGradient(x, y, 0, x, y, Math.max(1, r));
-            for (const [at, v] of stops) gradient.addColorStop(at, `rgba(255,255,255,${alpha * v})`);
-            ctx.fillStyle = gradient;
-            ctx.fillRect(x - r, y - r, r * 2, r * 2);
-        };
         /* walked, not ruled: the story's paths wander like footpaths -
            drawn smooth, the same curve the SVG trail draws */
         const walk = (ctx, points, width, alpha) => {
@@ -856,19 +803,9 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
             ridge(passes[1].ctx, step.pts);
         }
 
-        /* reveal: the fog the trail earns. The holes get a defined rim
-           (eased falloff) so the drifting lookup visibly swirls it - a
-           smooth ramp displaced is nothing you can see */
-        const reveal = fogReveal(layout, atlas, derived, trail);
-        for (const spot of reveal.spots) {
-            glow(passes[2].ctx, toX(spot.ax), toY(spot.ay), spot.r * scale, spot.w,
-                [[0, 1], [0.45, 0.95], [0.75, 0.4], [1, 0]]);
-        }
-        for (const ribbon of reveal.ribbons) {
-            walk(passes[2].ctx, ribbon.pts, (24 + 60 * ribbon.w) * scale, 0.85);
-        }
-
-        /* the three channels, one texture */
+        /* reveal: the fog is analytic now (the mockup's pin loop) - the
+           channel stays empty until the roads follow suit */
+        /* the channels, one texture */
         const pixels = new Uint8Array(size * size * 4);
         const data = passes.map(pass => pass.ctx.getImageData(0, 0, size, size).data);
         for (let i = 0; i < size * size; i += 1) {

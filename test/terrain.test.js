@@ -4,7 +4,6 @@ import assert from 'node:assert/strict';
 import {
     climateTemp,
     deriveTerrainRecord,
-    fogReveal,
     paletteFromSamples,
     ratiosFromText,
     skyFor,
@@ -200,83 +199,7 @@ test('weatherFx: one overlay per sky, strongest word wins', () => {
     assert.deepEqual(weatherFx(''), { kind: null, strength: 0 });
 });
 
-/* ---------- fog of war ---------- */
-
-const item = (id, x, y, r = 17) => ({ n: { id }, r, pin: true, kids: [], ax: x, ay: y });
-
-test('fogReveal: the trail paints the world open', () => {
-    const layout = {
-        items: {
-            a: item('a', 0, 0),
-            b: item('b', 100, 0),
-            c: item('c', 200, 0),
-        },
-    };
-    const atlas = {
-        nodes: {
-            a: { id: 'a', kind: 'spot', stops: 3 },
-            b: { id: 'b', kind: 'spot', stops: 0 },
-            c: { id: 'c', kind: 'spot', stops: 1 },
-        },
-    };
-    const derived = {
-        legs: [{ a: 'a', b: 'b', count: 2 }, { a: 'b', b: 'c', count: 1 }],
-        nowId: 'c',
-    };
-    const { spots, ribbons } = fogReveal(layout, atlas, derived);
-    assert.equal(ribbons.length, 2);
-    assert.equal(ribbons[0].w, 0.66, 'a twice-worn trail is wider');
-    assert.ok(ribbons[0].w > ribbons[1].w);
-
-    const byId = Object.fromEntries(spots.map(s => [s.id, s]));
-    assert.ok(byId.a.w >= 0.5, 'a place responses happened at breathes clear');
-    assert.ok(byId.a.r > byId.b.r * 1.5, 'more turns, a wider clearing');
-    assert.equal(byId.b.w, 0.18, 'passed through: the veil stays thin');
-    assert.equal(byId.c.w, 1, 'the story\\u2019s now is always clear');
-});
-
-test('fogReveal: vehicles and soft evidence draw no fog of their own', () => {
-    const layout = { items: { v: item('v', 0, 0), t: item('t', 50, 0) } };
-    const atlas = {
-        nodes: {
-            v: { id: 'v', kind: 'mobile', stops: 2 },
-            t: { id: 't', kind: 'transient', stops: 2 },
-        },
-    };
-    const { spots, ribbons } = fogReveal(layout, atlas, { legs: [], nowId: null });
-    assert.equal(spots.length, 0);
-    assert.equal(ribbons.length, 0);
-});
-
-test('fogReveal: legs whose ends left the layout are skipped, not fatal', () => {
-    const layout = { items: { a: item('a', 0, 0) } };
-    const atlas = { nodes: { a: { id: 'a', kind: 'spot', stops: 1 } } };
-    const derived = { legs: [{ a: 'a', b: 'gone', count: 1 }], nowId: 'a' };
-    const { spots, ribbons } = fogReveal(layout, atlas, derived);
-    assert.equal(ribbons.length, 0);
-    assert.equal(spots.length, 1);
-});
-
-test('fogReveal: wears the real atlas without a stumble', () => {
-    const base = { date: '', time: '', hour: null, weather: '', locationTag: '', present: [], last: false };
-    const observations = [
-        { ...base, chain: ['Space', 'Port', 'Pier 9'], at: { msgIndex: 0, tagIndex: 0 }, last: true },
-        { ...base, chain: ['Space', 'Port', 'Market Row'], at: { msgIndex: 1, tagIndex: 0 }, last: true },
-        { ...base, chain: ['Space', 'Port', 'Market Row'], at: { msgIndex: 2, tagIndex: 0 }, last: true },
-        { ...base, chain: ['Space', 'Kessel Drift', 'Dock'], at: { msgIndex: 3, tagIndex: 0 }, last: true },
-    ];
-    const atlas = buildAtlas(observations);
-    const layout = layoutAtlas(atlas);
-    const derived = deriveLegs(atlas);
-    const { spots, ribbons } = fogReveal(layout, atlas, derived);
-    assert.ok(spots.length >= 3, `spots ${spots.length}`);
-    assert.ok(ribbons.length >= 1, `ribbons ${ribbons.length}`);
-    for (const spot of spots) {
-        assert.ok(Number.isFinite(spot.ax) && Number.isFinite(spot.ay) && spot.r > 0 && spot.w > 0);
-    }
-    const now = spots.find(spot => spot.w === 1);
-    assert.ok(now, 'the now is always clear somewhere');
-});
+/* ---------- the towns and the fog's clearings ---------- */
 
 test('townSources: towns are places the story stood, never whole lands', () => {
     const layout = { items: {
@@ -296,12 +219,15 @@ test('townSources: towns are places the story stood, never whole lands', () => {
         now: { id: 'now', level: 3, kind: 'place', parentId: 'reg', stops: 0 },
     } };
     const { pins, ters } = townSources(layout, atlas, { nowId: 'now' });
-    assert.deepEqual(pins.map(p => p.ax).sort((a, b) => a - b), [15, 100],
-        'the stopped pin and the now pin - never the passed one');
+    assert.equal(pins.length, 3, 'every pin clears fog - it is the fog that is pin-shaped now');
     const now = pins.find(p => p.ax === 100);
     const stopped = pins.find(p => p.ax === 15);
+    const passed = pins.find(p => p.ax === 200);
     assert.equal(now.r, 200, 'the now pin earns the widest clearing');
     assert.equal(stopped.r, 160, 'a stopped pin, the middle clearing');
+    assert.equal(passed.r, 112, 'a passed pin keeps a small clearing');
+    assert.ok(now.size > 0 && stopped.size > 0, 'places the story stood in are towns');
+    assert.equal(passed.size, 0, 'a passed-through place glows no town');
     assert.equal(stopped.size, 24, 'a plot pin is a small town');
     assert.deepEqual(ters.map(t => t.ax).sort((a, b) => a - b), [10, 14],
         'the visited chain lights its city and plot');
@@ -309,10 +235,32 @@ test('townSources: towns are places the story stood, never whole lands', () => {
     assert.equal(ters.find(t => t.ax === 10).w, 0.55, 'cities glow softer than plots');
 });
 
-test('townSources: nothing the story stood in, no towns at all', () => {
+test('townSources: nothing the story stood in, clearings but no towns', () => {
     const layout = { items: { only: { n: { id: 'only' }, ax: 1, ay: 2, r: 12, pin: true } } };
     const atlas = { nodes: { only: { id: 'only', level: 3, kind: 'place', stops: 0 } } };
     const { pins, ters } = townSources(layout, atlas, { nowId: null });
-    assert.equal(pins.length, 0);
+    assert.equal(pins.length, 1);
+    assert.equal(pins[0].size, 0, 'no towns');
+    assert.equal(pins[0].r, 112, 'but the trail stop still breathes');
     assert.equal(ters.length, 0);
+});
+
+test('townSources: wears the real atlas without a stumble', () => {
+    const base = { date: '', time: '', hour: null, weather: '', locationTag: '', present: [], last: false };
+    const observations = [
+        { ...base, chain: ['Space', 'Port', 'Pier 9'], at: { msgIndex: 0, tagIndex: 0 }, last: true },
+        { ...base, chain: ['Space', 'Port', 'Market Row'], at: { msgIndex: 1, tagIndex: 0 }, last: true },
+        { ...base, chain: ['Space', 'Port', 'Market Row'], at: { msgIndex: 2, tagIndex: 0 }, last: true },
+        { ...base, chain: ['Space', 'Kessel Drift', 'Dock'], at: { msgIndex: 3, tagIndex: 0 }, last: true },
+    ];
+    const atlas = buildAtlas(observations);
+    const layout = layoutAtlas(atlas);
+    const derived = deriveLegs(atlas);
+    const { pins, ters } = townSources(layout, atlas, derived);
+    assert.ok(pins.length >= 3, `pins ${pins.length}`);
+    for (const pin of pins) {
+        assert.ok(Number.isFinite(pin.ax) && Number.isFinite(pin.ay) && pin.r > 0 && pin.size >= 0);
+    }
+    assert.ok(pins.some(pin => pin.r === 200), 'the now is always clear somewhere');
+    for (const ter of ters) assert.ok(ter.r > 0 && ter.w > 0);
 });
