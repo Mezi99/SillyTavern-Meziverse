@@ -27,7 +27,7 @@
  * only Reseed changes the noise behind it.
  */
 
-import { hashFold, trailWalks } from './mapdata.js';
+import { hashFold, trailWalks, walkSegments } from './mapdata.js';
 
 /* ---------- numbers ---------- */
 
@@ -440,6 +440,39 @@ export function townSources(layout, atlas, derived) {
     return { pins, ters };
 }
 
+/**
+ * The road's line segments: the same-region legs the story walked, sampled
+ * along the very curve the SVG's dotted trail draws - so the lit road lies
+ * on the trail to the pixel. Each segment is [ax, ay, bx, by].
+ *
+ * @param {object} layout `layoutAtlas` output (items with ax/ay)
+ * @param {object} atlas `buildAtlas` output (nodes carry parentId)
+ * @param {object} derived `deriveLegs` output (legs)
+ * @param {Array<object>} [walks] `trailWalks` output (derived here when omitted)
+ * @returns {Array<[number, number, number, number]>}
+ */
+export function roadSegments(layout, atlas, derived, walks = null) {
+    const items = (layout && layout.items) || {};
+    const nodes = (atlas && atlas.nodes) || {};
+    const trail = walks || trailWalks((derived && derived.legs) || [], id => items[id]);
+    const rootOf = id => {
+        let node = nodes[id];
+        while (node && node.parentId) node = nodes[node.parentId];
+        return node;
+    };
+    const segs = [];
+    for (const step of trail) {
+        const { leg, from, to } = step;
+        const ra = rootOf(leg.a);
+        const rb = rootOf(leg.b);
+        if (!ra || ra.id !== rb?.id) continue;
+        if (Math.hypot(from.ax - to.ax, from.ay - to.ay) > 340) continue;
+        const pts = walkSegments(step.pts);
+        for (let i = 1; i < pts.length; i += 1) segs.push([pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]]);
+    }
+    return segs;
+}
+
 /* ---------- fog of war: what the story has earned ----------
  * The fog is analytic now - the shader's pin loop breathes the clearings
  * (see TERRAIN_FS). What remains here is the towns' source selection. */
@@ -449,10 +482,11 @@ export function townSources(layout, atlas, derived) {
  * One fullscreen triangle, one fragment shader: the terrain IS the map's
  * own layout seen as land. The territory blobs become the landmasses
  * (regionField reproduces the exact seeded outlines the SVG draws), the
- * journey legs become roads and clearings in the fog, and everything the
- * story knows about itself arrives baked: towns, roads and reveal are
- * painted into a small texture on the CPU whenever the atlas changes, so
- * no per-pixel loop ever grows with the story. Only noise is analytic.
+ * journey legs become roads and clearings in the fog. Everything the story
+ * knows about itself is analytic: towns (townField), roads (roadField) and
+ * the fog's clearings are evaluated per pixel from small uniform arrays -
+ * the mockup's model, so every edge stays crisp at any zoom and no loop
+ * grows with the story beyond a fixed cap (view-culled every frame).
  *
  * Adapted from the mockup's shader (MapPlanA) and Abyssal Garden's look
  * techniques - caustics, hillshading, the adaptive pixel budget. Ink is
@@ -483,6 +517,7 @@ precision highp float;
 #define MAXR 24
 #define MAXP 48
 #define MAXT 20
+#define MAXL 64
 #define SIG 28.
 out vec4 fragColor;
 uniform vec2 uRes,uCenter,uSeedV;
@@ -491,11 +526,9 @@ uniform vec3 uAcc,uSea,uShallow,uTownC,uTint,uSun;
 uniform int uNR;
 uniform vec4 uReg[MAXR],uRegB[MAXR],uRegP[MAXR];
 uniform vec3 uRC[MAXR*3];
-uniform sampler2D uStory;
-uniform vec4 uStoryRect;
 uniform vec4 uWeather;
-uniform vec4 uPin[MAXP],uTer[MAXT];
-uniform int uNP,uNT;
+uniform vec4 uPin[MAXP],uTer[MAXT],uLeg[MAXL];
+uniform int uNP,uNT,uNL;
 uniform float uRelief,uWater,uForest,uTowns;
 
 float h21(vec2 p){vec3 q=fract(vec3(p.xyx)*.1031);q+=dot(q,q.yzx+33.33);return fract((q.x+q.y)*q.z);}
@@ -523,6 +556,13 @@ float townField(vec2 p){
   for(int i=0;i<MAXP;i++){if(i>=uNP)break;vec4 q=uPin[i];if(q.z>.5){float d=length(p-q.xy);t=max(t,exp(-d*d/(q.z*q.z))*.95);}}
   for(int i=0;i<MAXT;i++){if(i>=uNT)break;vec4 q=uTer[i];float d=length(p-q.xy);t=max(t,(1.-ss(.15*q.z,q.z,d))*q.w);}
   return t;
+}
+float segD(vec2 p,vec2 a,vec2 b){vec2 pa=p-a,ba=b-a;float h=clamp(dot(pa,ba)/max(dot(ba,ba),1e-4),0.,1.);return length(pa-ba*h);}
+float roadField(vec2 p,float w,float aa){
+  vec2 wp=p+(vec2(vn(p*.045),vn(p*.045+9.))-.5)*16.;
+  float d=1e4;
+  for(int i=0;i<MAXL;i++){if(i>=uNL)break;d=min(d,segD(wp,uLeg[i].xy,uLeg[i].zw));}
+  return 1.-ss(w*.5,w*.5+aa,d);
 }
 
 /* land height, 0.30 is the sea line */
@@ -566,10 +606,7 @@ void main(){
   float px1=1./uScale;
   float t=uTime;
 
-  /* the story, baked: roads and fog reveal - the towns are analytic */
-  vec2 suv=(p-uStoryRect.xy)/uStoryRect.zw;
-  float inTex=step(0.,suv.x)*step(suv.x,1.)*step(0.,suv.y)*step(suv.y,1.);
-  vec3 story=inTex>.5?texture(uStory,suv).rgb:vec3(0.);
+  /* the story: towns, roads and fog are all analytic now */
   float towns=townField(p);
 
   float landV,mountV;int rid;
@@ -583,11 +620,10 @@ void main(){
   vec3 lightDir=normalize(vec3(uSun.x*.8-.45,-uSun.y*.8-.45,max(uSun.z,.15)+.55));
   float sh=clamp(dot(nrm,lightDir),0.,1.);
   float isWater=1.-ss(.296,.304,h0);
-  /* the road: the baked ridge, thresholded crisp at any zoom - with a
-     little wobble so the line reads hand-trodden */
-  float rg=story.g+(vn(sp*.05)-.5)*.12;
-  float aa=fwidth(rg)*2.+1e-4;
-  float road=smoothstep(.42-aa,.42+aa,rg)*(1.-isWater);
+  /* the road: the mockup's field, verbatim - a fine hand-trodden line
+     along the very walks the dotted trail draws */
+  float roadAA=px1*.9;
+  float road=roadField(p,1.5*clamp(uTowns,.3,1.4),roadAA)*(1.-isWater)*step(.01,uTowns);
   vec4 P=uRegP[rid];
   vec3 Lc=uRC[rid*3],Fc=uRC[rid*3+1],Hc=uRC[rid*3+2];
   float hh=h0-.30;
@@ -711,18 +747,11 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
         U[info.name.replace(/\[0\]$/, '')] = gl.getUniformLocation(prog, info.name);
     }
 
-    const storyTex = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, storyTex);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.uniform1i(U.uStory, 0);
-
     /* scene state, set by updateScene and then read frame after frame */
     let scene = null;
     const pinBuf = new Float32Array(48 * 4);
     const terBuf = new Float32Array(20 * 4);
+    const legBuf = new Float32Array(64 * 4);
     let qIndex = Math.max(0, Math.min(TERRAIN_QUALITY.length - 1, quality));
     /* Session-only quality guard: a GPU timer (when the driver exposes one)
        watches what frames really cost. After warm-up, three genuinely slow
@@ -734,95 +763,9 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
     let slowStreak = 0;
     let warm = 4;
 
-    /* ---------- the story, baked on the CPU ----------
-       One texture, one channel left: roads (G). The towns and the fog are
-       analytic now; the roads follow in the next step. Painted with canvas
-       gradients - cheap, and the shader never loops the story no matter how
-       many places it grows. */
-    const bakeStory = ({ layout, atlas, derived, walks = null, record = null }) => {
-        const bounds = layout.bounds || { x0: -500, x1: 500, y0: -500, y1: 500 };
-        const margin = 260;
-        const rect = [bounds.x0 - margin, bounds.y0 - margin,
-            (bounds.x1 - bounds.x0) + margin * 2, (bounds.y1 - bounds.y0) + margin * 2];
-        const size = Math.max(256, Math.min(1024, Math.round(Math.max(rect[2], rect[3]) / 2.5)));
-        const toX = x => (x - rect[0]) / rect[2] * size;
-        const toY = y => (y - rect[1]) / rect[3] * size;
-        const scale = Math.min(rect[2], rect[3]) > 0 ? size / Math.max(rect[2], rect[3]) : 1;
-        const trail = walks || trailWalks((derived && derived.legs) || [], id => layout.items[id]);
-
-        const passes = [];
-        for (let channel = 0; channel < 3; channel += 1) {
-            const el = document.createElement('canvas');
-            el.width = size;
-            el.height = size;
-            const ctx = el.getContext('2d');
-            ctx.fillStyle = '#000';
-            ctx.fillRect(0, 0, size, size);
-            ctx.globalCompositeOperation = 'lighter';
-            passes.push({ el, ctx });
-        }
-        /* walked, not ruled: the story's paths wander like footpaths -
-           drawn smooth, the same curve the SVG trail draws */
-        const walk = (ctx, points, width, alpha) => {
-            ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
-            ctx.lineWidth = Math.max(1, width);
-            ctx.lineJoin = 'round';
-            ctx.lineCap = 'round';
-            ctx.beginPath();
-            ctx.moveTo(toX(points[0][0]), toY(points[0][1]));
-            for (let i = 1; i < points.length - 1; i += 1) {
-                const mx = (points[i][0] + points[i + 1][0]) / 2;
-                const my = (points[i][1] + points[i + 1][1]) / 2;
-                ctx.quadraticCurveTo(toX(points[i][0]), toY(points[i][1]), toX(mx), toY(my));
-            }
-            const last = points[points.length - 1];
-            ctx.lineTo(toX(last[0]), toY(last[1]));
-            ctx.stroke();
-        };
-        /* the road: a soft ridge of stacked strokes (in texels), which the
-           shader thresholds - a thin stroke would be a sub-texel smear at
-           2.5 world units per texel, the threshold keeps it crisp at any
-           zoom and as close to the mockup's fine line as texels allow */
-        const ridge = (ctx, points) => {
-            for (const [w, a] of [[5, 0.16], [3.5, 0.22], [2.5, 0.3], [1.6, 0.4]]) walk(ctx, points, w, a);
-        };
-
-        /* roads: the same-region legs the story walked - the very walk the
-           dotted trail draws, or the lit road would run beside it */
-        const rootOf = id => {
-            let node = atlas.nodes[id];
-            while (node && node.parentId) node = atlas.nodes[node.parentId];
-            return node;
-        };
-        for (const step of trail) {
-            const { leg, from, to } = step;
-            const ra = rootOf(leg.a);
-            const rb = rootOf(leg.b);
-            if (!ra || ra.id !== rb?.id) continue;
-            if (Math.hypot(from.ax - to.ax, from.ay - to.ay) > 340) continue;
-            ridge(passes[1].ctx, step.pts);
-        }
-
-        /* reveal: the fog is analytic now (the mockup's pin loop) - the
-           channel stays empty until the roads follow suit */
-        /* the channels, one texture */
-        const pixels = new Uint8Array(size * size * 4);
-        const data = passes.map(pass => pass.ctx.getImageData(0, 0, size, size).data);
-        for (let i = 0; i < size * size; i += 1) {
-            pixels[i * 4] = data[0][i * 4];
-            pixels[i * 4 + 1] = data[1][i * 4];
-            pixels[i * 4 + 2] = data[2][i * 4];
-            pixels[i * 4 + 3] = 255;
-        }
-        gl.bindTexture(gl.TEXTURE_2D, storyTex);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, size, size, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-
-        return rect;
-    };
-
     /**
-     * A new story (or record): rebuild the uniform arrays and rebake the
-     * story texture. Rare - only when the atlas or the record changes.
+     * A new story (or record): rebuild the uniform arrays. Rare - only when
+     * the atlas or the record changes.
      *
      * @param {object} sceneIn
      * @param {object} sceneIn.layout `layoutAtlas` output
@@ -848,15 +791,14 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
             regP.set([region.rugged, region.forest, region.water, 0], i * 4);
             (region.colors || []).slice(0, 3).forEach((color, k) => rc.set(hexToRgb(color), i * 9 + k * 3));
         });
-        const storyRect = bakeStory({ layout, atlas, derived, walks, record });
         const towns = townSources(layout, atlas, derived);
         const rec = record || {};
         scene = {
             reg, regB, regP, rc,
             nRegions: roots.length,
-            storyRect,
             pins: towns.pins,
             ters: towns.ters,
+            legs: roadSegments(layout, atlas, derived, walks),
             sea: hexToRgb(rec.sea || '#143a45'),
             shallow: hexToRgb(rec.shallow || '#2b7b82'),
             town: hexToRgb(rec.town || '#b9b2a4'),
@@ -866,7 +808,6 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
         gl.uniform4fv(U.uRegB, scene.regB);
         gl.uniform4fv(U.uRegP, scene.regP);
         gl.uniform3fv(U.uRC, scene.rc);
-        gl.uniform4fv(U.uStoryRect, scene.storyRect);
         gl.uniform1i(U.uNR, scene.nRegions);
         gl.uniform3fv(U.uSea, scene.sea);
         gl.uniform3fv(U.uShallow, scene.shallow);
@@ -940,6 +881,18 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
         gl.uniform1i(U.uNP, np);
         gl.uniform4fv(U.uTer, terBuf);
         gl.uniform1i(U.uNT, nt);
+        /* the roads: culled like the towns, capped per tier */
+        const legCap = qIndex >= 2 ? 64 : qIndex === 1 ? 48 : 32;
+        let nl = 0;
+        for (const seg of scene.legs) {
+            if (nl >= legCap) break;
+            if (Math.max(seg[0], seg[2]) < x0 || Math.min(seg[0], seg[2]) > x1
+                || Math.max(seg[1], seg[3]) < y0 || Math.min(seg[1], seg[3]) > y1) continue;
+            legBuf.set(seg, nl * 4);
+            nl += 1;
+        }
+        gl.uniform4fv(U.uLeg, legBuf);
+        gl.uniform1i(U.uNL, nl);
         /* the mockup's slider maxima as the fixed baseline: the look at the
            strength the user liked - sliders can return as settings later */
         gl.uniform1f(U.uRelief, 1.6);
@@ -976,7 +929,6 @@ export function createTerrain(canvas, { quality = 2 } = {}) {
         updateScene,
         draw,
         dispose() {
-            gl.deleteTexture(storyTex);
             gl.deleteProgram(prog);
             gl.deleteBuffer(buffer);
             if (timerQuery) gl.deleteQuery(timerQuery);

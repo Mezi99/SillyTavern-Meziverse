@@ -6,6 +6,7 @@ import {
     deriveTerrainRecord,
     paletteFromSamples,
     ratiosFromText,
+    roadSegments,
     skyFor,
     townSources,
     validateTerrainRecord,
@@ -263,4 +264,34 @@ test('townSources: wears the real atlas without a stumble', () => {
     }
     assert.ok(pins.some(pin => pin.r === 200), 'the now is always clear somewhere');
     for (const ter of ters) assert.ok(ter.r > 0 && ter.w > 0);
+});
+
+test('roadSegments: the road lies on the trail the SVG draws', () => {
+    const layout = { items: {
+        reg: { n: { id: 'reg' }, ax: 0, ay: 0, r: 400 },
+        reg2: { n: { id: 'reg2' }, ax: 200, ay: 200, r: 200 },
+        a: { n: { id: 'a' }, ax: 0, ay: 0, r: 12, pin: true },
+        b: { n: { id: 'b' }, ax: 100, ay: 0, r: 12, pin: true },
+        c: { n: { id: 'c' }, ax: 60, ay: 20, r: 12, pin: true },
+    } };
+    const atlas = { nodes: {
+        reg: { id: 'reg', level: 0, kind: 'region' },
+        reg2: { id: 'reg2', level: 0, kind: 'region' },
+        a: { id: 'a', level: 3, kind: 'place', parentId: 'reg', stops: 1 },
+        b: { id: 'b', level: 3, kind: 'place', parentId: 'reg', stops: 1 },
+        c: { id: 'c', level: 3, kind: 'place', parentId: 'reg2', stops: 1 },
+    } };
+    const derived = { legs: [
+        { a: 'a', b: 'b', key: 'a|b', dir: ['a', 'b'], count: 1 },
+        { a: 'a', b: 'c', key: 'a|c', dir: ['a', 'c'], count: 1 },
+        { a: 'b', b: 'c', key: 'b|c', dir: ['b', 'c'], count: 1 },
+    ], nowId: 'b' };
+    const segs = roadSegments(layout, atlas, derived);
+    // only the same-region leg draws a road (a-b); a-c is cross-region and
+    // b-c is both cross-region and long - the mockup's exact rules
+    assert.equal(segs.length, 43, `one walk, its chain of segments: ${segs.length}`);
+    for (const seg of segs) {
+        assert.ok(seg.every(Number.isFinite), 'plain numbers');
+        assert.ok(Math.max(seg[0], seg[2]) <= 101 && Math.min(seg[0], seg[2]) >= -1, 'only the near pair');
+    }
 });

@@ -1009,6 +1009,36 @@ export function walkedPoints(ax, ay, bx, by, seed, bow = 0, steps = 8) {
 }
 
 /**
+ * Sample points along the exact curve `walkedPath` draws (quadratics through
+ * the midpoints), so a road baked from these points lies on the dotted trail
+ * to the pixel. `perSpan` samples per quadratic span.
+ *
+ * @param {Array<[number, number]>} points `walkedPoints` output
+ * @param {number} [perSpan] samples per span
+ * @returns {Array<[number, number]>} points along the curve, endpoints exact
+ */
+export function walkSegments(points, perSpan = 6) {
+    const n = points.length;
+    if (n < 2) return points.slice();
+    const out = [points[0]];
+    let start = points[0];
+    for (let i = 1; i < n - 1; i += 1) {
+        const end = [(points[i][0] + points[i + 1][0]) / 2, (points[i][1] + points[i + 1][1]) / 2];
+        for (let k = 1; k <= perSpan; k += 1) {
+            const t = k / perSpan;
+            const u = 1 - t;
+            out.push([
+                u * u * start[0] + 2 * u * t * points[i][0] + t * t * end[0],
+                u * u * start[1] + 2 * u * t * points[i][1] + t * t * end[1],
+            ]);
+        }
+        start = end;
+    }
+    out.push(points[n - 1]);
+    return out;
+}
+
+/**
  * One walk per journey leg - the single source behind the dotted trail,
  * the lit road and the fog corridor. The walk wanders like a footpath
  * (seeded: the same journey always walks the same way) and lands exactly

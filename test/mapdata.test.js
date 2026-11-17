@@ -15,6 +15,7 @@ import {
     trailWalks,
     walkedPath,
     walkedPoints,
+    walkSegments,
     worldMatrix,
 } from '../src/mapdata.js';
 
@@ -821,4 +822,16 @@ test('trailWalks: repeat journeys bow apart, never on top of each other', () => 
         assert.deepEqual(w.pts[0], [0, 0], 'still lands on its places');
         assert.deepEqual(w.pts[w.pts.length - 1], [100, 0], 'still lands on its places');
     }
+});
+
+test('walkSegments: samples the exact curve the dotted trail draws', () => {
+    const pts = walkedPoints(0, 0, 100, 0, 42, 10, 4);
+    const seg = walkSegments(pts, 4);
+    assert.deepEqual(seg[0], [0, 0], 'starts on the place');
+    assert.deepEqual(seg[seg.length - 1], [100, 0], 'lands on the place');
+    assert.ok(seg.length > pts.length, 'more samples than the walk itself');
+    for (const [x, y] of seg) {
+        assert.ok(x >= -1 && x <= 101 && Math.abs(y) <= 12, `the curve never escapes the walk: ${x},${y}`);
+    }
+    assert.deepEqual(walkSegments(pts, 4), seg, 'deterministic');
 });
