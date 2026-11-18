@@ -58,14 +58,15 @@
 .mzc.has-terrain { --mzc-trail: color-mix(in srgb, var(--mzc-tint, #8fb89a) 70%, white); }
 .mz-terrain { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
 
-/* the ship: an entity on the world map - its picture, its glyph, its rooms */
+/* the ship: an entity on the world map - its icon, and the interior count */
 .mzc-ship { cursor: pointer; }
 .mzc-ship .mzc-pin-label { opacity: 1; }
 .mzc-ship:hover .mzc-pin-ring, .mzc-ship.is-sel .mzc-pin-ring { stroke: var(--mz-accent); stroke-width: 2; }
-.mzc-shipglyph { color: var(--mz-accent); pointer-events: none; }
-.mzc-shipglyph circle { fill: var(--mz-surface-solid); stroke: var(--mz-accent); stroke-opacity: .7; stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+.mzc-ship.is-plain { color: var(--mz-accent); }
+.mzc-ship.is-plain use { color: var(--mz-accent); }
 
-/* the trail's past stops: small vehicle icons where the turns happened */
+/* the trail's marks: vehicle icons where scenes were narrated (r=12) and
+   small spots where the road merely passed (r=7) */
 .mzc-stopmark { cursor: pointer; }
 /* a mark on the trail, not a node: outline-only, the vehicle glyph inside.
    The disc is transparent, not none - an unpainted fill takes no clicks. */
@@ -74,8 +75,11 @@
 .mzc-stopmark .mzc-pin-label { opacity: .8; font-size: 9px; }
 .mzc-stopmark:hover .mzc-pin-ring, .mzc-stopmark.is-sel .mzc-pin-ring { stroke: var(--mz-accent); stroke-width: 2; }
 .mzc-stopmark .mzc-count text { font-size: 8px; }
-.mzc-ship.is-plain { color: var(--mz-accent); }
-.mzc-ship.is-plain use { color: var(--mz-accent); }
+.mzc-stopmark.is-spot { opacity: .82; }
+
+/* the interior count: a badge that is also a door into the vehicle's map */
+.mzc-innercount { cursor: pointer; }
+.mzc-innercount:hover circle { stroke: var(--mz-accent); }
 
 /* the deck bar: which ship we're inside, and the way back */
 .mzc-deckbar { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); z-index: 3; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 10px; background: color-mix(in srgb, var(--mz-surface-solid) 88%, transparent); border: 1px solid color-mix(in srgb, var(--mz-accent) 35%, transparent); font-size: 12px; }
@@ -299,6 +303,8 @@
 .mz-map-key i.k-now { width: 11px; height: 11px; border: 2px solid var(--mz-accent); border-radius: 50%; margin: 0 3px; }
 .mz-map-key i.k-pin { width: 11px; height: 11px; border: 1.5px solid color-mix(in srgb, var(--mz-text) 45%, transparent); border-radius: 50%; margin: 0 3px; }
 .mz-map-key i.k-pass { width: 9px; height: 9px; border: 1px solid color-mix(in srgb, var(--mz-text) 22%, transparent); border-radius: 50%; background: var(--mzc-land-2); margin: 0 4px; }
+.mz-map-key i.k-ride { width: 11px; height: 11px; border: 1.5px dashed color-mix(in srgb, var(--mz-text) 55%, transparent); border-radius: 50%; margin: 0 3px; }
+.mz-map-key i.k-road { width: 8px; height: 8px; border: 1px dashed color-mix(in srgb, var(--mz-text) 35%, transparent); border-radius: 50%; margin: 0 5px; }
 .mz-map-key i.k-flag { width: 11px; height: 11px; border: 0; border-radius: 50%; background: var(--mz-warn); margin: 0 3px; }
 .mz-map-compass { position: absolute; z-index: 3; right: 24px; bottom: 24px; width: 46px; height: 46px; color: var(--mz-text-muted); pointer-events: none; opacity: .85; }
 

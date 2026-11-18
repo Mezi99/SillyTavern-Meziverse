@@ -24,6 +24,7 @@ import {
     travelMode,
     trailWalks,
     worldMatrix,
+    stoodPlaces,
 } from './mapdata.js';
 import { recordSrc } from './backgrounds.js';
 import { bgStore, chatMessages, currentChatId, on, personaName, saveTerrainRecord, terrainStore } from './st.js';
@@ -149,6 +150,11 @@ function labelLines(name, max = 16) {
 
 const labelSvg = (name, y, max = 16) => labelLines(name, max)
     .map((line, i) => `<text class="mzc-pin-label" y="${f1(y + i * 11)}" text-anchor="middle">${esc(line)}</text>`)
+    .join('');
+
+/** A trail spot's label, above or below the mark so neighbours never collide. */
+const spotLabel = (name, above) => labelLines(name, 14)
+    .map((line, i, lines) => `<text class="mzc-pin-label" y="${f1(above ? -(11 + (lines.length - i) * 11) : 11 + i * 11)}" text-anchor="middle">${esc(line)}</text>`)
     .join('');
 
 /** The depth the chart shows: 2, 3 or 4 levels, or 99 for everything. */
@@ -629,6 +635,18 @@ function renderChart(mode) {
     const ships = [];
     const marks = [];
     const shipDrawn = new Set();
+
+    /* The land's voice: a land node (pin or hub) draws where a scene tag
+       stood. A place the story only ever crossed in a vehicle has no land
+       node - the vehicle marks carry those spots on the trail - and the
+       marks name the place wherever no land node already does. */
+    const stood = stoodPlaces(atlas);
+    const drawsLand = item => (item.hub
+        ? stood.has(item.n.id)
+        : stood.has(item.n.id) || descend(item.n).some(child => stood.has(child.id)));
+    const landItems = lay.order.filter(item => item.pin && drawsLand(item));
+    const landNamed = new Set(landItems.map(item => item.n.id));
+
     if (!deck) {
         /* Pass one: settle every vehicle's crossed positions ONCE - the
            trail, the stop marks and the ship icons must all read the same
@@ -673,8 +691,9 @@ function renderChart(mode) {
         }
 
         /* Pass two: the icons and the stop marks, drawn from the settled map.
-           Where a marker already stands, a trail mark steps aside. */
-        const taken = lay.order.filter(item => item.pin).map(item => [item.ax, item.ay]);
+           Where a land node or another mark already stands, a mark steps
+           aside - the invisible ones never block the trail. */
+        const taken = landItems.map(item => [item.ax, item.ay]);
         for (const node of Object.values(nodes)) {
             if (node.kind !== 'mobile') continue;
 
@@ -700,41 +719,45 @@ function renderChart(mode) {
             const kids = node.children.filter(id => nodes[id].kind !== 'mobile' && nodes[id].kind !== 'transient').length;
             const isNow = !!nowAboard && nowAboard.id === node.id;
             const glyph = `m-${travelMode(node.name).glyph}`;
-            const rich = kids > 0;
-            const img = rich ? thumbOf(node) : '';
-            if (img) clipR.add(r);
+            const spot = nodes[endId] || null;
+            /* the map names no vehicles: the icon carries the PLACE it sits
+               at (a scene in a car at Residential Street) - and only where
+               no land node already names the spot */
+            const label = !mini && spot && !landNamed.has(endId) ? labelSvg(spot.name, r + 14, 16) : '';
             if (markers) markers.push([x, y]);
             taken.push([x, y]);
-            ships.push(`<g class="mzc-ship${isNow ? ' is-now' : ''}${sel === node.id ? ' is-sel' : ''}${rich ? '' : ' is-plain'}" data-node="${esc(node.key)}" transform="translate(${f1(x)} ${f1(y)})" tabindex="${mini ? -1 : 0}" role="button" aria-label="${esc(node.name)}">
+            ships.push(`<g class="mzc-ship is-plain${isNow ? ' is-now' : ''}${sel === node.id ? ' is-sel' : ''}" data-node="${esc(node.key)}" transform="translate(${f1(x)} ${f1(y)})" tabindex="${mini ? -1 : 0}" role="button" aria-label="${esc(node.name)} at ${esc(spot ? spot.name : '')}">
             ${isNow ? `<circle class="mzc-ping" r="${r + 5}"/><circle class="mzc-ping p2" r="${r + 5}"/>` : ''}
             <circle class="mzc-pin-disc" r="${r}"/>
             ${icon(glyph, 0, 0, r * 1.15)}
-            ${img ? `<image href="${esc(img)}" x="${-r}" y="${-r}" width="${2 * r}" height="${2 * r}" clip-path="url(#mzc-c${r})" preserveAspectRatio="xMidYMid slice" draggable="false"/>` : ''}
             <circle class="mzc-pin-ring" r="${r}"/>
-            ${rich ? `<g class="mzc-shipglyph" transform="translate(${f1(r * 0.82)} ${f1(-r * 0.82)})"><circle r="8"/>${icon(glyph, 0, 0, 11)}</g>` : ''}
-            ${rich && !mini ? `<g class="mzc-count" transform="translate(${f1(-r * 0.82)} ${f1(r * 0.82)})"><circle r="7.5"/><text y="3" text-anchor="middle">${kids}</text></g>` : ''}
-            ${!mini ? labelSvg(node.name, r + 14, 16) : ''}
-            <title>${esc(node.name)}</title></g>`);
+            ${kids && !mini ? `<g class="mzc-count mzc-innercount" data-mz-deckenter transform="translate(${f1(r * 0.82)} ${f1(r * 0.82)})"><circle r="7.5"/><text y="3" text-anchor="middle">${kids}</text></g>` : ''}
+            ${label}
+            <title>${esc(node.name)}${spot ? ` \u00b7 ${esc(spot.name)}` : ''}</title></g>`);
 
-            /* Past stops of the trail: where responses caught the vehicle
-               under way (turns 15, 17 at Corporate Space) - a small vehicle
-               icon each, about half the live one's size, clickable so the
-               rail tells those turns. History never shouts. */
+            /* Every scene tag on the road leaves its mark on the trail: the
+               response's last tag is where the vehicle WAS (a full vehicle
+               mark - the live one's little sibling), the tags it passed
+               through before that are small spots, the road's twin of the
+               land's empty nodes. Any of them opens the vehicle and its
+               turns. History never shouts. */
             if (!mini) {
-                const caught = new Map();
+                const role = new Map();
                 for (const stop of stops) {
                     if (!stop.positionId || !stop.moving) continue;
                     const entry = atlas.observations[stop.obs];
-                    if (!entry || !entry.last) continue;
-                    caught.set(stop.positionId, (caught.get(stop.positionId) || 0) + 1);
+                    const rank = entry && entry.last ? 2 : 1;
+                    if ((role.get(stop.positionId) || 0) < rank) role.set(stop.positionId, rank);
                 }
-                for (const [id, count] of caught) {
-                    const p = id === endId ? null : wayPoints.get(id);
+                let spotIndex = 0;
+                for (const [id, rank] of role) {
+                    if (id === endId) continue;
                     const placeNode = nodes[id];
+                    const p = wayPoints.get(id) || lay.anchor(id);
                     if (!p || !placeNode) continue;
-                    const mr = 7;
-                    /* a trail mark stands beside whatever already marks the
-                       spot - a pin or a berth - never stacked on top of it */
+                    const mr = rank === 2 ? 12 : 7;
+                    /* a mark stands on the trail; it steps aside only around
+                       a real land node or another mark - never stacked */
                     let mx = p.ax;
                     let my = p.ay;
                     if (taken.some(([tx, ty]) => Math.hypot(tx - mx, ty - my) < 26)) {
@@ -748,15 +771,22 @@ function renderChart(mode) {
                     }
                     taken.push([mx, my]);
                     if (markers) markers.push([mx, my]);
-                    /* the mark is the vehicle's history: clicking it opens
-                       the ship and its turns, not the place it crossed */
-                    marks.push(`<g class="mzc-stopmark${sel === node.id ? ' is-sel' : ''}" data-node="${esc(node.key)}" transform="translate(${f1(mx)} ${f1(my)})" tabindex="0" role="button" aria-label="${esc(node.name)} at ${esc(placeNode.name)}">
+                    /* the interior count only rides the full marks - a spot
+                       is just a spot - and opens the vehicle's inner map */
+                    const inner = rank === 2
+                        ? node.children.filter(kid => nodes[kid].kind !== 'mobile' && nodes[kid].kind !== 'transient').length
+                        : 0;
+                    const name = landNamed.has(id)
+                        ? ''
+                        : (rank === 2 ? labelSvg(placeNode.name, mr + 11, 14) : spotLabel(placeNode.name, spotIndex % 2 === 1));
+                    if (rank === 1) spotIndex += 1;
+                    marks.push(`<g class="mzc-stopmark${rank === 2 ? '' : ' is-spot'}${sel === node.id ? ' is-sel' : ''}" data-node="${esc(node.key)}" transform="translate(${f1(mx)} ${f1(my)})" tabindex="0" role="button" aria-label="${esc(node.name)} at ${esc(placeNode.name)}">
                     <circle class="mzc-pin-disc" r="${mr}"/>
-                    ${icon(glyph, 0, 0, 8)}
+                    ${icon(glyph, 0, 0, mr * 1.15)}
                     <circle class="mzc-pin-ring" r="${mr}"/>
-                    ${count > 1 ? `<g class="mzc-count mzc-count--sm" transform="translate(${f1(mr * 0.8)} ${f1(-mr * 0.8)})"><circle r="6"/><text y="2.2" text-anchor="middle" font-size="8">${count}</text></g>` : ''}
-                    ${labelSvg(placeNode.name, mr + 11, 14)}
-                    <title>${esc(node.name)} \u00b7 ${esc(placeNode.name)} \u00b7 ${count}\u00d7 on the road</title></g>`);
+                    ${inner ? `<g class="mzc-count mzc-innercount" data-mz-deckenter transform="translate(${f1(mr * 0.82)} ${f1(mr * 0.82)})"><circle r="6.5"/><text y="2.6" text-anchor="middle" font-size="8.5">${inner}</text></g>` : ''}
+                    ${name}
+                    <title>${esc(node.name)} \u00b7 ${esc(placeNode.name)}${rank === 2 ? '' : ' \u00b7 passed through'}</title></g>`);
                 }
             }
         }
@@ -840,7 +870,8 @@ function renderChart(mode) {
         parts.push(`<g class="mzc-ties">${ties.join('')}</g>`);
     }
 
-    /* pins: each place is a small picture on the chart */
+    /* pins: each place is a small picture on the chart - and only the places
+       a scene tag stood at: the road crossed spots carry no land node */
     const pins = [];
     const recentIds = new Set();
     recent.slice(0, 3).forEach(leg => {
@@ -848,7 +879,7 @@ function renderChart(mode) {
         recentIds.add(leg.dir[1]);
     });
 
-    lay.order.filter(item => item.pin).forEach(item => {
+    landItems.forEach(item => {
         const node = item.n;
         const isNow = nowItem === item;
         const isSel = sel === node.id;
@@ -1096,7 +1127,7 @@ function renderWin() {
     els.cartSub.textContent = `${places} places \u00b7 ${atlas.observations.length} scenes`;
 
     const hasFlags = atlas.flags.same.length || atlas.flags.ambiguous.length || atlas.flags.mobilePending.length;
-    els.key.innerHTML = `<div><i class="k-now"></i>Where the story is</div><div><i class="k-pin"></i>Stopped here, as last drawn</div><div><i class="k-pass"></i>Passed through</div><div><i></i>A journey, with how it went</div>${flagsShown && hasFlags ? '<div><i class="k-flag"></i>Needs a look</div>' : ''}`;
+    els.key.innerHTML = `<div><i class="k-now"></i>Where the story is</div><div><i class="k-pin"></i>Stopped here, as last drawn</div><div><i class="k-pass"></i>Passed through</div><div><i class="k-ride"></i>The vehicle, where a scene was narrated</div><div><i class="k-road"></i>Passed through on the road</div><div><i></i>A journey, with how it went</div>${flagsShown && hasFlags ? '<div><i class="k-flag"></i>Needs a look</div>' : ''}`;
 
     renderIndex();
     renderDetail();
@@ -1766,6 +1797,16 @@ function bindChart() {
         // target would never name the pin under the cursor. Hit-test at the
         // click's coordinates instead.
         const under = document.elementFromPoint(event.clientX, event.clientY);
+        // the interior count badge is its own door: straight into the deck
+        const deckTap = under && under.closest ? under.closest('[data-mz-deckenter]') : null;
+        if (deckTap) {
+            const owner = deckTap.closest('[data-node]');
+            const vehicle = owner ? findByKey(owner.dataset.node) : null;
+            if (vehicle && vehicle.kind === 'mobile') {
+                enterInside(vehicle.key);
+                return;
+            }
+        }
         const hit = under && under.closest ? under.closest('[data-node]') : null;
         const key = hit ? hit.dataset.node : null;
         // A second click on one ship steps inside it - a real dblclick event

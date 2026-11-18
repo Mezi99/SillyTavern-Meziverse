@@ -11,6 +11,7 @@ import {
     layoutAtlas,
     splitAspect,
     splitMapChain,
+    stoodPlaces,
     travelMode,
     trailWalks,
     walkedPath,
@@ -588,6 +589,23 @@ test('travelMode reads the vehicle, and the unknown rides the generic route', ()
     assert.equal(travelMode('Sky Chariot').glyph, 'plane');
     assert.equal(travelMode('The Nightjar').glyph, 'route');
     assert.equal(travelMode('').label, 'on the way');
+});
+
+test('stoodPlaces: a land node draws for its own tags - the road never stands', () => {
+    const atlas = buildAtlas(obs(
+        ['USA', 'Residential Street', 'Accident Site'],
+        ['USA', 'Residential Street', 'En Route', 'Night Ferry'],
+        ['USA', 'Harbor', 'En Route', 'Night Ferry'],
+        ['Harbor', 'Night Ferry'],
+    ));
+    const find = fold => Object.values(atlas.nodes).find(node => node.fold === fold);
+    const stood = stoodPlaces(atlas);
+
+    assert.ok(stood.has(find('accident site').id), 'the land tag stands at its own place');
+    assert.ok(!stood.has(find('residential street').id),
+        'the street the road crossed stands nowhere - the vehicle marks carry it');
+    assert.ok(stood.has(find('harbor').id), 'a scene aboard a parked vehicle stands at the berth');
+    assert.ok(!stood.has(find('usa').id), 'a container stands for its own tags only');
 });
 
 const coordsOf = layout => layout.order.map(item => [item.n.key, item.ax, item.ay]);

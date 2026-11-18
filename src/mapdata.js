@@ -767,6 +767,35 @@ function flagSimilar(nodes, order, flags) {
 
 /* ---------- legs: the story's movement ---------- */
 
+/**
+ * The places a scene tag STOOD at - the land's language. A tag's place is
+ * its deepest node; a tag aboard a parked vehicle stands at the vehicle's
+ * berth; a tag on the road (En Route) stands nowhere at all - the vehicle
+ * marks carry those spots on the trail. Land nodes (pins and hubs) draw for
+ * these and only these: a place the story only ever crossed in a vehicle
+ * opens up later, when someone gets off and a tag stands there.
+ *
+ * @param {object} atlas the `buildAtlas` result
+ * @returns {Set<string>} node ids that own a land scene tag
+ */
+export function stoodPlaces(atlas) {
+    const nodes = (atlas && atlas.nodes) || {};
+    const out = new Set();
+    ((atlas && atlas.observations) || []).forEach(entry => {
+        if (!entry || !entry.nodeId || entry.moving) return;
+        const node = nodes[entry.nodeId];
+        if (!node) return;
+        if (node.kind === 'mobile') {
+            // a scene aboard a parked vehicle: the tag stands at the berth
+            const stop = (node.trajectory || []).find(item => item.obs === entry.obsIndex);
+            if (stop && stop.positionId) out.add(stop.positionId);
+            return;
+        }
+        out.add(node.id);
+    });
+    return out;
+}
+
 /* How a journey went: the vehicle's name says. Broad-first so a "starship"
    never classifies as a ship; the curator may set a mode later. */
 const MODES = [
