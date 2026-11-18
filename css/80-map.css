@@ -37,21 +37,49 @@
 .mzc-city { fill: var(--mzc-land-2); stroke: var(--mzc-edge); stroke-dasharray: 5 4; }
 .mzc-plot { fill: var(--mzc-land-3); stroke: color-mix(in srgb, var(--mz-accent) 30%, transparent); }
 .mzc-mobile { fill: color-mix(in srgb, var(--mz-accent) 7%, var(--mzc-land-3)); stroke: color-mix(in srgb, var(--mz-accent) 45%, transparent); stroke-dasharray: 9 6; }
+/* the land is a shader under the chart: over it the SVG is pure overlay -
+   outlines and names only, the ground already painted. Over the flat chart
+   with fog on, the same ground steps aside (the stage paints it) so the
+   veil alone rides above it. */
+.mzc.has-terrain .mzc-ground,
+.mzc.has-veil .mzc-ground { fill: none; }
+/* the land keeps its own colours: no theme wash over the terrain, and the
+   structural lines are light tints of the land itself (--mzc-tint, set per
+   territory from the record). The theme accent stays reserved for state. */
+.mzc.has-terrain .mzc-region,
+.mzc.has-terrain .mzc-city,
+.mzc.has-terrain .mzc-plot,
+.mzc.has-terrain .mzc-mobile { fill: transparent; }
+.mzc.has-terrain .mzc-region { stroke: color-mix(in srgb, var(--mzc-tint, #8fb89a) 55%, transparent); }
+.mzc.has-terrain .mzc-city { stroke: color-mix(in srgb, var(--mzc-tint, #8fb89a) 45%, transparent); }
+.mzc.has-terrain .mzc-plot { stroke: color-mix(in srgb, var(--mzc-tint, #8fb89a) 38%, transparent); }
+.mzc.has-terrain .mzc-mobile { stroke: color-mix(in srgb, var(--mzc-tint, #8fb89a) 55%, transparent); }
+.mzc.has-terrain .mzc-ring { stroke: color-mix(in srgb, var(--mzc-tint, #8fb89a) 16%, transparent); }
+.mzc.has-terrain { --mzc-trail: color-mix(in srgb, var(--mzc-tint, #8fb89a) 70%, white); }
+.mz-terrain { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
 
-/* the ship: an entity on the world map - its picture, its glyph, its rooms */
+/* the ship: an entity on the world map - its icon, and the interior count */
 .mzc-ship { cursor: pointer; }
 .mzc-ship .mzc-pin-label { opacity: 1; }
 .mzc-ship:hover .mzc-pin-ring, .mzc-ship.is-sel .mzc-pin-ring { stroke: var(--mz-accent); stroke-width: 2; }
-.mzc-shipglyph { color: var(--mz-accent); pointer-events: none; }
-.mzc-shipglyph circle { fill: var(--mz-surface-solid); stroke: var(--mz-accent); stroke-opacity: .7; stroke-width: 1.2; vector-effect: non-scaling-stroke; }
-
-/* the trail's past stops: small vehicle icons where the turns happened */
-.mzc-stopmark { cursor: pointer; }
-.mzc-stopmark .mzc-pin-label { opacity: .9; font-size: 9.5px; }
-.mzc-stopmark:hover .mzc-pin-ring, .mzc-stopmark.is-sel .mzc-pin-ring { stroke: var(--mz-accent); stroke-width: 2; }
-.mzc-stopmark .mzc-count text { font-size: 8px; }
 .mzc-ship.is-plain { color: var(--mz-accent); }
 .mzc-ship.is-plain use { color: var(--mz-accent); }
+
+/* the trail's marks: vehicle icons where scenes were narrated (r=12) and
+   small spots where the road merely passed (r=7) */
+.mzc-stopmark { cursor: pointer; }
+/* a mark on the trail, not a node: outline-only, the vehicle glyph inside.
+   The disc is transparent, not none - an unpainted fill takes no clicks. */
+.mzc-stopmark .mzc-pin-disc { fill: transparent; }
+.mzc-stopmark .mzc-pin-ring { stroke-width: 1px; stroke-dasharray: 2.5 2.5; }
+.mzc-stopmark .mzc-pin-label { opacity: .8; font-size: 9px; }
+.mzc-stopmark:hover .mzc-pin-ring, .mzc-stopmark.is-sel .mzc-pin-ring { stroke: var(--mz-accent); stroke-width: 2; }
+.mzc-stopmark .mzc-count text { font-size: 8px; }
+.mzc-stopmark.is-spot { opacity: .82; }
+
+/* the interior count: a badge that is also a door into the vehicle's map */
+.mzc-innercount { cursor: pointer; }
+.mzc-innercount:hover circle { stroke: var(--mz-accent); }
 
 /* the deck bar: which ship we're inside, and the way back */
 .mzc-deckbar { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); z-index: 3; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 10px; background: color-mix(in srgb, var(--mz-surface-solid) 88%, transparent); border: 1px solid color-mix(in srgb, var(--mz-accent) 35%, transparent); font-size: 12px; }
@@ -70,6 +98,30 @@
 .mzc-leg { fill: none; stroke: var(--mzc-trail); stroke-opacity: .42; stroke-dasharray: 2 7; stroke-linecap: round; pointer-events: none; vector-effect: non-scaling-stroke; }
 .mzc-leg.is-sel { stroke-opacity: .95; }
 .mzc-leg.is-last { stroke-opacity: .95; stroke-dasharray: 9 7; stroke-width: 2.6px; animation: mzc-flow 1.6s linear infinite; }
+/* the trail waits for a closer look: zoomed all the way out the journey
+   lines are dots among dots - the stop marks and the ships carry the story
+   there. Dashes breathe with the zoom so they never blob. */
+[data-mz-map-chart] .mzc[data-zoom="0"] .mzc-legs,
+[data-mz-map-chart] .mzc[data-zoom="0"] .mzc-ties,
+[data-mz-map-chart] .mzc[data-zoom="0"] .mzc-open { display: none; }
+[data-mz-map-chart] .mzc[data-zoom="1"] .mzc-leg { stroke-dasharray: 1.5 5; }
+[data-mz-map-chart] .mzc[data-zoom="1"] .mzc-leg.is-last { stroke-dasharray: 6 5; }
+/* A land journey is a continuous line everywhere - Flat has no paths to
+   carry it, so the line itself tells a walk from a voyage. In Terrain mode
+   the lit path IS the line, so the stroke steps aside; the rides keep the
+   dotted trail in both. */
+[data-mz-map-chart] .mzc .mzc-leg.is-land { stroke-dasharray: none; stroke-opacity: .5; }
+[data-mz-map-chart] .mzc .mzc-leg.is-land.is-last { stroke-dasharray: none; animation: none; stroke-opacity: .85; }
+[data-mz-map-chart] .mzc .mzc-leg.is-land.is-sel { stroke-opacity: .95; }
+[data-mz-map-chart] .mzc.has-terrain .mzc-leg.is-land { display: none; }
+/* the alignment guard (?mzmapdebug=1): the territories in red over the
+   land - if they leave their coast, the two renderers disagree */
+.mzc-align path { fill: none; stroke: #ff5d5d; stroke-width: 1.2px; vector-effect: non-scaling-stroke; pointer-events: none; }
+/* ...and the endpoint guard: a red ring wherever a trail ends on nothing */
+.mzc-orphan circle { fill: none; stroke: #ff5d5d; stroke-width: 2.4px; vector-effect: non-scaling-stroke; pointer-events: none; }
+/* ...and the resolution badge: canvas pixels and quality, so "why is it
+   blurry" is answered at a glance */
+.mz-align-badge { position: absolute; top: 6px; left: 8px; z-index: 4; padding: 3px 7px; border-radius: 7px; background: color-mix(in srgb, var(--mz-surface-solid) 85%, transparent); color: #ff9d9d; font: 10px/1.4 ui-monospace, monospace; pointer-events: none; }
 @keyframes mzc-flow { to { stroke-dashoffset: -32; } }
 
 .mzc-mode circle { fill: var(--mz-surface-solid); stroke: var(--mzc-trail); stroke-opacity: .6; stroke-width: 1.2; vector-effect: non-scaling-stroke; }
@@ -228,8 +280,10 @@
 .mz-map-stage::after { content: ""; position: absolute; inset: 11px; z-index: 2; border: 1px solid color-mix(in srgb, var(--mz-text) 9%, transparent); border-radius: 3px; pointer-events: none; }
 .mz-map-stage .mzc { cursor: grab; }
 .mz-map-stage .mzc.is-panning { cursor: grabbing; }
-.mzc-world { transition: transform 420ms var(--mz-ease); }
-.mzc.is-panning .mzc-world, .mzc.is-wheel .mzc-world { transition: none; }
+/* no CSS transition here: the view glides in JS (glideTo in map.js) so the
+   land and the chart share every frame - a transition would move the SVG
+   alone and the two would drift apart while zooming */
+.mzc-world { transition: none; }
 
 .mz-map-cart { position: absolute; z-index: 3; top: 22px; left: 22px; display: grid; gap: 2px; padding: 8px 14px 9px; border: 1px solid var(--mz-line-strong); border-radius: var(--mz-r); background: color-mix(in srgb, var(--mz-surface-solid) 84%, transparent); backdrop-filter: blur(6px); pointer-events: none; }
 .mz-map-cart b { font-size: var(--mz-text-sm); font-weight: 600; letter-spacing: .2em; text-transform: uppercase; }
@@ -249,6 +303,8 @@
 .mz-map-key i.k-now { width: 11px; height: 11px; border: 2px solid var(--mz-accent); border-radius: 50%; margin: 0 3px; }
 .mz-map-key i.k-pin { width: 11px; height: 11px; border: 1.5px solid color-mix(in srgb, var(--mz-text) 45%, transparent); border-radius: 50%; margin: 0 3px; }
 .mz-map-key i.k-pass { width: 9px; height: 9px; border: 1px solid color-mix(in srgb, var(--mz-text) 22%, transparent); border-radius: 50%; background: var(--mzc-land-2); margin: 0 4px; }
+.mz-map-key i.k-ride { width: 11px; height: 11px; border: 1.5px dashed color-mix(in srgb, var(--mz-text) 55%, transparent); border-radius: 50%; margin: 0 3px; }
+.mz-map-key i.k-road { width: 8px; height: 8px; border: 1px dashed color-mix(in srgb, var(--mz-text) 35%, transparent); border-radius: 50%; margin: 0 5px; }
 .mz-map-key i.k-flag { width: 11px; height: 11px; border: 0; border-radius: 50%; background: var(--mz-warn); margin: 0 3px; }
 .mz-map-compass { position: absolute; z-index: 3; right: 24px; bottom: 24px; width: 46px; height: 46px; color: var(--mz-text-muted); pointer-events: none; opacity: .85; }
 

@@ -30,7 +30,7 @@ import { mountCues, closeMemory } from './cues.js';
 import { closeFloats } from './floats.js';
 import { mountMusic, musicUiClosed, musicUiOpened, refreshMusic } from './music.js';
 import { mountConnections } from './connections.js';
-import { mountMap, mapUiClosed, mapUiOpened, refreshMap, isMapWinOpen, openMapWin, closeMapWin } from './map.js';
+import { mountMap, mapUiClosed, mapUiOpened, refreshMap, isMapWinOpen, openMapWin, closeMapWin, terrainRecordView, writeTerrainRecord, reseedTerrainRecord, rederiveTerrainRecord } from './map.js';
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr, notify } from './notify.js';
 
@@ -457,6 +457,38 @@ const FRAME_HTML = `
                         <button type="button" data-mz-step="map-depth" data-dir="1" aria-label="Show more levels">+</button>
                     </div>
                 </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Land</b><button type="button" class="mz-hint" data-tip="Terrain paints the story's land under the map; Flat is the plain chart." aria-label="Terrain paints the story's land under the map; Flat is the plain chart.">i</button></span>
+                    <div class="mz-seg" role="group" aria-label="Map land">
+                        <button type="button" data-mz-pick-mapland="ink">Terrain</button>
+                        <button type="button" data-mz-pick-mapland="flat">Flat</button>
+                    </div>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Terrain quality</b><button type="button" class="mz-hint" data-tip="A slow GPU steps itself down and remembers." aria-label="A slow GPU steps itself down and remembers.">i</button></span>
+                    <div class="mz-seg" role="group" aria-label="Terrain quality">
+                        <button type="button" data-mz-pick-mapq="0">Low</button>
+                        <button type="button" data-mz-pick-mapq="1">Medium</button>
+                        <button type="button" data-mz-pick-mapq="2">High</button>
+                    </div>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Drifting fog and water</b><button type="button" class="mz-hint" data-tip="The fog drifts and the water shimmers while the map is open. Off draws one still frame." aria-label="The fog drifts and the water shimmers while the map is open. Off draws one still frame.">i</button></span>
+                    <button class="mz-switch" type="button" role="switch" aria-checked="false" aria-label="Drifting fog and water" data-mz-action="map-terrain-anim"><i></i></button>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Fog of war</b><button type="button" class="mz-hint" data-tip="Clouds part along the journey trail and around the places the story stood still in." aria-label="Clouds part along the journey trail and around the places the story stood still in.">i</button></span>
+                    <button class="mz-switch" type="button" role="switch" aria-checked="false" aria-label="Fog of war" data-mz-action="map-terrain-fog"><i></i></button>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Sky and weather</b><button type="button" class="mz-hint" data-tip="The land follows the scene's hour and weather - dawn light, night tint, rain or dust." aria-label="The land follows the scene's hour and weather - dawn light, night tint, rain or dust.">i</button></span>
+                    <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Sky and weather" data-mz-action="map-terrain-sky"><i></i></button>
+                </div>
+                <div class="mz-adv-field">
+                    <div class="mz-adv-label"><span>Terrain record</span><button class="mz-btn-ghost mz-btn-mini" type="button" data-mz-action="terrain-reseed">Reseed noise</button><button class="mz-btn-ghost mz-btn-mini" type="button" data-mz-action="terrain-rederive">Re-derive</button></div>
+                    <textarea class="mz-textarea" rows="6" data-mz="terrain-record" aria-label="Terrain record" spellcheck="false"></textarea>
+                    <div class="mz-adv-label"><span data-mz="terrain-record-note"></span></div>
+                </div>
                 <div class="mz-set-foot">
                     <button class="mz-btn-ghost" type="button" data-mz-action="map-open">Open map</button>
                 </div>
@@ -596,6 +628,8 @@ export function mount() {
         bgPromptOn: root.querySelector('[data-mz="bg-prompt-on"]'),
         bgPromptOff: root.querySelector('[data-mz="bg-prompt-off"]'),
         bgPromptTransport: root.querySelector('[data-mz="bg-prompt-transport"]'),
+        terrainRecord: root.querySelector('[data-mz="terrain-record"]'),
+        terrainRecordNote: root.querySelector('[data-mz="terrain-record-note"]'),
         bgRequest: root.querySelector('[data-mz="bg-request"]'),
         musicKey: root.querySelector('[data-mz="music-key"]'),
         musicKeyState: root.querySelector('[data-mz="music-key-state"]'),
@@ -1236,6 +1270,42 @@ function applyMap() {
     if (depthValue) {
         const depth = Number(settings().mapDepth);
         depthValue.textContent = depth === 99 ? 'All' : String(depth);
+    }
+
+    const land = settings().mapTerrain === 'flat' ? 'flat' : 'ink';
+    for (const button of root.querySelectorAll('[data-mz-pick-mapland]')) {
+        const isOn = button.dataset.mzPickMapland === land;
+        button.classList.toggle('is-on', isOn);
+        button.setAttribute('aria-pressed', String(isOn));
+    }
+    for (const button of root.querySelectorAll('[data-mz-pick-mapq]')) {
+        const isOn = Number(button.dataset.mzPickMapq) === (Number(settings().mapTerrainQ) || 0);
+        button.classList.toggle('is-on', isOn);
+        button.setAttribute('aria-pressed', String(isOn));
+    }
+    for (const button of root.querySelectorAll('[data-mz-action="map-terrain-anim"]')) {
+        const isOn = !!settings().mapTerrainAnim;
+        button.classList.toggle('is-on', isOn);
+        button.setAttribute('aria-checked', String(isOn));
+    }
+    for (const button of root.querySelectorAll('[data-mz-action="map-terrain-fog"]')) {
+        /* there is no fog in Flat - the veil needs the land to ride over */
+        const flat = settings().mapTerrain === 'flat';
+        const isOn = !flat && !!settings().mapTerrainFog;
+        button.classList.toggle('is-on', isOn);
+        button.setAttribute('aria-checked', String(isOn));
+        button.disabled = flat;
+        button.setAttribute('aria-disabled', String(flat));
+    }
+    for (const button of root.querySelectorAll('[data-mz-action="map-terrain-sky"]')) {
+        const isOn = settings().mapTerrainSky !== false;
+        button.classList.toggle('is-on', isOn);
+        button.setAttribute('aria-checked', String(isOn));
+    }
+    const recordEl = root.querySelector('[data-mz="terrain-record"]');
+    if (recordEl && document.activeElement !== recordEl) {
+        const record = terrainRecordView();
+        recordEl.value = record ? JSON.stringify(record, null, 2) : '';
     }
 
     // The map's own card steps aside with the master switch.
@@ -2148,6 +2218,14 @@ function openSettings() {
     frame.classList.add('is-settings-open');
     els.sheet.setAttribute('aria-hidden', 'false');
     applyBackground();
+    applyMap();
+    // The record may never have been derived (the map has not drawn yet):
+    // ask for it now so the sheet never shows an empty room.
+    if (els.terrainRecord && !els.terrainRecord.value) {
+        Promise.resolve(rederiveTerrainRecord()).then(record => {
+            if (record) applyMap();
+        });
+    }
     root.querySelector('[data-mz-action="close-settings"]')?.focus({ preventScroll: true });
 }
 
@@ -2239,6 +2317,22 @@ function wireActions() {
             saveSettings();
             applySceneHeader();
             transcript?.refresh();
+            return;
+        }
+
+        const landPick = event.target.closest('[data-mz-pick-mapland]');
+        if (landPick) {
+            settings().mapTerrain = landPick.dataset.mzPickMapland;
+            saveSettings();
+            applyMap();
+            return;
+        }
+
+        const qualityPick = event.target.closest('[data-mz-pick-mapq]');
+        if (qualityPick) {
+            settings().mapTerrainQ = Number(qualityPick.dataset.mzPickMapq);
+            saveSettings();
+            applyMap();
             return;
         }
 
@@ -2496,6 +2590,27 @@ function wireActions() {
             case 'map-close':
                 closeMapWin();
                 break;
+            case 'map-terrain-anim':
+                settings().mapTerrainAnim = !settings().mapTerrainAnim;
+                applyMap();
+                saveSettings();
+                break;
+            case 'map-terrain-fog':
+                settings().mapTerrainFog = !settings().mapTerrainFog;
+                applyMap();
+                saveSettings();
+                break;
+            case 'map-terrain-sky':
+                settings().mapTerrainSky = settings().mapTerrainSky === false;
+                applyMap();
+                saveSettings();
+                break;
+            case 'terrain-reseed':
+                Promise.resolve(reseedTerrainRecord()).then(() => applyMap());
+                break;
+            case 'terrain-rederive':
+                rederiveTerrainRecord().then(() => applyMap());
+                break;
             case 'bg-images':
                 settings().bgImages = !settings().bgImages;
                 applyBgImages();
@@ -2598,6 +2713,19 @@ function wireActions() {
     els.bgPromptTransport?.addEventListener('input', () => {
         settings().bgPromptTransport = els.bgPromptTransport.value;
         saveSettings();
+    });
+
+    /* The terrain record: valid JSON lands on the map at once, half-typed
+       JSON waits quietly for its author to finish. */
+    let terrainRecordTimer = 0;
+    els.terrainRecord?.addEventListener('input', () => {
+        clearTimeout(terrainRecordTimer);
+        terrainRecordTimer = setTimeout(() => {
+            const result = writeTerrainRecord(els.terrainRecord.value);
+            if (els.terrainRecordNote) {
+                els.terrainRecordNote.textContent = result.ok ? '' : `Not applied: ${result.error}`;
+            }
+        }, 350);
     });
 
     els.colorInputs.forEach(input => {

@@ -22,10 +22,14 @@ import {
     hashFold,
     layoutAtlas,
     travelMode,
+    trailWalks,
+    worldMatrix,
+    stoodPlaces,
 } from './mapdata.js';
 import { recordSrc } from './backgrounds.js';
-import { bgStore, chatMessages, currentChatId, on, personaName } from './st.js';
+import { bgStore, chatMessages, currentChatId, on, personaName, saveTerrainRecord, terrainStore } from './st.js';
 import { mapMiniOn, mapOn, saveSettings, settings } from './settings.js';
+import { TERRAIN_QUALITY, createTerrain, deriveTerrainRecord, inkTint, mapInk, skyFor, validateTerrainRecord, weatherFx } from './terrain.js';
 
 const LOG = '[Meziverse map]';
 
@@ -44,6 +48,7 @@ let drag = null;
 let miniSizing = false;
 let winDrag = null;
 let winSizing = false;
+let resizeQueued = false;
 let queued = false;
 
 /* Derived state: the atlas and its legs are cached by a chat signature, the
@@ -69,13 +74,52 @@ let deckLayout = null;
 let insideBaseS = 1;
 let lastSize = null;
 
+/* The land under the chart: a shader canvas behind the SVG, decoration
+   only - every hit-test stays on the map above it. The Flat look is
+   today's chart, and the flat chart is also where the map lives whenever
+   the land cannot draw (no WebGL, a lost context, the deck). */
+let terrain = null;
+let terrainCanvas = null;
+let terrainStory = null;
+let terrainRaf = 0;
+let terrainQuality = -1;
+let chartWalks = null;
+let terrainT0 = performance.now();
+let terrainDirty = true;
+let terrainLastDraw = 0;
+let lastViewChange = 0;
+let idleTimer = 0;
+
+/* The terrain record: the map's land as one small JSON per chat - derived
+   by code from the watcher's own pictures and words, kept in the chat's
+   metadata, free for the user to edit. A derived record follows the story
+   as it grows; the moment a hand edits it (or Reseed), it is the user's
+   until they ask for a fresh derivation. */
+let terrainRecordPending = false;
+let terrainDerivedSig = null;
+
 /** The layout the chart is drawing right now: the deck when inside a ship. */
 function activeLayout() {
     return insideKey && deckLayout ? deckLayout : layout;
 }
 
+/** The land is under the chart: true only where the shader draws. */
+function terrainOn() {
+    return !!terrain && !!terrainCanvas && settings().mapTerrain !== 'flat' && !insideKey;
+}
+
+/** The canvas draws for the land - and, over the flat chart, for the fog
+    veil alone. */
+function terrainLayerOn() {
+    if (!terrain || !terrainCanvas || insideKey) return false;
+    return settings().mapTerrain !== 'flat' || !!settings().mapTerrainFog;
+}
+
 const svg = name => `<svg class="ico" aria-hidden="true"><use href="#mz-i-${name}"/></svg>`;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+/* the alignment guard: ?mzmapdebug=1 draws red outlines over the land */
+const ALIGN_DEBUG = new URLSearchParams(location.search).has('mzmapdebug');
 const esc = value => String(value ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
 const trunc = (value, max) => {
     const text = String(value ?? '');
@@ -106,6 +150,11 @@ function labelLines(name, max = 16) {
 
 const labelSvg = (name, y, max = 16) => labelLines(name, max)
     .map((line, i) => `<text class="mzc-pin-label" y="${f1(y + i * 11)}" text-anchor="middle">${esc(line)}</text>`)
+    .join('');
+
+/** A trail spot's label, above or below the mark so neighbours never collide. */
+const spotLabel = (name, above) => labelLines(name, 14)
+    .map((line, i, lines) => `<text class="mzc-pin-label" y="${f1(above ? -(11 + (lines.length - i) * 11) : 11 + i * 11)}" text-anchor="middle">${esc(line)}</text>`)
     .join('');
 
 /** The depth the chart shows: 2, 3 or 4 levels, or 99 for everything. */
@@ -162,9 +211,14 @@ const WIN_HTML = `
         <div data-mz-map-chart style="position:absolute;inset:0"></div>
         <div class="mz-map-cart"><b data-mz-map-ctitle></b><small data-mz-map-csub></small></div>
         <div class="mz-map-tools">
+            <div class="mz-map-seg" role="group" aria-label="Map look">
+                <button type="button" aria-pressed="true" data-mz-map-look="ink">Terrain</button>
+                <button type="button" aria-pressed="false" data-mz-map-look="flat">Flat</button>
+            </div>
             <div class="mz-map-seg">
                 <button type="button" aria-pressed="true" data-mz-map-layer="trails">${svg('m-route')}Journeys</button>
                 <button type="button" aria-pressed="true" data-mz-map-layer="flags">Flags</button>
+                <button type="button" aria-pressed="false" data-mz-map-layer="fog">Fog</button>
             </div>
             <div class="mz-map-seg is-round">
                 <button type="button" title="Zoom out" aria-label="Zoom out" data-mz-map-zoom="-1">\u2212</button>
@@ -312,6 +366,7 @@ export function openMapWin(nodeKey = null) {
     win.hidden = false;
     win.setAttribute('aria-hidden', 'false');
     frameEl?.classList.add('is-mapwin-open');
+    terrainT0 = performance.now();
     view.placed = false;
     renderWin();
     if (selectedKey) {
@@ -347,6 +402,18 @@ function chatSignature() {
     return signature;
 }
 
+/** The nodes a journey can land on - the layout gives each a real pin (a
+    hub) so trails never end on an unmarked blob centre. */
+function landingsFrom(derived) {
+    const ids = new Set();
+    for (const leg of (derived && derived.legs) || []) {
+        if (leg.a) ids.add(leg.a);
+        if (leg.b) ids.add(leg.b);
+        for (const id of leg.dir || []) ids.add(id);
+    }
+    return ids;
+}
+
 function ensure() {
     const chatId = currentChatId();
     if (chatId !== lastChatId) {
@@ -378,12 +445,12 @@ function ensure() {
     const depth = depthValue();
     if (atlas && (layoutDepth !== depth || !layout)) {
         layoutDepth = depth;
-        layout = layoutAtlas(atlas, { depth });
+        layout = layoutAtlas(atlas, { depth, landings: landingsFrom(derived) });
     }
 
     if (atlas && insideKey) {
         const ship = findByKey(insideKey);
-        deckLayout = ship ? layoutAtlas(atlas, { depth: 99, inside: ship.id }) : null;
+        deckLayout = ship ? layoutAtlas(atlas, { depth: 99, inside: ship.id, landings: landingsFrom(derived) }) : null;
         if (!deckLayout || !deckLayout.order.length) {
             insideKey = null;
             deckLayout = null;
@@ -564,10 +631,27 @@ function renderChart(mode) {
        climbs out of inner blobs and into new ones as the story moves. */
     const clipR = new Set();
     const wayPoints = new Map();
+    const markers = ALIGN_DEBUG ? [] : null;
     const ships = [];
     const marks = [];
     const shipDrawn = new Set();
+
+    /* The land's voice: a land node (pin or hub) draws where a scene tag
+       stood. A place the story only ever crossed in a vehicle has no land
+       node - the vehicle marks carry those spots on the trail - and the
+       marks name the place wherever no land node already does. */
+    const stood = stoodPlaces(atlas);
+    const drawsLand = item => (item.hub
+        ? stood.has(item.n.id)
+        : stood.has(item.n.id) || descend(item.n).some(child => stood.has(child.id)));
+    const landItems = lay.order.filter(item => item.pin && drawsLand(item));
+    const landNamed = new Set(landItems.map(item => item.n.id));
+
     if (!deck) {
+        /* Pass one: settle every vehicle's crossed positions ONCE - the
+           trail, the stop marks and the ship icons must all read the same
+           points or the lines leave from spots where nothing is drawn.
+           First writer wins; a place's own pin or hub wins outright. */
         for (const node of Object.values(nodes)) {
             if (node.kind !== 'mobile') continue;
             const seq = [];
@@ -575,12 +659,14 @@ function renderChart(mode) {
                 if (stop.positionId && seq[seq.length - 1] !== stop.positionId) seq.push(stop.positionId);
             }
             seq.forEach((id, i) => {
-                const item = lay.items[id];
-                if (!item) return;
-                if (item.pin) {
-                    wayPoints.set(id, { n: nodes[id], ax: item.ax, ay: item.ay, r: 12, pin: true });
+                if (wayPoints.has(id)) return;
+                const home = lay.items[`hub:${id}`] || lay.items[id];
+                if (!home) return;
+                if (home.pin) {
+                    wayPoints.set(id, { n: nodes[id], ax: home.ax, ay: home.ay, r: 12, pin: true });
                     return;
                 }
+                const item = home;
                 const prevItem = i > 0 ? lay.items[seq[i - 1]] : null;
                 const nextItem = i < seq.length - 1 ? lay.items[seq[i + 1]] : null;
                 let dx = 1;
@@ -602,6 +688,14 @@ function renderChart(mode) {
                 }
                 wayPoints.set(id, { n: nodes[id], ...(p || { ax: item.ax + dx * item.r * 0.5, ay: item.ay + dy * item.r * 0.5 }), r: 12, pin: true });
             });
+        }
+
+        /* Pass two: the icons and the stop marks, drawn from the settled map.
+           Where a land node or another mark already stands, a mark steps
+           aside - the invisible ones never block the trail. */
+        const taken = landItems.map(item => [item.ax, item.ay]);
+        for (const node of Object.values(nodes)) {
+            if (node.kind !== 'mobile') continue;
 
             /* the icon: at the trail's head while moving, beside its berth
                when parked - and nowhere at all for a vehicle the story only
@@ -625,43 +719,74 @@ function renderChart(mode) {
             const kids = node.children.filter(id => nodes[id].kind !== 'mobile' && nodes[id].kind !== 'transient').length;
             const isNow = !!nowAboard && nowAboard.id === node.id;
             const glyph = `m-${travelMode(node.name).glyph}`;
-            const rich = kids > 0;
-            const img = rich ? thumbOf(node) : '';
-            if (img) clipR.add(r);
-            ships.push(`<g class="mzc-ship${isNow ? ' is-now' : ''}${sel === node.id ? ' is-sel' : ''}${rich ? '' : ' is-plain'}" data-node="${esc(node.key)}" transform="translate(${f1(x)} ${f1(y)})" tabindex="${mini ? -1 : 0}" role="button" aria-label="${esc(node.name)}">
+            const spot = nodes[endId] || null;
+            /* the map names no vehicles: the icon carries the PLACE it sits
+               at (a scene in a car at Residential Street) - and only where
+               no land node already names the spot */
+            const label = !mini && spot && !landNamed.has(endId) ? labelSvg(spot.name, r + 14, 16) : '';
+            if (markers) markers.push([x, y]);
+            taken.push([x, y]);
+            ships.push(`<g class="mzc-ship is-plain${isNow ? ' is-now' : ''}${sel === node.id ? ' is-sel' : ''}" data-node="${esc(node.key)}" transform="translate(${f1(x)} ${f1(y)})" tabindex="${mini ? -1 : 0}" role="button" aria-label="${esc(node.name)} at ${esc(spot ? spot.name : '')}">
             ${isNow ? `<circle class="mzc-ping" r="${r + 5}"/><circle class="mzc-ping p2" r="${r + 5}"/>` : ''}
             <circle class="mzc-pin-disc" r="${r}"/>
-            ${img ? `<image href="${esc(img)}" x="${-r}" y="${-r}" width="${2 * r}" height="${2 * r}" clip-path="url(#mzc-c${r})" preserveAspectRatio="xMidYMid slice" draggable="false"/>` : icon(glyph, 0, 0, r * 1.15)}
+            ${icon(glyph, 0, 0, r * 1.15)}
             <circle class="mzc-pin-ring" r="${r}"/>
-            ${rich ? `<g class="mzc-shipglyph" transform="translate(${f1(r * 0.82)} ${f1(-r * 0.82)})"><circle r="8"/>${icon(glyph, 0, 0, 11)}</g>` : ''}
-            ${rich && !mini ? `<g class="mzc-count" transform="translate(${f1(-r * 0.82)} ${f1(r * 0.82)})"><circle r="7.5"/><text y="3" text-anchor="middle">${kids}</text></g>` : ''}
-            ${!mini ? labelSvg(node.name, r + 14, 16) : ''}
-            <title>${esc(node.name)}</title></g>`);
+            ${kids && !mini ? `<g class="mzc-count mzc-innercount" data-mz-deckenter transform="translate(${f1(r * 0.82)} ${f1(r * 0.82)})"><circle r="7.5"/><text y="3" text-anchor="middle">${kids}</text></g>` : ''}
+            ${label}
+            <title>${esc(node.name)}${spot ? ` \u00b7 ${esc(spot.name)}` : ''}</title></g>`);
 
-            /* Past stops of the trail: where responses caught the vehicle
-               under way (turns 15, 17 at Corporate Space) - a small vehicle
-               icon each, about half the live one's size, clickable so the
-               rail tells those turns. History never shouts. */
+            /* Every scene tag on the road leaves its mark on the trail: the
+               response's last tag is where the vehicle WAS (a full vehicle
+               mark - the live one's little sibling), the tags it passed
+               through before that are small spots, the road's twin of the
+               land's empty nodes. Any of them opens the vehicle and its
+               turns. History never shouts. */
             if (!mini) {
-                const caught = new Map();
+                const role = new Map();
                 for (const stop of stops) {
                     if (!stop.positionId || !stop.moving) continue;
                     const entry = atlas.observations[stop.obs];
-                    if (!entry || !entry.last) continue;
-                    caught.set(stop.positionId, (caught.get(stop.positionId) || 0) + 1);
+                    const rank = entry && entry.last ? 2 : 1;
+                    if ((role.get(stop.positionId) || 0) < rank) role.set(stop.positionId, rank);
                 }
-                for (const [id, count] of caught) {
-                    const p = id === endId ? null : wayPoints.get(id);
+                let spotIndex = 0;
+                for (const [id, rank] of role) {
+                    if (id === endId) continue;
                     const placeNode = nodes[id];
+                    const p = wayPoints.get(id) || lay.anchor(id);
                     if (!p || !placeNode) continue;
-                    const mr = 8;
-                    marks.push(`<g class="mzc-stopmark${sel === id ? ' is-sel' : ''}" data-node="${esc(placeNode.key)}" transform="translate(${f1(p.ax)} ${f1(p.ay)})" tabindex="0" role="button" aria-label="${esc(placeNode.name)}">
+                    const mr = rank === 2 ? 12 : 7;
+                    /* a mark stands on the trail; it steps aside only around
+                       a real land node or another mark - never stacked */
+                    let mx = p.ax;
+                    let my = p.ay;
+                    if (taken.some(([tx, ty]) => Math.hypot(tx - mx, ty - my) < 26)) {
+                        for (const [ox, oy] of [[22, -16], [-22, -16], [22, 16], [-22, 16], [0, -30]]) {
+                            if (!taken.some(([tx, ty]) => Math.hypot(tx - (p.ax + ox), ty - (p.ay + oy)) < 26)) {
+                                mx = p.ax + ox;
+                                my = p.ay + oy;
+                                break;
+                            }
+                        }
+                    }
+                    taken.push([mx, my]);
+                    if (markers) markers.push([mx, my]);
+                    /* the interior count only rides the full marks - a spot
+                       is just a spot - and opens the vehicle's inner map */
+                    const inner = rank === 2
+                        ? node.children.filter(kid => nodes[kid].kind !== 'mobile' && nodes[kid].kind !== 'transient').length
+                        : 0;
+                    const name = landNamed.has(id)
+                        ? ''
+                        : (rank === 2 ? labelSvg(placeNode.name, mr + 11, 14) : spotLabel(placeNode.name, spotIndex % 2 === 1));
+                    if (rank === 1) spotIndex += 1;
+                    marks.push(`<g class="mzc-stopmark${rank === 2 ? '' : ' is-spot'}${sel === node.id ? ' is-sel' : ''}" data-node="${esc(node.key)}" transform="translate(${f1(mx)} ${f1(my)})" tabindex="0" role="button" aria-label="${esc(node.name)} at ${esc(placeNode.name)}">
                     <circle class="mzc-pin-disc" r="${mr}"/>
-                    ${icon(glyph, 0, 0, 10)}
+                    ${icon(glyph, 0, 0, mr * 1.15)}
                     <circle class="mzc-pin-ring" r="${mr}"/>
-                    ${count > 1 ? `<g class="mzc-count mzc-count--sm" transform="translate(${f1(mr * 0.8)} ${f1(-mr * 0.8)})"><circle r="6"/><text y="2.2" text-anchor="middle" font-size="8">${count}</text></g>` : ''}
-                    ${labelSvg(placeNode.name, mr + 11, 14)}
-                    <title>${esc(placeNode.name)} \u00b7 ${count}\u00d7 on the road</title></g>`);
+                    ${inner ? `<g class="mzc-count mzc-innercount" data-mz-deckenter transform="translate(${f1(mr * 0.82)} ${f1(mr * 0.82)})"><circle r="6.5"/><text y="2.6" text-anchor="middle" font-size="8.5">${inner}</text></g>` : ''}
+                    ${name}
+                    <title>${esc(node.name)} \u00b7 ${esc(placeNode.name)}${rank === 2 ? '' : ' \u00b7 passed through'}</title></g>`);
                 }
             }
         }
@@ -671,22 +796,31 @@ function renderChart(mode) {
     const parts = [];
 
     /* ground and the contour rings that make land look like land */
+    const rec = terrainStore() || {};
+    const rootFoldOf = id => {
+        let node = nodes[id];
+        while (node && node.parentId) node = nodes[node.parentId];
+        return node ? node.fold : '';
+    };
     const containers = lay.order.filter(item => !item.pin);
     const rings = [];
     containers.filter(item => item.n.level === 0).forEach(item => {
         for (let k = 3; k >= 1; k -= 1) {
-            rings.push(`<path class="mzc-ring r${k}" d="${blob(item.ax, item.ay, item.r + k * 15, hashFold(item.n.fold) + k, 0.11)}"/>`);
+            rings.push(`<path class="mzc-ring r${k}" style="--mzc-tint:${inkTint(rec, item.n.fold)}" d="${blob(item.ax, item.ay, item.r + k * 15, hashFold(item.n.fold) + k, 0.11)}"/>`);
         }
     });
     parts.push(`<g class="mzc-rings">${rings.join('')}</g>`);
 
     /* territories: region, city, plot - biggest first so smaller sit on top */
     const terr = [];
+    const align = [];
     containers.slice().sort((a, b) => b.r - a.r).forEach(item => {
         const level = item.n.level;
         const cls = item.n.kind === 'mobile' ? 'mobile' : level === 0 ? 'region' : level === 1 ? 'city' : 'plot';
         const amp = level === 0 ? 0.12 : level === 1 ? 0.09 : 0.07;
-        terr.push(`<path class="mzc-terr mzc-${cls}${sel === item.n.id ? ' is-sel' : ''}" data-node="${esc(item.n.key)}" d="${blob(item.ax, item.ay, item.r, hashFold(item.n.fold), amp)}"/>`);
+        const d = blob(item.ax, item.ay, item.r, hashFold(item.n.fold), amp);
+        terr.push(`<path class="mzc-terr mzc-${cls}${sel === item.n.id ? ' is-sel' : ''}" data-node="${esc(item.n.key)}" style="--mzc-tint:${inkTint(rec, rootFoldOf(item.n.id))}" d="${d}"/>`);
+        if (ALIGN_DEBUG) align.push(`<path d="${d}"/>`);
     });
     parts.push(`<g class="mzc-lands">${terr.join('')}</g>`);
 
@@ -706,32 +840,22 @@ function renderChart(mode) {
     });
     parts.push(`<g class="mzc-names">${names.join('')}</g>`);
 
-    /* journeys: dotted legs, thicker the more travelled, the latest flowing */
+    /* journeys: dotted legs, thicker the more travelled, the latest flowing.
+       The walks are shared with the terrain's roads and fog corridors - one
+       journey, one line everywhere it appears on the map. */
     const legSvg = [];
     const recent = derived.legs.slice().sort((a, b) => b.order - a.order);
     const lastKey = recent[0] && recent[0].key;
     const shown = new Set(mini ? recent.slice(0, 4).map(leg => leg.key) : derived.legs.map(leg => leg.key));
-    const seen = new Map();
-    derived.legs.forEach(leg => {
+    const walks = trailWalks(derived.legs, pointFor);
+    if (!deck) chartWalks = { sig: `${lastSignature}|${layoutDepth}`, walks };
+    walks.forEach(({ leg, d }) => {
         if (deck || !trails || !shown.has(leg.key)) return;
-        const from = pointFor(leg.dir[0]);
-        const to = pointFor(leg.dir[1]);
-        if (!from || !to || from === to) return;
-
-        const pairKey = [from.n.id, to.n.id].sort().join('|');
-        const nth = seen.get(pairKey) || 0;
-        seen.set(pairKey, nth + 1);
-
-        const dx = to.ax - from.ax;
-        const dy = to.ay - from.ay;
-        const len = Math.hypot(dx, dy) || 1;
-        const bow = (nth % 2 ? -1 : 1) * (0.16 + nth * 0.08) * len * (hashFold(pairKey) % 2 ? 1 : -1);
-        const mx = (from.ax + to.ax) / 2 - dy / len * bow;
-        const my = (from.ay + to.ay) / 2 + dx / len * bow;
-        const width = Math.min(3.4, 1.4 + leg.count * 0.45);
+        const width = Math.min(2.2, 1.2 + leg.count * 0.25);
         const isLast = leg.key === lastKey;
+        const ride = !!(leg.vehicle || leg.mode);
 
-        legSvg.push(`<path class="mzc-leg${isLast ? ' is-last' : ''}${sel && (leg.a === sel || leg.b === sel) ? ' is-sel' : ''}" d="M${f1(from.ax)} ${f1(from.ay)}Q${f1(mx)} ${f1(my)} ${f1(to.ax)} ${f1(to.ay)}" style="stroke-width:${f1(width)}px"/>`);
+        legSvg.push(`<path class="mzc-leg${ride ? '' : ' is-land'}${isLast ? ' is-last' : ''}${sel && (leg.a === sel || leg.b === sel) ? ' is-sel' : ''}" d="${d}" style="stroke-width:${f1(width)}px"/>`);
     });
     parts.push(`<g class="mzc-legs">${legSvg.join('')}</g>`);
 
@@ -746,7 +870,8 @@ function renderChart(mode) {
         parts.push(`<g class="mzc-ties">${ties.join('')}</g>`);
     }
 
-    /* pins: each place is a small picture on the chart */
+    /* pins: each place is a small picture on the chart - and only the places
+       a scene tag stood at: the road crossed spots carry no land node */
     const pins = [];
     const recentIds = new Set();
     recent.slice(0, 3).forEach(leg => {
@@ -754,7 +879,7 @@ function renderChart(mode) {
         recentIds.add(leg.dir[1]);
     });
 
-    lay.order.filter(item => item.pin).forEach(item => {
+    landItems.forEach(item => {
         const node = item.n;
         const isNow = nowItem === item;
         const isSel = sel === node.id;
@@ -779,16 +904,18 @@ function renderChart(mode) {
         const label = mini ? (isNow || recentIds.has(node.id)) : true;
         const hiddenKids = node.children.filter(id => nodes[id].kind !== 'mobile' && nodes[id].kind !== 'transient').length;
 
+        if (markers) markers.push([item.ax, item.ay]);
         pins.push(`<g class="mzc-pin lv${Math.min(node.level ?? 3, 3)}${!stopped ? ' is-passed' : ''}${isNow ? ' is-now' : ''}${isSel ? ' is-sel' : ''}${flag ? ' is-flag' : ''}${mini && !label ? ' is-quiet' : ''}" data-node="${esc(node.key)}" transform="translate(${f1(item.ax)} ${f1(item.ay)})" style="--age:${f1(Math.max(0, Math.min(1, age)))}" tabindex="${mini ? -1 : 0}" role="button" aria-label="${esc(node.name)}">
         ${isNow ? `<circle class="mzc-ping" r="${r + 4}"/><circle class="mzc-ping p2" r="${r + 4}"/>` : ''}
         <circle class="mzc-pin-disc" r="${r}"/>
-        ${img ? `<image href="${esc(img)}" x="${-r}" y="${-r}" width="${2 * r}" height="${2 * r}" clip-path="url(#${clip})" preserveAspectRatio="xMidYMid slice" draggable="false"/>` : (stopped ? icon('map', 0, 0, r * 0.9) : '')}
+        ${stopped ? icon('map', 0, 0, r * 0.9) : ''}
+        ${img ? `<image href="${esc(img)}" x="${-r}" y="${-r}" width="${2 * r}" height="${2 * r}" clip-path="url(#${clip})" preserveAspectRatio="xMidYMid slice" draggable="false"/>` : ''}
         <circle class="mzc-pin-ring" r="${r}"/>
         ${hiddenKids && !mini ? `<g class="mzc-count" transform="translate(${f1(r * 0.78)} ${f1(r * 0.78)})"><circle r="7.5"/><text y="3" text-anchor="middle">${hiddenKids}</text></g>` : ''}
         ${flag && !mini ? `<g class="mzc-flagdot" transform="translate(${f1(-r * 0.78)} ${f1(-r * 0.78)})"><circle r="6.5"/><text y="3.2" text-anchor="middle">!</text></g>` : ''}
         ${parked && !mini ? `<g class="mzc-parked" transform="translate(${f1(r * 0.8)} ${f1(-r * 0.8)})"><circle r="8"/>${icon(`m-${travelMode(parked.name).glyph}`, 0, 0, 10)}</g>` : ''}
         ${people.length ? `<g class="mzc-people">${people.map((name, k) => `<g transform="translate(${f1(-(people.length - 1) * 7 + k * 14)} ${-r - 11})"><circle r="7"/><text y="3" text-anchor="middle">${esc(name[0])}</text></g>`).join('')}</g>` : ''}
-        ${label ? labelSvg(node.name, r + 14, mini ? 16 : 18) : ''}
+        ${label && !item.hub ? labelSvg(node.name, r + 14, mini ? 16 : 18) : ''}
         <title>${esc(node.name)}</title></g>`);
     });
     parts.push(`<g class="mzc-pins">${pins.join('')}</g>`);
@@ -814,6 +941,23 @@ function renderChart(mode) {
     }
 
     const defs = `<defs>${[...clipR].map(r => `<clipPath id="mzc-c${r}"><circle r="${r}"/></clipPath>`).join('')}</defs>`;
+    /* the alignment guard (?mzmapdebug=1): the territories again, in red,
+       riding over the land - if a red outline ever leaves its coast at any
+       zoom, the chart and the terrain disagree about where things are -
+       and a red ring wherever a trail ends on nothing drawn */
+    if (ALIGN_DEBUG) {
+        parts.push(`<g class="mzc-align">${align.join('')}</g>`);
+        if (!deck) {
+            const orphan = [];
+            for (const { from, to } of walks) {
+                for (const pt of [from, to]) {
+                    if ((markers || []).some(([mx, my]) => Math.hypot(mx - pt.ax, my - pt.ay) < 14)) continue;
+                    orphan.push(`<circle cx="${f1(pt.ax)}" cy="${f1(pt.ay)}" r="16"/>`);
+                }
+            }
+            if (orphan.length) parts.push(`<g class="mzc-orphan">${orphan.join('')}</g>`);
+        }
+    }
     return { defs, body: parts.join('') };
 }
 
@@ -822,7 +966,7 @@ function renderChart(mode) {
 function fullSvg(width, height, mode = 'full') {
     const out = renderChart(mode);
     const tier = view.s < 0.5 ? 0 : view.s < 1.1 ? 1 : 2;
-    return `<svg class="mzc" data-style="contour" data-zoom="${tier}" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="Map of the story's places">${out.defs}<g class="mzc-world" style="transform-origin:0 0;transform:translate(${f1(view.tx)}px,${f1(view.ty)}px) scale(${f1(view.s)})"><rect class="mzc-ground" x="-6000" y="-6000" width="12000" height="12000"/>${out.body}</g></svg>`;
+    return `<svg class="mzc${terrainOn() ? ' has-terrain' : terrainLayerOn() ? ' has-veil' : ''}" data-style="contour" data-zoom="${tier}" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="Map of the story's places" style="--mzc-tint:${mapInk(terrainStore() || {})}">${out.defs}<g class="mzc-world" style="transform-origin:0 0;transform:${worldMatrix(view)}"><rect class="mzc-ground" x="-6000" y="-6000" width="12000" height="12000"/>${out.body}</g></svg>`;
 }
 
 function miniSvg() {
@@ -942,10 +1086,27 @@ function renderWidget() {
     positionWidget();
 }
 
+/** The Land chips say what the settings hold. */
+function syncLookChips() {
+    if (!win) return;
+    const look = settings().mapTerrain === 'flat' ? 'flat' : 'ink';
+    win.querySelectorAll('[data-mz-map-look]').forEach(button => {
+        button.setAttribute('aria-pressed', String(button.dataset.mzMapLook === look));
+    });
+    /* there is no fog in Flat - the veil needs the land to ride over */
+    const flat = look === 'flat';
+    win.querySelectorAll('[data-mz-map-layer="fog"]').forEach(button => {
+        button.setAttribute('aria-pressed', String(!flat && !!settings().mapTerrainFog));
+        button.disabled = flat;
+        button.setAttribute('aria-disabled', String(flat));
+    });
+}
+
 function renderWin() {
     if (!win || win.hidden) return;
 
     applyWinPlace();
+    syncLookChips();
     els.depthv.textContent = depthLabel();
 
     if (!atlas) {
@@ -966,7 +1127,7 @@ function renderWin() {
     els.cartSub.textContent = `${places} places \u00b7 ${atlas.observations.length} scenes`;
 
     const hasFlags = atlas.flags.same.length || atlas.flags.ambiguous.length || atlas.flags.mobilePending.length;
-    els.key.innerHTML = `<div><i class="k-now"></i>Where the story is</div><div><i class="k-pin"></i>Stopped here, as last drawn</div><div><i class="k-pass"></i>Passed through</div><div><i></i>A journey, with how it went</div>${flagsShown && hasFlags ? '<div><i class="k-flag"></i>Needs a look</div>' : ''}`;
+    els.key.innerHTML = `<div><i class="k-now"></i>Where the story is</div><div><i class="k-pin"></i>Stopped here, as last drawn</div><div><i class="k-pass"></i>Passed through</div><div><i class="k-ride"></i>The vehicle, where a scene was narrated</div><div><i class="k-road"></i>Passed through on the road</div><div><i></i>A journey, with how it went</div>${flagsShown && hasFlags ? '<div><i class="k-flag"></i>Needs a look</div>' : ''}`;
 
     renderIndex();
     renderDetail();
@@ -1134,8 +1295,291 @@ function renderDetail() {
 
 /* ---------- the chart on screen: pan and zoom ---------- */
 
+/* ---------- the terrain record ---------- */
+
+/** The world's top-level places - the record's region keys. */
+function terrainRegions() {
+    return (layout?.roots || []).map(root => ({ fold: root.n.fold, name: root.n.name }));
+}
+
+/* What the watcher's pictures were painted from, one bucket per region:
+   every place's name, and the stored background words of the scenes that
+   ended there. */
+function terrainTexts() {
+    const texts = {};
+    for (const item of layout.order) {
+        const node = item.n;
+        let top = node;
+        while (top.parentId) top = atlas.nodes[top.parentId];
+        const bucket = texts[top.fold] || (texts[top.fold] = []);
+        bucket.push(node.name);
+        for (let i = node.visits.length - 1; i >= 0; i -= 1) {
+            const obsIndex = node.visits[i];
+            if (atlas.observations[obsIndex]?.nodeId !== node.id) continue;
+            const prompt = recordFor(obsIndex)?.prompt;
+            if (prompt) {
+                bucket.push(String(prompt));
+                break;
+            }
+        }
+    }
+    return texts;
+}
+
+/* Sampled pixels per picture, kept forever: deriving twice must not
+   re-read every image. */
+const terrainPixels = new Map();
+
+function samplePicture(src) {
+    if (!src) return Promise.resolve([]);
+    if (terrainPixels.has(src)) return terrainPixels.get(src);
+    const promise = new Promise(resolve => {
+        const image = new Image();
+        image.onload = () => {
+            try {
+                const canvas = document.createElement('canvas');
+                canvas.width = 16;
+                canvas.height = 16;
+                const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                ctx.drawImage(image, 0, 0, 16, 16);
+                const data = ctx.getImageData(0, 0, 16, 16).data;
+                const out = [];
+                for (let i = 0; i < data.length; i += 16) out.push([data[i], data[i + 1], data[i + 2]]);
+                resolve(out);
+            } catch {
+                resolve([]); // a tainted canvas: the seeded palette stands in
+            }
+        };
+        image.onerror = () => resolve([]);
+        image.src = src;
+    });
+    terrainPixels.set(src, promise);
+    return promise;
+}
+
+/* A couple of pictures per region is plenty to read a palette from - and
+   the watcher may have painted many. */
+async function terrainSamples() {
+    const samples = {};
+    const jobs = [];
+    for (const root of layout.roots) {
+        const bucket = samples[root.n.fold] = [];
+        let taken = 0;
+        for (const node of [root.n, ...descend(root.n)]) {
+            if (taken >= 2) break;
+            let src = '';
+            for (let i = node.visits.length - 1; i >= 0; i -= 1) {
+                const obsIndex = node.visits[i];
+                if (atlas.observations[obsIndex]?.nodeId !== node.id) continue;
+                src = recordSrc(recordFor(obsIndex));
+                if (src) break;
+            }
+            if (!src) continue;
+            taken += 1;
+            jobs.push(samplePicture(src).then(pixels => bucket.push(...pixels)));
+        }
+    }
+    await Promise.all(jobs);
+    return samples;
+}
+
+/** The record this chat's land deserves, derived whole by code. */
+async function deriveRecordForChat() {
+    return {
+        ...deriveTerrainRecord({
+            regions: terrainRegions(),
+            textsByRegion: terrainTexts(),
+            samplesByRegion: await terrainSamples(),
+            observations: atlas.observations || [],
+        }),
+        auto: true,
+    };
+}
+
+/* The record to draw with: the user's if they have taken the pen, the
+   derived one while it follows the story, and a fresh derivation asked for
+   in the background the moment the story grows past its record. */
+function terrainRecordForDraw(signature) {
+    const stored = terrainStore();
+    if (stored && stored.auto === false) return stored;
+    if (stored && terrainDerivedSig === signature) return stored;
+    if (!terrainRecordPending) {
+        terrainRecordPending = true;
+        const chatSig = lastSignature;
+        deriveRecordForChat().then(record => {
+            terrainRecordPending = false;
+            if (!record || lastSignature !== chatSig) return;
+            if (terrainStore()?.auto === false) return; // the user took the pen
+            const same = terrainStore() && JSON.stringify(terrainStore()) === JSON.stringify(record);
+            terrainDerivedSig = signature;
+            if (!same) {
+                saveTerrainRecord(record);
+                terrainStory = null; // the land re-reads the record next frame
+                scheduleTerrain();
+            }
+        }).catch(error => {
+            terrainRecordPending = false;
+            console.warn('[Meziverse map] terrain record:', error);
+        });
+    }
+    return stored || null;
+}
+
+/** The terrain record for the open chat, or null before one exists. */
+export function terrainRecordView() {
+    return terrainStore() || null;
+}
+
+/**
+ * Saves a hand-edited terrain record. The map follows at once.
+ *
+ * @param {string|object} input JSON text or a parsed record
+ * @returns {{ok:true, record:object}|{ok:false, error:string}}
+ */
+export function writeTerrainRecord(input) {
+    const result = validateTerrainRecord(input);
+    if (!result.ok) return result;
+    const record = { ...result.record, auto: false };
+    saveTerrainRecord(record);
+    terrainStory = null;
+    scheduleTerrain();
+    return { ok: true, record };
+}
+
+/** Reseed the noise behind the land - same story, new shores. */
+export function reseedTerrainRecord() {
+    const current = terrainStore();
+    if (!current) return rederiveTerrainRecord();
+    const record = { ...current, seed: (Number(current.seed) || 0) + 1, auto: false };
+    saveTerrainRecord(record);
+    terrainStory = null;
+    scheduleTerrain();
+    return { ok: true, record };
+}
+
+/** Throw the record away and derive a fresh one from the story as it is. */
+export async function rederiveTerrainRecord() {
+    if (!atlas || !layout) return null;
+    const signature = `${lastSignature}|${layoutDepth}`;
+    terrainDerivedSig = null;
+    try {
+        const record = await deriveRecordForChat();
+        if (!record) return null;
+        terrainDerivedSig = signature;
+        saveTerrainRecord(record);
+        terrainStory = null;
+        scheduleTerrain();
+        return record;
+    } catch (error) {
+        console.warn('[Meziverse map] terrain record:', error);
+        return null;
+    }
+}
+
+/* ---------- the land under the chart ---------- */
+
+function ensureTerrain() {
+    if (terrain || terrainCanvas || !els.stage) return;
+    const canvas = document.createElement('canvas');
+    canvas.className = 'mz-terrain';
+    canvas.setAttribute('aria-hidden', 'true');
+    canvas.hidden = true;
+    els.stage.prepend(canvas);
+    const make = () => {
+        terrain = createTerrain(canvas, { quality: matchMedia('(pointer:coarse)').matches ? 1 : 2 });
+        if (terrain) terrainStory = null;
+    };
+    make();
+    if (!terrain) {
+        canvas.remove();
+        terrainCanvas = null;
+        return;
+    }
+    terrainCanvas = canvas;
+    /* a GPU reset is not the map's problem: the land goes away whole and
+       comes back when the browser is ready, and the chart never notices */
+    canvas.addEventListener('webglcontextlost', event => {
+        event.preventDefault();
+        terrain = null;
+        terrainStory = null;
+    });
+    canvas.addEventListener('webglcontextrestored', () => {
+        make();
+        renderWin();
+    });
+}
+
+function scheduleTerrain() {
+    if (!terrainRaf) {
+        terrainRaf = requestAnimationFrame(() => {
+            terrainRaf = 0;
+            drawTerrain();
+        });
+    }
+}
+
+function drawTerrain() {
+    ensureTerrain();
+    if (!terrainCanvas) return;
+    const on = terrainLayerOn() && !win.hidden && document.visibilityState !== 'hidden' && atlas && layout;
+    terrainCanvas.hidden = !on;
+    if (!on) return;
+    /* the story texture is baked per (chat, depth) - rare, and never stale */
+    const signature = `${lastSignature}|${layoutDepth}`;
+    if (terrainStory !== signature) {
+        terrainStory = signature;
+        const fresh = chartWalks && chartWalks.sig === signature ? chartWalks.walks : null;
+        terrain.updateScene({ layout, atlas, derived, walks: fresh, record: terrainRecordForDraw(signature) });
+    }
+    /* quality: the settings row speaks, a slow frame steps down and is
+       remembered - one land, whatever the GPU can carry */
+    const wantQuality = Math.max(0, Math.min(TERRAIN_QUALITY.length - 1, Number(settings().mapTerrainQ) || 0));
+    if (wantQuality !== terrainQuality) {
+        terrainQuality = wantQuality;
+        terrain.setQuality(wantQuality);
+    }
+    const animate = settings().mapTerrainAnim && !settings().reducedMotion;
+    const nowMs = performance.now();
+    /* the drift breathes at about 30fps - but a fresh view (or scene) draws
+       at once: only the idle animation is ever paced */
+    if (animate && !terrainDirty && nowMs - terrainLastDraw < 32) {
+        scheduleTerrain();
+        return;
+    }
+    terrainDirty = false;
+    terrainLastDraw = nowMs;
+    /* the sky over the land: the scene's own hour and weather - dawn light,
+       night tint, rain on the hills - or a plain day when the story has
+       said nothing. The flat chart stays itself. */
+    const scene = atlas.observations?.[atlas.observations.length - 1] || null;
+    const skyOn = !!settings().mapTerrainSky && settings().mapTerrain !== 'flat';
+    terrain.draw({
+        width: els.stage.clientWidth,
+        height: els.stage.clientHeight,
+        dpr: window.devicePixelRatio || 1,
+        tx: view.tx,
+        ty: view.ty,
+        s: view.s,
+        interact: performance.now() - lastViewChange < 140,
+        time: animate ? (performance.now() - terrainT0) / 1000 : 0,
+        fog: !!settings().mapTerrainFog && settings().mapTerrain !== 'flat',
+        fogOnly: settings().mapTerrain === 'flat',
+        sky: skyOn && scene ? skyFor(scene.hour) : null,
+        weather: skyOn && scene ? weatherFx(scene.weather) : null,
+        acc: mapInk(terrainStore() || {}),
+    });
+    // how many frames the land has drawn - the quiet proof it is alive
+    terrainCanvas.dataset.draws = String((Number(terrainCanvas.dataset.draws) || 0) + 1);
+    if (ALIGN_DEBUG) {
+        const badge = els.chart.querySelector('[data-mz-align-badge]');
+        if (badge) badge.textContent = `${terrainCanvas.width}\u00d7${terrainCanvas.height} \u00b7 ${TERRAIN_QUALITY[terrain.quality].name}`;
+    }
+    if (animate) scheduleTerrain();
+}
+
 function drawChart() {
     if (win.hidden || !atlas) return;
+    ensureTerrain();
     const width = els.stage.clientWidth;
     const height = els.stage.clientHeight;
     if (lastSize && (lastSize.w !== width || lastSize.h !== height)) {
@@ -1150,8 +1594,11 @@ function drawChart() {
         view.placed = true;
         if (insideKey) insideBaseS = view.s;
     }
-    els.chart.innerHTML = (insideKey ? deckBar() : '') + fullSvg(width, height, insideKey ? 'deck' : 'full');
+    els.chart.innerHTML = (ALIGN_DEBUG ? '<div class="mz-align-badge" data-mz-align-badge></div>' : '')
+        + (insideKey ? deckBar() : '') + fullSvg(width, height, insideKey ? 'deck' : 'full');
     bindChart();
+    terrainDirty = true;
+    scheduleTerrain();
 }
 
 /** The deck's exit bar: the ship's name, and the way back to the world. */
@@ -1164,43 +1611,126 @@ function applyTransform() {
     const chart = els.chart.querySelector('.mzc');
     if (!chart) return;
     const world = chart.querySelector('.mzc-world');
-    if (world) world.style.transform = `translate(${f1(view.tx)}px,${f1(view.ty)}px) scale(${f1(view.s)})`;
+    if (world) world.style.transform = worldMatrix(view);
     chart.dataset.zoom = view.s < 0.5 ? 0 : view.s < 1.1 ? 1 : 2;
+    terrainDirty = true;
+    lastViewChange = performance.now();
+    /* the land draws soft while the hand moves, then once more sharp */
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+        terrainDirty = true;
+        scheduleTerrain();
+    }, 150);
+    scheduleTerrain();
+}
+
+/** The chart's world extents - finite always. A NaN bounds would flow into
+    fitScale (Math.max(0.02, NaN) is NaN), then into the view, and freeze the
+    map at translate(NaN NaN). */
+function viewBounds() {
+    const bounds = activeLayout().bounds;
+    if (bounds && [bounds.x0, bounds.x1, bounds.y0, bounds.y1].every(Number.isFinite)) return bounds;
+    return { x0: 0, x1: 1, y0: 0, y1: 1 };
+}
+
+/** The scale fit() would pick. The zoom floor lives just below it, so every
+    map can always zoom back out to its own fitted world - a house and a
+    travel world keep their own floors. */
+function fitScale() {
+    const width = els.stage.clientWidth;
+    const height = els.stage.clientHeight;
+    const bounds = viewBounds();
+    const margin = 70;
+    return Math.max(0.02, Math.min(1.25,
+        Math.min((width - margin * 2) / Math.max(1, bounds.x1 - bounds.x0),
+            (height - margin * 2) / Math.max(1, bounds.y1 - bounds.y0))));
+}
+
+const zoomMin = () => Math.min(0.35, fitScale() * 0.85);
+
+/** Where fit() would put the view - the target a glide can fly to. */
+function fitTarget() {
+    const width = els.stage.clientWidth;
+    const height = els.stage.clientHeight;
+    const bounds = viewBounds();
+    const spanX = bounds.x1 - bounds.x0;
+    const spanY = bounds.y1 - bounds.y0;
+    const s = fitScale();
+    return {
+        s,
+        tx: width / 2 - (bounds.x0 + spanX / 2) * s,
+        ty: height / 2 - (bounds.y0 + spanY / 2) * s + 16,
+    };
 }
 
 function fit() {
+    Object.assign(view, fitTarget());
+}
+
+/** Where centerOn() would put the view - the target a glide can fly to. */
+function centerTarget(x, y, scale) {
     const width = els.stage.clientWidth;
     const height = els.stage.clientHeight;
-    const bounds = activeLayout().bounds;
-    const spanX = bounds.x1 - bounds.x0;
-    const spanY = bounds.y1 - bounds.y0;
-    const margin = 70;
-    view.s = Math.min(1.25, Math.min((width - margin * 2) / spanX, (height - margin * 2) / spanY));
-    view.tx = width / 2 - (bounds.x0 + spanX / 2) * view.s;
-    view.ty = height / 2 - (bounds.y0 + spanY / 2) * view.s + 16;
+    return { s: scale, tx: width / 2 - x * scale, ty: height / 2 - y * scale };
 }
 
 function centerOn(x, y, scale) {
-    const width = els.stage.clientWidth;
-    const height = els.stage.clientHeight;
-    view.s = scale;
-    view.tx = width / 2 - x * view.s;
-    view.ty = height / 2 - y * view.s;
+    Object.assign(view, centerTarget(x, y, scale));
+}
+
+/* The view glides in JS so the land and the chart share every frame. A CSS
+   transition here would move the SVG alone while the terrain jumps to the
+   final view - the two drifting apart is exactly what "the land is a
+   separate picture" feels like. */
+let glideRaf = 0;
+
+function glideCancel() {
+    if (glideRaf) cancelAnimationFrame(glideRaf);
+    glideRaf = 0;
+}
+
+function glideTo(target, ms = 420) {
+    glideCancel();
+    if (settings().reducedMotion) {
+        Object.assign(view, target);
+        applyTransform();
+        return;
+    }
+    /* a broken view (s = 0, or a NaN from some earlier failure) would make
+       the interpolation NaN too - the map freezes at translate(NaN NaN) */
+    const from = {
+        tx: Number.isFinite(view.tx) ? view.tx : target.tx,
+        ty: Number.isFinite(view.ty) ? view.ty : target.ty,
+        s: Number.isFinite(view.s) && view.s > 0 ? view.s : target.s,
+    };
+    const t0 = performance.now();
+    const step = now => {
+        const k = Math.min(1, (now - t0) / ms);
+        const e = 1 - (1 - k) ** 3;
+        view.s = from.s * (target.s / from.s) ** e;
+        view.tx = from.tx + (target.tx - from.tx) * e;
+        view.ty = from.ty + (target.ty - from.ty) * e;
+        applyTransform();
+        if (k < 1) glideRaf = requestAnimationFrame(step);
+        else glideRaf = 0;
+    };
+    glideRaf = requestAnimationFrame(step);
 }
 
 function zoomBy(direction) {
     const width = els.stage.clientWidth / 2;
     const height = els.stage.clientHeight / 2;
-    const next = clamp(view.s * (direction > 0 ? 1.35 : 1 / 1.35), 0.35, 6);
+    const next = clamp(view.s * (direction > 0 ? 1.35 : 1 / 1.35), zoomMin(), 6);
     if (insideKey && next < insideBaseS * 0.82) {
         // zooming out of a ship's deck lands back on the world map
         exitInside();
         return;
     }
-    view.tx = width - (width - view.tx) * (next / view.s);
-    view.ty = height - (height - view.ty) * (next / view.s);
-    view.s = next;
-    applyTransform();
+    glideTo({
+        s: next,
+        tx: width - (width - view.tx) * (next / view.s),
+        ty: height - (height - view.ty) * (next / view.s),
+    });
 }
 
 /**
@@ -1234,8 +1764,15 @@ function bindChart() {
     const chart = els.chart.querySelector('.mzc');
     if (!chart) return;
 
+    /* a picture that never arrives falls back to the glyph beneath it -
+       never a broken-image icon */
+    chart.querySelectorAll('image').forEach(image => {
+        image.addEventListener('error', () => image.remove());
+    });
+
     chart.addEventListener('pointerdown', event => {
         if (event.button > 0) return;
+        glideCancel();
         pan = { x: event.clientX, y: event.clientY, tx: view.tx, ty: view.ty, moved: false };
         try { chart.setPointerCapture(event.pointerId); } catch { /* the pointer went away mid-gesture */ }
     });
@@ -1260,6 +1797,16 @@ function bindChart() {
         // target would never name the pin under the cursor. Hit-test at the
         // click's coordinates instead.
         const under = document.elementFromPoint(event.clientX, event.clientY);
+        // the interior count badge is its own door: straight into the deck
+        const deckTap = under && under.closest ? under.closest('[data-mz-deckenter]') : null;
+        if (deckTap) {
+            const owner = deckTap.closest('[data-node]');
+            const vehicle = owner ? findByKey(owner.dataset.node) : null;
+            if (vehicle && vehicle.kind === 'mobile') {
+                enterInside(vehicle.key);
+                return;
+            }
+        }
         const hit = under && under.closest ? under.closest('[data-node]') : null;
         const key = hit ? hit.dataset.node : null;
         // A second click on one ship steps inside it - a real dblclick event
@@ -1280,11 +1827,12 @@ function bindChart() {
     });
     chart.addEventListener('wheel', event => {
         event.preventDefault();
+        glideCancel();
         const rect = chart.getBoundingClientRect();
         const px = event.clientX - rect.left;
         const py = event.clientY - rect.top;
         const factor = Math.exp(-event.deltaY * 0.0016);
-        const next = clamp(view.s * factor, 0.35, 6);
+        const next = clamp(view.s * factor, zoomMin(), 6);
         if (insideKey && next < insideBaseS * 0.82) {
             exitInside();
             return;
@@ -1330,7 +1878,7 @@ function select(key, panThere) {
 
     if (panThere && selectedKey) {
         const item = anchorOf(selectedKey);
-        if (item) centerOn(item.ax, item.ay, Math.max(view.s, item.pin ? 1.4 : 0.9));
+        if (item) glideTo(centerTarget(item.ax, item.ay, Math.max(view.s, item.pin ? 1.4 : 0.9)));
     }
     renderIndex();
     renderDetail();
@@ -1599,11 +2147,22 @@ function wireWinDrag() {
             const rect = win.getBoundingClientRect();
             win.style.width = `${clamp(start.w + event.clientX - start.x, 680, Math.max(680, frameRect.right - rect.left - EDGE))}px`;
             win.style.height = `${clamp(start.h + event.clientY - start.y, 440, Math.max(440, frameRect.bottom - rect.top - EDGE))}px`;
+            /* the chart and the land re-render at the new size as it grows -
+               CSS-stretching would scale the blobs but leave the terrain at
+               its old pixels */
+            if (!resizeQueued) {
+                resizeQueued = true;
+                requestAnimationFrame(() => {
+                    resizeQueued = false;
+                    drawChart();
+                });
+            }
         };
         const up = () => {
             els.winGrip.removeEventListener('pointermove', move);
             els.winGrip.removeEventListener('pointerup', up);
             winSizing = false;
+            drawChart();
             saveWinPlace();
         };
         els.winGrip.addEventListener('pointermove', move);
@@ -1638,21 +2197,29 @@ function wireWin() {
             ensure();
             view.placed = false;
             renderWin();
+        } else if (button.dataset.mzMapLook) {
+            settings().mapTerrain = button.dataset.mzMapLook;
+            saveSettings();
+            renderWin();
         } else if (button.dataset.mzMapLayer) {
-            if (button.dataset.mzMapLayer === 'trails') trails = !trails;
-            else flagsShown = !flagsShown;
-            button.setAttribute('aria-pressed', String(button.dataset.mzMapLayer === 'trails' ? trails : flagsShown));
+            const layer = button.dataset.mzMapLayer;
+            if (layer === 'trails') trails = !trails;
+            else if (layer === 'flags') flagsShown = !flagsShown;
+            else if (layer === 'fog' && settings().mapTerrain !== 'flat') {
+                settings().mapTerrainFog = !settings().mapTerrainFog;
+                saveSettings();
+            }
+            button.setAttribute('aria-pressed', String(
+                layer === 'trails' ? trails : layer === 'flags' ? flagsShown : !!settings().mapTerrainFog));
             renderWin();
         } else if (button.dataset.mzMapZoom) {
             zoomBy(Number(button.dataset.mzMapZoom));
         } else if (button.hasAttribute('data-mz-map-fit')) {
-            fit();
-            applyTransform();
+            glideTo(fitTarget());
         } else if (button.hasAttribute('data-mz-map-now')) {
             const item = (insideKey ? activeLayout().anchor(derived?.nowId || '') : nowAnchor()) || null;
             if (item) {
-                centerOn(item.ax, item.ay, Math.max(view.s, 1.3));
-                applyTransform();
+                glideTo(centerTarget(item.ax, item.ay, Math.max(view.s, 1.3)));
             }
         }
     });

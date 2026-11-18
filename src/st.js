@@ -663,6 +663,32 @@ export function bgStore() {
 }
 
 /**
+ * The open chat's terrain record - the map's land as one small JSON
+ * (`chatMetadata.meziverse.terrain`). Null with no chat open or before
+ * anything has been derived. The record is read-only here; writing goes
+ * through `saveTerrainRecord` so the chat file is asked to persist.
+ */
+export function terrainStore() {
+    const record = ctx()?.chatMetadata?.meziverse?.terrain;
+    return record && typeof record === 'object' && !Array.isArray(record) ? record : null;
+}
+
+/**
+ * Writes (or clears) the open chat's terrain record and persists it.
+ *
+ * @param {object|null} record the record to keep, or null to clear it
+ * @returns {'saved'|'memory-only'|'failed'}
+ */
+export function saveTerrainRecord(record) {
+    const metadata = ctx()?.chatMetadata;
+    if (!metadata || typeof metadata !== 'object') return 'failed';
+    if (!metadata.meziverse || typeof metadata.meziverse !== 'object') metadata.meziverse = {};
+    if (record) metadata.meziverse.terrain = record;
+    else delete metadata.meziverse.terrain;
+    return saveChatMetadata() ? 'saved' : 'memory-only';
+}
+
+/**
  * The background SillyTavern has locked to this chat
  * (`chat_metadata.custom_background`), as its raw value, or null.
  */

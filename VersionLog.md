@@ -1,5 +1,26 @@
 # Meziverse — version log
 
+## 2.10.0 - 2026-11-18
+
+The map becomes a place: the story's land painted under the chart - and one grammar that tells a land place from a car on the road.
+
+### The terrain land
+- The **Terrain** look paints the story's land under the same chart: hills and forests, water with its caustics, town lights where the places are, the roads the journeys walk - all computed in one shader from the designer's own mockup (the town field, the road field and the fog's pin loop verbatim), all fed by the story's places, pictures and weather. **Zero LLM calls**: the terrain is aesthetic only, and any failure - no WebGL, a lost context, an unreadable record - falls back to the plain Flat chart and stays there.
+- The record is chat-scoped plain JSON (`chatMetadata.meziverse.terrain`): region colours sampled from the drawn backgrounds, land ratios read from the region's texts, one climate hint from the weather seen - hand-editable, and anything hand-written is validated before it is believed. **The land keeps its own colours**: the theme no longer washes the terrain, the outlines, rings and lines are tints of the land's own palette, and the theme accent is reserved for state (now, selection, flags, chips). The water keeps its teal in any climate.
+- Fog that thins around the map's own pins, drift over land and water (**Drifting fog and water**, on by default), a sky that follows the story's hours and seen weather, and sharpness where it counts: full resolution at rest, soft only while the hand moves, the pixel budget a slider (4Mpx at High) with a session-only step-down on slow GPUs. Terrain / Flat ride the map's chips, and **Flat is Flat** - no paths, no veil, the Fog button disabled.
+
+### The map's grammar: land and road
+- One response draws its **last** scene tag in full; the tags before it are passed through - and that one grammar speaks two languages. **Land speaks in nodes**: a picture pin where a response stopped, a small empty node for a new passed-through place, a path straight through one already on the map. A land node draws only where a scene tag stood - so a place the story only ever drove through has no node until someone gets off the car.
+- **The road speaks in vehicle marks**: a bigger car (dotted ring when past, the live one keeping its ping) where a scene was narrated as the response's last tag, small spots where the car merely passed - each carrying the **place's** name in the blob it crossed, labels staggered so they never collide. The map names no vehicles and counts no scenes; clicking a mark opens the vehicle and its turns in the rail. The unlabeled "map icon" nodes at crossings are gone - the marks stand exactly on the trail.
+- **Vehicles are entities with interiors**: an icon (no photo face, no name label) wearing a count of the places aboard - the badge a door straight into the vehicle's inner map, the icon opening the card. One walk everywhere - the trail, the shader's roads and the journey legs read the same settled points - and one line matrix in both looks: land journeys continuous, rides dotted (in Terrain the lit path carries the walk; in Flat the line itself).
+- Round after round of feel work landed with it: marks that select the ship and its turns, hub labels and doubled lines gone, the click-through disc fix, land journeys as the lit path, "Ink" renamed **Terrain**, and the whole mark/pin/label voice unified - one place, one voice.
+
+### Sturdier under long stories
+- The layout **never loses a place**: a pack that cannot fit a huge world now stands the leftover beyond the cluster's edge instead of silently dropping it - the bug that froze whole charts at `translate(NaN NaN)` on maps with very large territories (100+ message stories). The view is guarded finite all the way down, so a bad value can never take the map down again.
+
+### Notes
+- `manifest.json` matches; the synthetic suite stands at 318 tests.
+
 ## 2.9.7 - 2026-11-15
 
 The settings sheet learns to breathe - and the top bar keeps three quiet toggles within reach.
