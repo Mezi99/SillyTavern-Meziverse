@@ -394,6 +394,21 @@ export function initials(name) {
     return letters.join('').toUpperCase();
 }
 
+/**
+ * One stable hue per name (0-359) - the colour a placeholder plate wears,
+ * so the same person keeps the same ink wherever their name shows up.
+ */
+export function hueOf(name) {
+    let hash = 2166136261;
+
+    for (const char of String(name)) {
+        hash ^= char.codePointAt(0);
+        hash = Math.imul(hash, 16777619);
+    }
+
+    return Math.abs(hash) % 360;
+}
+
 /** A scene worth showing: complete, and at least one of date, place or cast. */
 export function isUsableScene(tag) {
     if (!tag || tag.name !== 'scene' || !tag.closed) return false;

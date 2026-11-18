@@ -1,0 +1,375 @@
+/* ==========================================================================
+   The Character Library: its window, the cast strip's glyph, and the
+   poster button's saved state. Tokens only - every colour rides semantics.
+   ========================================================================== */
+
+/* ---------- the strip's door ---------- */
+
+.mz-cast { position: relative; }
+
+.mz-cast-lib {
+    position: absolute;
+    z-index: 3;
+    top: 10px;
+    right: 12px;
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, .22);
+    border-radius: var(--mz-r-pill);
+    background: color-mix(in srgb, var(--mz-scrim-ink) 48%, transparent);
+    color: rgba(255, 255, 255, .82);
+    cursor: pointer;
+    pointer-events: auto;
+    opacity: .55;
+    transition: opacity var(--mz-dur) var(--mz-ease), background var(--mz-dur-fast), color var(--mz-dur-fast);
+}
+
+.mz-cast-lib:hover,
+.mz-cast-lib:focus-visible {
+    opacity: 1;
+    background: color-mix(in srgb, var(--mz-scrim-ink) 72%, transparent);
+    color: #fff;
+}
+
+.mz-cast-lib .ico { width: 13px; height: 13px; }
+
+@media (hover: none) {
+    .mz-cast-lib { opacity: 1; }
+}
+
+/* the poster's library button: lit while the character is saved */
+.mz-port-tool.is-lib.is-on {
+    border-color: hsl(var(--h) 40% 70% / .55);
+    color: #fff;
+    background: color-mix(in srgb, var(--mz-scrim-ink) 62%, transparent);
+}
+
+/* ---------- the window ---------- */
+
+.mz-libwin {
+    position: absolute;
+    z-index: var(--mz-z-sheet);
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    margin: max(12px, 4vh) auto;
+    width: min(880px, 95vw);
+    height: min(660px, 88vh);
+    border: 1px solid var(--mz-line-strong);
+    border-radius: var(--mz-r-xl);
+    background: var(--mz-surface-solid);
+    box-shadow: var(--mz-shadow);
+    color: var(--mz-text);
+    font-family: var(--mz-font-ui);
+    overflow: hidden;
+}
+
+.mz-libwin[hidden] { display: none; }
+
+.mz-libwin-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 12px 9px 14px;
+    border-bottom: 1px solid var(--mz-line);
+}
+
+.mz-libwin-mark {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border: 1px solid var(--mz-accent-line);
+    border-radius: 50%;
+    background: var(--mz-accent-wash);
+    color: var(--mz-accent);
+}
+
+.mz-libwin-mark .ico { width: 14px; height: 14px; }
+
+.mz-libwin-head h2 {
+    margin: 0;
+    font-size: var(--mz-text-lg);
+    font-weight: 600;
+    letter-spacing: .01em;
+}
+
+.mz-libwin-sum {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    font-size: var(--mz-text-xs);
+    color: var(--mz-text-dim);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mz-libwin-close { flex: none; }
+
+.mz-libwin-body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+}
+
+/* ---------- the grid ---------- */
+
+.mz-lib-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+    gap: 16px;
+    padding: 18px;
+}
+
+.mz-lib-empty {
+    margin: 8px 2px;
+    font-size: var(--mz-text-sm);
+    color: var(--mz-text-dim);
+}
+
+.mz-lib-tile {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.mz-lib-tile .mz-lib-face {
+    border: 1px solid var(--mz-line);
+    transition: border-color var(--mz-dur-fast);
+}
+
+.mz-lib-tile:hover .mz-lib-face,
+.mz-lib-tile:focus-visible .mz-lib-face {
+    border-color: var(--mz-accent-line);
+}
+
+.mz-lib-name {
+    overflow: hidden;
+    font-size: var(--mz-text-xs);
+    font-weight: 500;
+    color: var(--mz-text-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mz-lib-tile:hover .mz-lib-name { color: var(--mz-text); }
+
+/* ---------- the portrait plate (tiles and hero) ---------- */
+
+.mz-lib-face {
+    position: relative;
+    aspect-ratio: 3 / 4;
+    border-radius: var(--mz-r-sm);
+    overflow: hidden;
+    background: hsl(var(--h, 210) 16% 20%);
+}
+
+.mz-lib-face img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.mz-lib-initial {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    font-family: var(--mz-font-prose);
+    font-size: calc(22px * var(--mz-ui-scale));
+    letter-spacing: .06em;
+    color: hsl(var(--h, 210) 32% 72%);
+}
+
+.mz-lib-face:not(.is-empty) .mz-lib-initial { display: none; }
+
+/* ---------- one character's page ---------- */
+
+.mz-lib-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 18px;
+}
+
+.mz-lib-back {
+    align-self: flex-start;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--mz-text-muted);
+    font: inherit;
+    font-size: var(--mz-text-xs);
+    cursor: pointer;
+}
+
+.mz-lib-back:hover { color: var(--mz-text); }
+
+.mz-lib-hero {
+    display: flex;
+    align-items: flex-end;
+    gap: 16px;
+}
+
+.mz-lib-hero .mz-lib-face {
+    flex: none;
+    width: 128px;
+    border: 1px solid var(--mz-line);
+}
+
+.mz-lib-hero-tools {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-bottom: 2px;
+}
+
+.mz-lib-title {
+    margin: 0;
+    font-family: var(--mz-font-prose);
+    font-size: var(--mz-text-xl);
+    font-weight: 600;
+}
+
+.mz-lib-sec {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-top: 14px;
+    border-top: 1px solid var(--mz-line);
+}
+
+.mz-lib-sec-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+}
+
+.mz-lib-sec-head h4 {
+    margin: 0;
+    font-size: var(--mz-text-2xs);
+    font-weight: 600;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--mz-text-dim);
+}
+
+.mz-lib-count {
+    font-size: var(--mz-text-xs);
+    color: var(--mz-text-dim);
+}
+
+.mz-lib-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.mz-lib-bar .mz-select { height: 30px; }
+.mz-lib-custom { width: 120px; }
+
+.mz-lib-sprites {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 12px;
+}
+
+.mz-lib-sprite {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--mz-line);
+    border-radius: var(--mz-r-sm);
+    overflow: hidden;
+    background: var(--mz-surface-2);
+}
+
+.mz-lib-sprite img {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    background: var(--mz-scrim-ink);
+}
+
+.mz-lib-sprite-label {
+    padding: 6px 8px 0;
+    font-size: var(--mz-text-xs);
+    font-weight: 500;
+    color: var(--mz-text);
+}
+
+.mz-lib-sprite-file {
+    padding: 2px 8px 7px;
+    overflow: hidden;
+    font-size: var(--mz-text-2xs);
+    color: var(--mz-text-dim);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mz-lib-sprite-del {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+}
+
+.mz-lib-sprite-del.is-armed {
+    border-color: var(--mz-bad);
+    color: var(--mz-bad);
+}
+
+/* ---------- the staged removal ---------- */
+
+.mz-lib-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding-top: 14px;
+    border-top: 1px solid var(--mz-line);
+}
+
+.mz-lib-ask {
+    flex: 1;
+    min-width: 200px;
+    margin: 0;
+    font-size: var(--mz-text-sm);
+    color: var(--mz-text-muted);
+}
+
+.mz-libwin .mz-btn-ghost.is-danger {
+    border-color: color-mix(in srgb, var(--mz-bad) 45%, transparent);
+    color: var(--mz-bad);
+}
+
+.mz-libwin .mz-btn-ghost.is-danger:hover {
+    background: color-mix(in srgb, var(--mz-bad) 12%, transparent);
+}
+
+/* ---------- small screens: a bottom sheet, like the dock's popups ---------- */
+
+@media (max-width: 759px) {
+    .mz-libwin {
+        inset: auto 0 0 0;
+        margin: 0;
+        width: 100%;
+        height: 82vh;
+        border-radius: var(--mz-r-xl) var(--mz-r-xl) 0 0;
+    }
+
+    .mz-lib-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
+    .mz-lib-hero { flex-direction: column; align-items: flex-start; }
+}

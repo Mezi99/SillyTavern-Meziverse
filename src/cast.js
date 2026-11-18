@@ -8,14 +8,14 @@
  */
 
 import { castImages, castKey, currentChatId, imageSource, removeCastImage, say, setCastImage, uploadImage } from './st.js';
-import { initials } from './scene.js';
+import { hueOf, initials } from './scene.js';
 import { icon } from './icons.js';
 import { notify } from './notify.js';
-import { avatarsOn, entryOn, modeOn } from './settings.js';
+import { avatarsOn, entryOn, libraryEntries, modeOn } from './settings.js';
 import { closeFloats, placeFloat, registerFloat } from './floats.js';
+import { ensureInLibrary, libraryHas, onLibraryChange, openLibrary, resolveLibraryPortrait } from './library.js';
+import { imageFileName, prepareImage } from './imageprep.js';
 
-const MAX_EDGE = 1024;
-const QUALITY = 0.85;
 const FALLBACK_FLOOR = 180;
 const FALLBACK_CEILING = 500;
 
@@ -62,7 +62,17 @@ export function mountCast(element) {
     picker.hidden = true;
     picker.setAttribute('aria-hidden', 'true');
 
-    host.append(track, picker);
+    // The quiet door into the Character Library, pinned at the strip's
+    // edge - outside the scrolling track, so it never rides along.
+    const glyph = document.createElement('button');
+    glyph.type = 'button';
+    glyph.className = 'mz-cast-lib';
+    glyph.dataset.mzCastLibrary = '';
+    glyph.title = 'Character Library';
+    glyph.setAttribute('aria-label', 'Character Library');
+    glyph.append(icon('mz-i-library'));
+
+    host.append(track, glyph, picker);
     host.hidden = true;
 
     host.addEventListener('click', onClick);
@@ -90,6 +100,13 @@ export function mountCast(element) {
     registerFloat(closeThought);
 
     track.addEventListener('scroll', () => closeThought(), { passive: true });
+
+    // The library window owns the stage elsewhere; a library change just
+    // redraws the strip, so posters pick up their portraits and buttons.
+    onLibraryChange(() => {
+        lastSignature = '';
+        renderCast(lastScene);
+    });
 }
 
 /**
@@ -135,10 +152,11 @@ export function renderCast(scene) {
     }
 
     const images = castImages();
+    const library = libraryEntries();
     const fragment = document.createDocumentFragment();
 
     for (const name of names) {
-        fragment.append(poster(name, images[castKey(name)] || ''));
+        fragment.append(poster(name, resolveLibraryPortrait(castKey(name), images, library)));
     }
 
     track.replaceChildren(fragment);
@@ -157,14 +175,15 @@ export function redrawCast() {
 
 /**
  * One person's avatar as the rails draw it: the chat's own portrait image
- * when the chat has one, and just the initial letters when it has not.
+ * when the chat has one, then the library's, and just the initial letters
+ * when neither has.
  *
  * @param {string} name
  * @returns {{src:string, initial:string}}
  */
 export function castAvatar(name) {
     return {
-        src: imageSource(castImages()[castKey(name)] || ''),
+        src: imageSource(resolveLibraryPortrait(castKey(name), castImages(), libraryEntries())),
         initial: initials(name),
     };
 }
@@ -522,18 +541,34 @@ function poster(name, path) {
     if (image) figure.append(image);
     figure.append(scrim, caption, attach);
 
+    // The poster's button cluster: portrait in, portrait out, and the
+    // Character Library door. Plain buttons for now - the arrangement
+    // comes later with the visual designer.
+    const tools = document.createElement('div');
+    tools.className = 'mz-port-tools';
+
+    const change = document.createElement('button');
+    change.type = 'button';
+    change.className = 'mz-port-tool';
+    change.dataset.mzCastAttach = name;
+    change.title = source ? `Change ${name}'s portrait` : `Add ${name}'s portrait`;
+    change.setAttribute('aria-label', change.title);
+    change.append(icon('mz-i-camera'));
+
+    const member = libraryHas(name);
+    const library = document.createElement('button');
+    library.type = 'button';
+    library.className = 'mz-port-tool is-lib' + (member ? ' is-on' : '');
+    library.dataset.mzCastLibAdd = name;
+    library.title = member
+        ? `${name} is in the Character Library`
+        : `Add ${name} to the Character Library`;
+    library.setAttribute('aria-label', library.title);
+    library.append(icon('mz-i-library'));
+
+    tools.append(change, library);
+
     if (source) {
-        const tools = document.createElement('div');
-        tools.className = 'mz-port-tools';
-
-        const change = document.createElement('button');
-        change.type = 'button';
-        change.className = 'mz-port-tool';
-        change.dataset.mzCastAttach = name;
-        change.title = `Change ${name}'s portrait`;
-        change.setAttribute('aria-label', `Change portrait for ${name}`);
-        change.append(icon('mz-i-camera'));
-
         const remove = document.createElement('button');
         remove.type = 'button';
         remove.className = 'mz-port-tool is-danger';
@@ -541,10 +576,10 @@ function poster(name, path) {
         remove.title = `Remove ${name}'s portrait`;
         remove.setAttribute('aria-label', `Remove portrait for ${name}`);
         remove.append(icon('mz-i-trash'));
-
-        tools.append(change, remove);
-        figure.append(tools);
+        tools.append(remove);
     }
+
+    figure.append(tools);
 
     if (busyName === name && busyChat === currentChatId()) {
         figure.classList.add('is-busy');
@@ -565,6 +600,31 @@ function onClick(event) {
         const key = toggle.dataset.mzThought;
         if (thoughtKey === key) closeThought();
         else openThought(key);
+        return;
+    }
+
+    const glyph = event.target.closest('[data-mz-cast-library]');
+    if (glyph) {
+        event.preventDefault();
+        openLibrary();
+        return;
+    }
+
+    const library = event.target.closest('[data-mz-cast-lib-add]');
+    if (library) {
+        event.preventDefault();
+        const name = library.dataset.mzCastLibAdd;
+
+        // Already saved: the button is the door into that entry.
+        if (libraryHas(name)) {
+            openLibrary(name);
+            return;
+        }
+
+        // Saving promotes whatever portrait this chat carries, so the
+        // library shows the face the user already picked.
+        const record = ensureInLibrary(name, castImages()[castKey(name)] || '');
+        if (record) notify(`Saved ${name} to the Character Library.`, 'success');
         return;
     }
 
@@ -623,7 +683,7 @@ async function onFileChosen() {
         const path = await uploadImage({
             image: prepared.image,
             format: prepared.format,
-            filename: fileName(request.name, prepared.format),
+            filename: imageFileName(request.name, prepared.format),
         });
 
         if (!path) throw new Error('no path returned');
@@ -657,67 +717,6 @@ function forget(name) {
     renderCast(lastScene);
 }
 
-/* ---------- image preparation ---------- */
-
-async function prepareImage(file) {
-    const source = await loadImage(file);
-    const width = source.width || source.naturalWidth || 0;
-    const height = source.height || source.naturalHeight || 0;
-    if (!width || !height) throw new Error('the image has no size');
-
-    const scale = Math.min(1, MAX_EDGE / Math.max(width, height));
-    const outWidth = Math.max(1, Math.round(width * scale));
-    const outHeight = Math.max(1, Math.round(height * scale));
-
-    const canvas = document.createElement('canvas');
-    canvas.width = outWidth;
-    canvas.height = outHeight;
-
-    const context = canvas.getContext('2d');
-    if (!context) throw new Error('the canvas is unavailable');
-
-    context.imageSmoothingEnabled = true;
-    context.imageSmoothingQuality = 'high';
-    context.drawImage(source, 0, 0, outWidth, outHeight);
-    source.close?.();
-
-    const data = canvas.toDataURL('image/webp', QUALITY);
-    const match = /^data:image\/([a-z0-9.+-]+);base64,(.+)$/i.exec(data);
-    if (!match) throw new Error('the image could not be encoded');
-
-    return {
-        image: match[2],
-        format: match[1].toLowerCase() === 'jpeg' ? 'jpg' : match[1].toLowerCase(),
-    };
-}
-
-function loadImage(file) {
-    if (typeof createImageBitmap === 'function') {
-        return createImageBitmap(file).catch(() => loadFromElement(file));
-    }
-
-    return loadFromElement(file);
-}
-
-function loadFromElement(file) {
-    return new Promise((resolve, reject) => {
-        const image = new Image();
-        const url = URL.createObjectURL(file);
-
-        image.addEventListener('load', () => {
-            URL.revokeObjectURL(url);
-            resolve(image);
-        }, { once: true });
-
-        image.addEventListener('error', () => {
-            URL.revokeObjectURL(url);
-            reject(new Error('the image could not be read'));
-        }, { once: true });
-
-        image.src = url;
-    });
-}
-
 /* ---------- small helpers ---------- */
 
 /**
@@ -741,34 +740,14 @@ function announceAdded(name, status) {
 
 function castSignature() {
     const images = castImages();
+    const library = libraryEntries();
     const chat = currentChatId() || '';
     const busy = busyName && busyChat === chat ? busyName : '';
     const cast = names
-        .map(name => `${name}\u0002${images[castKey(name)] || ''}`)
+        .map(name => `${name}\u0002${resolveLibraryPortrait(castKey(name), images, library)}\u0002${libraryHas(name) ? 1 : 0}`)
         .join('\u0001');
 
     return `${chat}\u0003${busy}\u0003${cast}`;
-}
-
-function fileName(name, format) {
-    const base = String(name)
-        .normalize('NFKD')
-        .replace(/[^\w-]+/g, '-')
-        .replace(/^-+|-+$/g, '')
-        .slice(0, 40) || 'portrait';
-
-    return `${base}-${Date.now().toString(36)}.${format}`;
-}
-
-function hueOf(name) {
-    let hash = 2166136261;
-
-    for (const char of String(name)) {
-        hash ^= char.codePointAt(0);
-        hash = Math.imul(hash, 16777619);
-    }
-
-    return Math.abs(hash) % 360;
 }
 
 function number(value) {

@@ -31,6 +31,7 @@ import { closeFloats } from './floats.js';
 import { mountMusic, musicUiClosed, musicUiOpened, refreshMusic } from './music.js';
 import { mountConnections } from './connections.js';
 import { mountMap, mapUiClosed, mapUiOpened, refreshMap, isMapWinOpen, openMapWin, closeMapWin, terrainRecordView, writeTerrainRecord, reseedTerrainRecord, rederiveTerrainRecord } from './map.js';
+import { closeLibrary, isLibraryOpen, libraryUiClosed, mountLibrary, openLibrary } from './library.js';
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr, notify } from './notify.js';
 
@@ -318,6 +319,10 @@ const FRAME_HTML = `
                 <div class="mz-set-row">
                     <span class="mz-set-label"><b>Avatars</b></span>
                     <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Avatars" data-mz-action="avatars"><i></i></button>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Character Library</b><button type="button" class="mz-hint" data-tip="Characters saved by name, with portraits and sprites - available in every chat." aria-label="Characters saved by name, with portraits and sprites - available in every chat.">i</button></span>
+                    <button class="mz-btn-ghost" type="button" data-mz-action="library-open">Open</button>
                 </div>
                 <div class="mz-set-row">
                     <span class="mz-set-label"><b>Speech bubbles</b></span>
@@ -697,6 +702,7 @@ export function mount() {
     mountDock(root);
     mountMusic({ slot: root.querySelector('[data-mz="music-slot"]'), frame });
     mountMap({ frame, goto: index => transcript?.show(index) });
+    mountLibrary({ frame });
 
     transcript = createTranscript({
         frame,
@@ -850,6 +856,7 @@ export function close() {
     musicUiClosed();
     // The map window goes away with the scene as well.
     mapUiClosed();
+    libraryUiClosed();
 
     if (frame.contains(document.activeElement)) document.activeElement.blur();
 
@@ -2487,6 +2494,7 @@ function wireActions() {
                 break;
             case 'dismiss':
                 if (isMapWinOpen()) closeMapWin();
+                else if (isLibraryOpen()) closeLibrary();
                 else if (isCardOpen()) closeCard();
                 else if (isDockOpen()) closeDock();
                 else if (transcript.isLogOpen()) transcript.closeLog();
@@ -2583,6 +2591,9 @@ function wireActions() {
                 settings().mapMini = !settings().mapMini;
                 applyMap();
                 saveSettings();
+                break;
+            case 'library-open':
+                openLibrary();
                 break;
             case 'map-open':
                 openMapWin();
@@ -2764,6 +2775,7 @@ function wireKeys() {
             if (closeFloats()) return;
             if (closeMemory()) return;
             if (isMapWinOpen()) closeMapWin();
+            else if (isLibraryOpen()) closeLibrary();
             else if (isCardOpen()) closeCard();
             else if (isDockOpen()) closeDock();
             else if (transcript?.isLogOpen()) transcript.closeLog();
