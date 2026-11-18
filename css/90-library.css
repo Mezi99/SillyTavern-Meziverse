@@ -5,8 +5,6 @@
 
 /* ---------- the strip's door ---------- */
 
-.mz-cast { position: relative; }
-
 .mz-cast-lib {
     position: absolute;
     z-index: 3;
