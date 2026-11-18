@@ -11,9 +11,9 @@ import { castImages, castKey, currentChatId, imageSource, removeCastImage, say, 
 import { hueOf, initials } from './scene.js';
 import { icon } from './icons.js';
 import { notify } from './notify.js';
-import { avatarsOn, entryOn, libraryEntries, modeOn } from './settings.js';
+import { avatarsOn, entryOn, libraryEntries, libraryHas, modeOn } from './settings.js';
 import { closeFloats, placeFloat, registerFloat } from './floats.js';
-import { ensureInLibrary, libraryHas, onLibraryChange, openLibrary, resolveLibraryPortrait } from './library.js';
+import { ensureInLibrary, onLibraryChange, openLibrary, resolveLibraryPortrait } from './library.js';
 import { imageFileName, prepareImage } from './imageprep.js';
 
 const FALLBACK_FLOOR = 180;
