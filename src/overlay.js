@@ -31,7 +31,7 @@ import { closeFloats } from './floats.js';
 import { mountMusic, musicUiClosed, musicUiOpened, refreshMusic } from './music.js';
 import { mountConnections } from './connections.js';
 import { mountMap, mapUiClosed, mapUiOpened, refreshMap, isMapWinOpen, openMapWin, closeMapWin, terrainRecordView, writeTerrainRecord, reseedTerrainRecord, rederiveTerrainRecord } from './map.js';
-import { closeLibrary, isLibraryOpen, libraryUiClosed, mountLibrary, openLibrary } from './library.js';
+import { closeLibrary, isLibraryOpen, libraryUiClosed, mountLibrary, openLibrary, refreshLibrary } from './library.js';
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr, notify } from './notify.js';
 
@@ -1768,6 +1768,7 @@ function applyScene(record) {
 
     measureChatbar();
     renderCast(scene);
+    refreshLibrary();
     queueBackgroundSwap();
     applyWeather(record);
 }

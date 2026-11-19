@@ -369,6 +369,15 @@ export function libraryUiClosed() {
     closeLibrary();
 }
 
+/**
+ * The shown scene changed under an open window: the counts, the "In scene"
+ * marks and the filters read the scene live, so they get re-read. A closed
+ * window says nothing - it recomputes when it opens.
+ */
+export function refreshLibrary() {
+    if (isLibraryOpen()) renderWin();
+}
+
 function resetDetail() {
     detailRows = [];
     removeStage = 'idle';
