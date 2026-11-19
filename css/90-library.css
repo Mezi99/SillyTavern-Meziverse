@@ -1,6 +1,8 @@
 /* ==========================================================================
-   The Character Library: its window, the cast strip's glyph, and the
-   poster button's saved state. Tokens only - every colour rides semantics.
+   The Character Library: its window (the designer's mock, lifted whole -
+   grid shelves, one character's page, the expression board), the cast
+   strip's glyph, and the poster button's saved state. Tokens only -
+   every colour rides semantics.
    ========================================================================== */
 
 /* ---------- the strip's door ---------- */
@@ -46,7 +48,9 @@
     background: color-mix(in srgb, var(--mz-scrim-ink) 62%, transparent);
 }
 
-/* ---------- the window ---------- */
+/* ==========================================================================
+   The window: a head that is a way back, and one body per view
+   ========================================================================== */
 
 .mz-libwin {
     position: absolute;
@@ -54,9 +58,9 @@
     inset: 0;
     display: flex;
     flex-direction: column;
-    margin: max(12px, 4vh) auto;
-    width: min(880px, 95vw);
-    height: min(660px, 88vh);
+    margin: max(12px, 3vh) auto;
+    width: min(1000px, 95vw);
+    height: min(700px, 92vh);
     border: 1px solid var(--mz-line-strong);
     border-radius: var(--mz-r-xl);
     background: var(--mz-surface-solid);
@@ -69,6 +73,7 @@
 .mz-libwin[hidden] { display: none; }
 
 .mz-libwin-head {
+    flex: none;
     display: flex;
     align-items: center;
     gap: 12px;
@@ -79,6 +84,7 @@
 .mz-libwin-mark {
     display: grid;
     place-items: center;
+    flex: none;
     width: 26px;
     height: 26px;
     border: 1px solid var(--mz-accent-line);
@@ -86,7 +92,6 @@
     background: var(--mz-accent-wash);
     color: var(--mz-accent);
 }
-
 .mz-libwin-mark .ico { width: 14px; height: 14px; }
 
 .mz-libwin-head h2 {
@@ -94,6 +99,34 @@
     font-size: var(--mz-text-lg);
     font-weight: 600;
     letter-spacing: .01em;
+}
+
+/* the breadcrumb: "Character Library  /  Mike" - the title doubles as the way back */
+.mz-libwin-crumb {
+    display: flex;
+    align-items: baseline;
+    gap: 9px;
+    min-width: 0;
+}
+.mz-libwin-crumb button {
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-size: var(--mz-text-lg);
+    font-weight: 600;
+    color: var(--mz-text-muted);
+    cursor: pointer;
+}
+.mz-libwin-crumb button:hover { color: var(--mz-text); }
+.mz-libwin-crumb i { font-style: normal; color: var(--mz-text-dim); }
+.mz-libwin-crumb b {
+    font-family: var(--mz-font-prose);
+    font-size: var(--mz-text-xl);
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .mz-libwin-sum {
@@ -106,27 +139,44 @@
     white-space: nowrap;
 }
 
-.mz-lib-search {
-    flex: none;
-    width: 170px;
-    height: 30px;
-}
-
+.mz-lib-search { flex: none; width: 190px; height: 30px; }
 .mz-libwin-close { flex: none; }
 
 .mz-libwin-body {
     flex: 1;
     min-height: 0;
     overflow: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--mz-line-strong) transparent;
 }
+.mz-libwin-body.is-detail { overflow: hidden; }
 
-/* ---------- the grid ---------- */
+/* a file dragged over the window: one honest dashed sheet over everything */
+.mz-lib-dropveil {
+    position: absolute;
+    z-index: 5;
+    inset: 8px;
+    display: grid;
+    place-content: center;
+    gap: 6px;
+    border: 1.5px dashed var(--mz-accent);
+    border-radius: var(--mz-r-lg);
+    background: color-mix(in srgb, var(--mz-accent) 11%, transparent);
+    text-align: center;
+    pointer-events: none;
+}
+.mz-lib-dropveil b { font-size: var(--mz-text-lg); font-weight: 600; color: var(--mz-accent); }
+.mz-lib-dropveil span { font-size: var(--mz-text-sm); color: var(--mz-text-muted); }
 
-.mz-lib-filters {
+/* ---------- the grid view ---------- */
+
+.mz-lib-toolbar {
     display: flex;
+    align-items: center;
     gap: 8px;
-    padding: 14px 18px 0;
+    padding: 14px 20px 2px;
 }
+.mz-lib-toolbar .mz-lib-spacer { flex: 1; }
 
 .mz-lib-chip {
     padding: 4px 12px;
@@ -139,20 +189,35 @@
     cursor: pointer;
     transition: color var(--mz-dur-fast), border-color var(--mz-dur-fast), background var(--mz-dur-fast);
 }
-
 .mz-lib-chip:hover { color: var(--mz-text); border-color: var(--mz-line-strong); }
-
 .mz-lib-chip.is-on {
     border-color: var(--mz-accent-line);
     background: var(--mz-accent-wash);
     color: var(--mz-accent);
 }
 
+.mz-lib-shelf { padding: 16px 20px 4px; }
+
+.mz-lib-shelf-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 11px;
+}
+.mz-lib-shelf-head h4 {
+    margin: 0;
+    font-size: var(--mz-text-2xs);
+    font-weight: 600;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--mz-text-dim);
+}
+.mz-lib-shelf-head span { font-size: var(--mz-text-xs); color: var(--mz-text-dim); }
+
 .mz-lib-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
-    gap: 16px;
-    padding: 18px;
+    grid-template-columns: repeat(auto-fill, minmax(164px, 1fr));
+    gap: 14px;
 }
 
 .mz-lib-empty {
@@ -161,63 +226,157 @@
     color: var(--mz-text-dim);
 }
 
-.mz-lib-tile {
+/* a character card: the portrait fills it, the name rides on a soft scrim */
+.mz-lib-card {
     position: relative;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+    display: block;
+    aspect-ratio: 3 / 4;
     padding: 0;
-    border: 0;
+    border: 1px solid var(--mz-line);
+    border-radius: var(--mz-r);
     background: none;
     color: inherit;
     font: inherit;
     text-align: left;
-    cursor: pointer;
-}
-
-.mz-lib-dot {
-    position: absolute;
-    z-index: 2;
-    top: 7px;
-    right: 7px;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--mz-accent);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--mz-scrim-ink) 55%, transparent);
-}
-
-.mz-lib-tile .mz-lib-face {
-    border: 1px solid var(--mz-line);
-    transition: border-color var(--mz-dur-fast);
-}
-
-.mz-lib-tile:hover .mz-lib-face,
-.mz-lib-tile:focus-visible .mz-lib-face {
-    border-color: var(--mz-accent-line);
-}
-
-.mz-lib-name {
     overflow: hidden;
-    font-size: var(--mz-text-xs);
-    font-weight: 500;
-    color: var(--mz-text-muted);
+    cursor: pointer;
+    transition: border-color var(--mz-dur) var(--mz-ease), transform var(--mz-dur) var(--mz-ease), box-shadow var(--mz-dur) var(--mz-ease);
+}
+.mz-lib-card:hover,
+.mz-lib-card:focus-visible {
+    border-color: var(--mz-accent-line);
+    transform: translateY(-2px);
+    box-shadow: var(--mz-shadow-sm);
+}
+.mz-lib-card .mz-lib-face { position: absolute; inset: 0; border: 0; border-radius: 0; aspect-ratio: auto; }
+.mz-lib-card .mz-lib-face img { transition: transform .5s var(--mz-ease); }
+.mz-lib-card:hover .mz-lib-face img { transform: scale(1.035); }
+
+.mz-lib-card-info {
+    position: absolute;
+    inset: auto 0 0 0;
+    display: grid;
+    gap: 6px;
+    padding: 34px 12px 11px;
+    background: linear-gradient(transparent, color-mix(in srgb, var(--mz-scrim-ink) 88%, transparent));
+}
+.mz-lib-card-name {
+    overflow: hidden;
+    font-family: var(--mz-font-prose);
+    font-size: var(--mz-text-lg);
+    font-weight: 600;
+    line-height: 1.15;
+    color: #fff;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+.mz-lib-card-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: var(--mz-text-2xs);
+    color: rgba(255, 255, 255, .7);
+}
+.mz-lib-card-meta .mz-lib-bar-mini { flex: 1; }
+.mz-lib-card-meta.is-none { color: rgba(255, 255, 255, .5); }
 
-.mz-lib-tile:hover .mz-lib-name { color: var(--mz-text); }
+/* the coverage bar: how many of the 28 labels have a sprite */
+.mz-lib-bar-mini {
+    height: 3px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, .18);
+    overflow: hidden;
+}
+.mz-lib-bar-mini i {
+    display: block;
+    height: 100%;
+    width: var(--fill, 0%);
+    border-radius: 2px;
+    background: var(--mz-accent);
+}
 
-/* ---------- the portrait plate (tiles and hero) ---------- */
+.mz-lib-live {
+    position: absolute;
+    z-index: 2;
+    top: 8px;
+    left: 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 9px 3px 7px;
+    border-radius: var(--mz-r-pill);
+    background: color-mix(in srgb, var(--mz-scrim-ink) 66%, transparent);
+    font-size: var(--mz-text-2xs);
+    font-weight: 500;
+    color: rgba(255, 255, 255, .9);
+}
+.mz-lib-live::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--mz-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--mz-accent) 26%, transparent);
+}
+
+/* the "new character" card: the way in that is not a poster */
+.mz-lib-new {
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 8px;
+    aspect-ratio: 3 / 4;
+    border: 1.5px dashed var(--mz-line-strong);
+    border-radius: var(--mz-r);
+    background: none;
+    color: var(--mz-text-dim);
+    font: inherit;
+    font-size: var(--mz-text-sm);
+    cursor: pointer;
+    transition: color var(--mz-dur-fast), border-color var(--mz-dur-fast), background var(--mz-dur-fast);
+}
+.mz-lib-new .ico { width: 22px; height: 22px; }
+.mz-lib-new:hover { border-color: var(--mz-accent-line); color: var(--mz-accent); background: var(--mz-accent-wash); }
+
+/* "seen in this chat, not saved": one-tap saving of names the story already uses */
+.mz-lib-seen {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 10px;
+}
+.mz-lib-seen-row {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 8px 10px 8px 8px;
+    border: 1px solid var(--mz-line);
+    border-radius: var(--mz-r);
+    background: var(--mz-surface-2);
+}
+.mz-lib-seen-row .mz-lib-face { flex: none; width: 34px; aspect-ratio: 1; border-radius: 50%; }
+.mz-lib-seen-row .mz-lib-initial { font-size: var(--mz-text-sm); }
+.mz-lib-seen-row b {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    font-size: var(--mz-text-sm);
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.mz-lib-seen-row small { display: block; font-size: var(--mz-text-2xs); font-weight: 400; color: var(--mz-text-dim); }
+
+/* ---------- the portrait plate (cards, rows, preview) ---------- */
 
 .mz-lib-face {
     position: relative;
     aspect-ratio: 3 / 4;
     border-radius: var(--mz-r-sm);
     overflow: hidden;
-    background: hsl(var(--h, 210) 16% 20%);
+    background:
+        radial-gradient(120% 70% at 50% 0%, hsl(var(--h, 210) 30% 34% / .5), transparent 65%),
+        linear-gradient(hsl(var(--h, 210) 18% 19%), hsl(var(--h, 210) 22% 9%));
 }
-
 .mz-lib-face img {
     position: absolute;
     inset: 0;
@@ -225,23 +384,461 @@
     height: 100%;
     object-fit: cover;
 }
-
 .mz-lib-initial {
     position: absolute;
     inset: 0;
     display: grid;
     place-items: center;
     font-family: var(--mz-font-prose);
-    font-size: calc(22px * var(--mz-ui-scale));
+    font-size: calc(30px * var(--mz-ui-scale));
     letter-spacing: .06em;
     color: hsl(var(--h, 210) 32% 72%);
 }
-
 .mz-lib-face:not(.is-empty) .mz-lib-initial { display: none; }
 
-/* ---------- one character's page ---------- */
+/* ==========================================================================
+   One character's page: a stage on the left, the expression board on the right
+   ========================================================================== */
 
 .mz-lib-detail {
+    display: grid;
+    grid-template-columns: 300px minmax(0, 1fr);
+    height: 100%;
+}
+
+/* ---- left: the stage ---- */
+
+.mz-lib-stage {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 18px 20px 18px 20px;
+    border-right: 1px solid var(--mz-line);
+    background: linear-gradient(hsl(var(--h, 210) 20% 12% / .55), transparent 60%);
+    overflow: auto;
+}
+
+.mz-lib-preview {
+    position: relative;
+    aspect-ratio: 3 / 4;
+    flex: none;
+    border: 1px solid var(--mz-line-strong);
+    border-radius: var(--mz-r-lg);
+    overflow: hidden;
+    background:
+        radial-gradient(120% 70% at 50% 0%, hsl(var(--h, 210) 30% 34% / .55), transparent 65%),
+        linear-gradient(hsl(var(--h, 210) 18% 19%), hsl(var(--h, 210) 22% 9%));
+}
+.mz-lib-preview img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: 50% 100%;
+}
+.mz-lib-preview .mz-lib-initial { font-size: 54px; }
+.mz-lib-preview.is-empty img { display: none; }
+.mz-lib-preview:not(.is-empty) .mz-lib-initial { display: none; }
+
+.mz-lib-preview-tag {
+    position: absolute;
+    left: 10px;
+    top: 10px;
+    padding: 3px 10px;
+    border-radius: var(--mz-r-pill);
+    background: color-mix(in srgb, var(--mz-scrim-ink) 66%, transparent);
+    font-size: var(--mz-text-2xs);
+    font-weight: 500;
+    letter-spacing: .04em;
+    color: rgba(255, 255, 255, .92);
+}
+.mz-lib-preview-tag.is-label { text-transform: capitalize; }
+
+.mz-lib-who { display: grid; gap: 7px; }
+.mz-lib-title {
+    margin: 0;
+    font-family: var(--mz-font-prose);
+    font-size: var(--mz-text-2xl);
+    font-weight: 600;
+    line-height: 1.1;
+}
+.mz-lib-who-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    font-size: var(--mz-text-xs);
+    color: var(--mz-text-dim);
+}
+.mz-lib-who-meta .is-live { color: var(--mz-accent); }
+.mz-lib-who-meta .is-live::before {
+    content: "";
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    margin-right: 6px;
+    border-radius: 50%;
+    background: var(--mz-accent);
+    vertical-align: 1px;
+}
+
+.mz-lib-stage-tools { display: flex; flex-wrap: wrap; gap: 8px; }
+.mz-lib-stage-tools .mz-btn-ghost { display: inline-flex; align-items: center; gap: 7px; }
+.mz-lib-stage-tools .ico { width: 13px; height: 13px; }
+.mz-lib-stage-note { margin: 0; font-size: var(--mz-text-xs); line-height: 1.5; color: var(--mz-text-dim); }
+
+/* ---- right: the expression board ---- */
+
+.mz-lib-board {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+}
+
+.mz-lib-boardhead {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 20px 12px;
+    border-bottom: 1px solid var(--mz-line);
+}
+
+.mz-lib-ring { position: relative; flex: none; width: 46px; height: 46px; }
+.mz-lib-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.mz-lib-ring circle { fill: none; stroke-width: 3.2; }
+.mz-lib-ring .t { stroke: var(--mz-line-strong); }
+.mz-lib-ring .f { stroke: var(--mz-accent); stroke-linecap: round; }
+.mz-lib-ring b {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    font-size: var(--mz-text-sm);
+    font-weight: 600;
+}
+
+.mz-lib-cover { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.mz-lib-cover h3 { margin: 0; font-size: var(--mz-text-md); font-weight: 600; }
+.mz-lib-cover p { margin: 0; font-size: var(--mz-text-xs); color: var(--mz-text-dim); }
+.mz-lib-cover p em { font-style: normal; color: var(--mz-text-muted); }
+
+.mz-lib-boardtools { display: flex; align-items: center; gap: 8px; flex: none; }
+.mz-lib-boardtools .mz-btn-ghost { display: inline-flex; align-items: center; gap: 7px; }
+.mz-lib-boardtools .ico { width: 13px; height: 13px; }
+
+.mz-lib-bar2 {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+}
+.mz-lib-seg {
+    display: inline-flex;
+    padding: 2px;
+    border: 1px solid var(--mz-line);
+    border-radius: var(--mz-r-pill);
+}
+.mz-lib-seg button {
+    padding: 3px 11px;
+    border: 0;
+    border-radius: var(--mz-r-pill);
+    background: none;
+    color: var(--mz-text-dim);
+    font: inherit;
+    font-size: var(--mz-text-xs);
+    cursor: pointer;
+}
+.mz-lib-seg button:hover { color: var(--mz-text); }
+.mz-lib-seg button.is-on { background: var(--mz-accent-wash); color: var(--mz-accent); }
+.mz-lib-bar2 .mz-lib-spacer { flex: 1; }
+.mz-lib-hint { font-size: var(--mz-text-xs); color: var(--mz-text-dim); }
+
+.mz-lib-boardscroll {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 2px 20px 22px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--mz-line-strong) transparent;
+}
+
+/* a family of expressions: Core, Warm, Tense, Mind, Custom */
+.mz-lib-fam { padding-top: 12px; }
+.mz-lib-fam-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 9px;
+}
+.mz-lib-fam-head h5 {
+    margin: 0;
+    font-size: var(--mz-text-2xs);
+    font-weight: 600;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--mz-text-dim);
+}
+.mz-lib-fam-head span { font-size: var(--mz-text-xs); color: var(--mz-text-dim); }
+.mz-lib-fam-head .is-full { color: var(--mz-ok); }
+.mz-lib-fam-head p { flex: 1; margin: 0; font-size: var(--mz-text-2xs); color: var(--mz-text-dim); text-align: right; }
+
+.mz-lib-slots {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+    gap: 9px;
+}
+
+/* one slot - filled: the face; missing: a dashed outline that waits */
+.mz-lib-slot {
+    position: relative;
+    aspect-ratio: 4 / 5;
+    padding: 0;
+    border: 1px solid var(--mz-line);
+    border-radius: var(--mz-r-sm);
+    background: none;
+    color: inherit;
+    font: inherit;
+    overflow: hidden;
+    cursor: pointer;
+    transition: border-color var(--mz-dur-fast), background var(--mz-dur-fast), transform var(--mz-dur-fast);
+}
+.mz-lib-slot.is-filled {
+    background:
+        radial-gradient(120% 70% at 50% 0%, hsl(var(--h, 210) 30% 34% / .5), transparent 65%),
+        linear-gradient(hsl(var(--h, 210) 18% 19%), hsl(var(--h, 210) 22% 9%));
+}
+.mz-lib-slot.is-filled:hover { border-color: var(--mz-accent-line); }
+.mz-lib-slot.is-sel { border-color: var(--mz-accent); box-shadow: 0 0 0 1px var(--mz-accent); }
+
+.mz-lib-slot img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: 50% 0;
+    transform: scale(var(--zoom, 1.85));
+    transform-origin: 50% 13%;
+}
+.mz-lib-board[data-fit="full"] .mz-lib-slot img {
+    object-fit: contain;
+    object-position: 50% 100%;
+    transform: none;
+}
+
+.mz-lib-slot-label {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 14px 6px 5px;
+    background: linear-gradient(transparent, color-mix(in srgb, var(--mz-scrim-ink) 80%, transparent));
+    overflow: hidden;
+    font-size: var(--mz-text-2xs);
+    font-weight: 500;
+    color: rgba(255, 255, 255, .92);
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mz-lib-slot.is-missing {
+    border-style: dashed;
+    border-color: var(--mz-line-strong);
+    background: var(--mz-surface-2);
+    display: grid;
+    place-items: center;
+}
+.mz-lib-slot.is-missing .mz-lib-ghost {
+    width: 34%;
+    color: var(--mz-text-dim);
+    opacity: .38;
+    transition: opacity var(--mz-dur-fast), color var(--mz-dur-fast);
+}
+.mz-lib-slot.is-missing .mz-lib-slot-label {
+    background: none;
+    color: var(--mz-text-dim);
+}
+.mz-lib-slot.is-missing:hover,
+.mz-lib-slot.is-missing:focus-visible {
+    border-color: var(--mz-accent-line);
+    background: var(--mz-accent-wash);
+}
+.mz-lib-slot.is-missing:hover .mz-lib-ghost { color: var(--mz-accent); opacity: .9; }
+.mz-lib-slot.is-missing:hover .mz-lib-slot-label { color: var(--mz-accent); }
+
+/* a core label still empty is the one worth noticing */
+.mz-lib-slot.is-missing.is-core { border-color: var(--mz-accent-line); }
+.mz-lib-slot.is-missing.is-core::after {
+    content: "";
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--mz-accent);
+    opacity: .75;
+}
+
+/* two or more files wear this label */
+.mz-lib-stack {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    padding: 1px 6px;
+    border-radius: var(--mz-r-pill);
+    background: color-mix(in srgb, var(--mz-scrim-ink) 70%, transparent);
+    font-size: var(--mz-text-2xs);
+    font-weight: 600;
+    color: rgba(255, 255, 255, .9);
+}
+
+/* a file dropped on one slot */
+.mz-lib-slot.is-over {
+    border-style: solid;
+    border-color: var(--mz-accent);
+    background: var(--mz-accent-soft);
+}
+
+/* ---- files the filenames could not place ---- */
+
+.mz-lib-tray {
+    margin: 12px 20px 0;
+    padding: 12px 14px;
+    border: 1px solid color-mix(in srgb, var(--mz-warn) 40%, transparent);
+    border-radius: var(--mz-r);
+    background: color-mix(in srgb, var(--mz-warn) 7%, transparent);
+}
+.mz-lib-tray-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+.mz-lib-tray-head b { font-size: var(--mz-text-sm); font-weight: 600; }
+.mz-lib-tray-head span { flex: 1; font-size: var(--mz-text-xs); color: var(--mz-text-muted); }
+.mz-lib-tray-row { display: flex; flex-wrap: wrap; gap: 12px; }
+.mz-lib-tray-item { display: flex; align-items: center; gap: 10px; }
+.mz-lib-tray-item .thumb {
+    flex: none;
+    width: 40px;
+    aspect-ratio: 4 / 5;
+    border-radius: var(--mz-r-xs);
+    overflow: hidden;
+    border: 1px solid var(--mz-line-strong);
+    background: hsl(var(--h, 210) 18% 16%);
+}
+.mz-lib-tray-item .thumb img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 0; transform: scale(1.8); transform-origin: 50% 13%; }
+.mz-lib-tray-item small { display: block; max-width: 110px; overflow: hidden; margin-bottom: 4px; font-size: var(--mz-text-2xs); color: var(--mz-text-muted); text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- nothing uploaded yet: the board leads with one big drop panel ---- */
+
+.mz-lib-drop {
+    display: grid;
+    justify-items: center;
+    gap: 6px;
+    margin: 14px 20px 0;
+    padding: 22px 18px;
+    border: 1.5px dashed var(--mz-line-strong);
+    border-radius: var(--mz-r-lg);
+    background: var(--mz-surface-2);
+    text-align: center;
+}
+.mz-lib-drop .ico { width: 24px; height: 24px; color: var(--mz-accent); }
+.mz-lib-drop b { font-size: var(--mz-text-md); font-weight: 600; }
+.mz-lib-drop p { max-width: 46ch; margin: 0; font-size: var(--mz-text-xs); line-height: 1.55; color: var(--mz-text-muted); }
+.mz-lib-drop code {
+    padding: 1px 5px;
+    border-radius: var(--mz-r-xs);
+    background: var(--mz-surface-2);
+    border: 1px solid var(--mz-line);
+    font-family: var(--mz-font-mono);
+    font-size: .92em;
+    color: var(--mz-text);
+}
+.mz-lib-drop .mz-lib-drop-tools { display: flex; gap: 8px; margin-top: 8px; }
+
+/* ---- the header's quiet overflow: removal lives here, not in the page's foot ---- */
+
+.mz-lib-menu {
+    position: absolute;
+    z-index: 6;
+    top: 46px;
+    right: 12px;
+    min-width: 200px;
+    padding: 5px;
+    border: 1px solid var(--mz-line-strong);
+    border-radius: var(--mz-r);
+    background: var(--mz-surface-solid);
+    box-shadow: var(--mz-shadow-sm);
+}
+.mz-lib-menu button {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    padding: 7px 10px;
+    border: 0;
+    border-radius: var(--mz-r-sm);
+    background: none;
+    color: var(--mz-text);
+    font: inherit;
+    font-size: var(--mz-text-sm);
+    text-align: left;
+    cursor: pointer;
+}
+.mz-lib-menu button:hover { background: var(--mz-surface-2); }
+.mz-lib-menu button.is-danger { color: var(--mz-bad); }
+.mz-lib-menu .ico { width: 14px; height: 14px; }
+
+/* ---- the new-character sheet ---- */
+
+.mz-lib-scrim {
+    position: absolute;
+    z-index: 7;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: color-mix(in srgb, var(--mz-scrim-ink) 62%, transparent);
+}
+.mz-lib-sheet {
+    display: grid;
+    grid-template-columns: 130px minmax(0, 1fr);
+    gap: 18px;
+    width: min(500px, 92%);
+    padding: 20px;
+    border: 1px solid var(--mz-line-strong);
+    border-radius: var(--mz-r-lg);
+    background: var(--mz-surface-solid);
+    box-shadow: var(--mz-shadow);
+}
+.mz-lib-sheet .mz-lib-face { border: 1.5px dashed var(--mz-line-strong); cursor: pointer; }
+.mz-lib-sheet-photo { padding: 0; border: 0; background: none; cursor: pointer; }
+.mz-lib-sheet h3 { margin: 0 0 4px; font-size: var(--mz-text-lg); font-weight: 600; }
+.mz-lib-sheet p { margin: 0 0 12px; font-size: var(--mz-text-xs); line-height: 1.5; color: var(--mz-text-muted); }
+.mz-lib-sheet label { display: grid; gap: 5px; font-size: var(--mz-text-xs); color: var(--mz-text-dim); }
+.mz-lib-sheet input { width: 100%; max-width: none; height: 34px; font-size: var(--mz-text-md); box-sizing: border-box; }
+.mz-lib-sheet-act { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.mz-lib-primary {
+    height: 28px;
+    padding: 0 14px;
+    border: 1px solid var(--mz-accent);
+    border-radius: var(--mz-r-sm);
+    background: var(--mz-accent);
+    color: var(--mz-accent-ink);
+    font: inherit;
+    font-size: var(--mz-text-sm);
+    font-weight: 600;
+    cursor: pointer;
+}
+
+/* ==========================================================================
+   One character's page - the PREVIOUS design (hero + sprite gallery +
+   staged removal foot). Kept until the stage/board replaces it; the mock's
+   rules above are for the new markup and stay quiet meanwhile.
+   ========================================================================== */
+
+.mz-lib-detail.is-old {
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -280,7 +877,7 @@
     padding-bottom: 2px;
 }
 
-.mz-lib-title {
+.mz-lib-detail.is-old .mz-lib-title {
     margin: 0;
     font-family: var(--mz-font-prose);
     font-size: var(--mz-text-xl);
@@ -437,11 +1034,45 @@
         inset: auto 0 0 0;
         margin: 0;
         width: 100%;
-        height: 82vh;
+        height: 88vh;
         border-radius: var(--mz-r-xl) var(--mz-r-xl) 0 0;
     }
 
-    .mz-lib-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
-    .mz-lib-hero { flex-direction: column; align-items: flex-start; }
     .mz-lib-search { width: 120px; }
+    .mz-lib-toolbar, .mz-lib-shelf { padding-left: 14px; padding-right: 14px; }
+    .mz-lib-grid { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 10px; }
+
+    /* the stage folds into a header band: small portrait, name, tools */
+    .mz-libwin-body.is-detail { overflow: auto; }
+    .mz-lib-detail { display: block; height: auto; }
+    .mz-lib-stage {
+        display: grid;
+        grid-template-columns: 96px minmax(0, 1fr);
+        align-items: end;
+        gap: 12px;
+        padding: 14px;
+        border-right: 0;
+        border-bottom: 1px solid var(--mz-line);
+        overflow: visible;
+    }
+    .mz-lib-preview { grid-row: span 2; border-radius: var(--mz-r); }
+    .mz-lib-preview .mz-lib-initial { font-size: 26px; }
+    .mz-lib-preview-tag { left: 5px; top: 5px; font-size: 8.5px; padding: 2px 7px; }
+    .mz-lib-title { font-size: var(--mz-text-xl); }
+    .mz-lib-stage-note { display: none; }
+    .mz-lib-stage-tools { grid-column: 2; }
+
+    .mz-lib-boardhead { flex-wrap: wrap; padding: 12px 14px; gap: 10px 12px; }
+    .mz-lib-boardtools { width: 100%; }
+    .mz-lib-bar2 { padding: 8px 14px; flex-wrap: wrap; }
+    .mz-lib-hint { display: none; }
+    .mz-lib-boardscroll { overflow: visible; padding: 2px 14px 22px; }
+    .mz-lib-slots { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; }
+    .mz-lib-fam-head p { display: none; }
+    .mz-lib-tray, .mz-lib-drop { margin-left: 14px; margin-right: 14px; }
+    .mz-lib-sheet { grid-template-columns: 1fr; }
+    .mz-lib-sheet .mz-lib-face { width: 96px; }
+
+    /* the previous page's hero folds too */
+    .mz-lib-hero { flex-direction: column; align-items: flex-start; }
 }

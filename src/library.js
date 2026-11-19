@@ -20,7 +20,7 @@ import { icon } from './icons.js';
 import { castKey, chatMessages, imageSource, personaName, spriteDelete, spriteList, spriteUpload, spriteUploadZip, uploadImage } from './st.js';
 import { libraryEntries, libraryEntry, removeLibraryEntry, setLibraryEntry } from './settings.js';
 import { notify } from './notify.js';
-import { hueOf, initials, seenNames } from './scene.js';
+import { hueOf, initials, seenNameCounts } from './scene.js';
 import { imageFileName, prepareImage } from './imageprep.js';
 
 /* ---------- the pure core ---------- */
@@ -341,10 +341,11 @@ const WIN_HTML = `
         <button class="mz-ibtn mz-libwin-close" type="button" data-mz-lib-close title="Close" aria-label="Close"></button>
     </header>
     <div class="mz-libwin-body">
-        <div class="mz-lib-filters" role="group" aria-label="Filter characters" data-mz-lib-filters>
+        <div class="mz-lib-toolbar" role="group" aria-label="Filter characters" data-mz-lib-filters>
             <button type="button" class="mz-lib-chip" data-mz-lib-filter="all">All</button>
             <button type="button" class="mz-lib-chip" data-mz-lib-filter="chat">This chat</button>
             <button type="button" class="mz-lib-chip" data-mz-lib-filter="scene">In scene</button>
+            <button type="button" class="mz-lib-chip" data-mz-lib-filter="incomplete">Needs sprites</button>
         </div>
         <div class="mz-lib-grid" data-mz-lib-grid></div>
         <div class="mz-lib-detail" data-mz-lib-detail hidden></div>
@@ -360,6 +361,10 @@ let view = { kind: 'grid' };
 // The grid's search and filter, reset whenever the window opens.
 let query = '';
 let filter = 'all';
+// The new-character sheet's draft while it is open, or null.
+let newDraft = null;
+// Who the portrait picker is filling: 'sheet' or a record's name.
+let portraitTarget = '';
 // The scene's present names, handed in by the scene that mounts us.
 let presentNames = () => [];
 // The detail's sprite rows and the staged removal, reset per character.
@@ -369,6 +374,8 @@ let removeStage = 'idle';
 let busy = false;
 // Row-delete arming: spriteName → timer, so a stray click never eats art.
 const armTimers = new Map();
+// Coverage fetches the grid kicked, so a card asks only once.
+const coveragePending = new Set();
 
 /**
  * Builds the library window where the scene keeps it: one child of the
@@ -404,6 +411,17 @@ export function mountLibrary({ frame, presentNames: getPresent = null } = {}) {
     win.querySelector('.mz-libwin-close').append(icon('mz-i-close'));
 
     win.addEventListener('click', onClick);
+
+    // Escape closes the sheet first - the scene's own Esc chain gets the
+    // event only when nothing inside the window wants it.
+    win.addEventListener('keydown', event => {
+        if (event.key !== 'Escape') return;
+        if (newDraft) {
+            event.stopPropagation();
+            newDraft = null;
+            renderSheet();
+        }
+    });
 
     // Typing in the search leaves a character's page for the grid it
     // filters - searching from anywhere lands somewhere honest.
@@ -447,6 +465,8 @@ export function openLibrary(name = null) {
     query = '';
     filter = 'all';
     if (els?.search) els.search.value = '';
+    newDraft = null;
+    renderSheet();
     resetDetail();
 
     lastFocus = document.activeElement;
@@ -505,6 +525,7 @@ function renderWin() {
     const showingDetail = view.kind === 'detail';
     els.grid.hidden = showingDetail;
     els.detail.hidden = !showingDetail;
+    els.detail.classList.toggle('is-old', showingDetail);
     els.filters.hidden = showingDetail;
 
     for (const chip of win.querySelectorAll('[data-mz-lib-filter]')) {
@@ -518,49 +539,318 @@ function renderWin() {
 }
 
 function renderGrid() {
-    const chatKeys = foldSet(seenNames(chatMessages(), personaName()));
+    const entries = libraryEntries();
     const sceneKeys = foldSet(presentNames());
-    const rows = visibleLibrary(libraryEntries(), { query, filter, chatKeys, sceneKeys });
+    const counts = seenNameCounts(chatMessages(), personaName());
+    const chatKeys = foldSet(counts.map(row => row.name));
 
-    const fragment = document.createDocumentFragment();
-    if (!rows.length) {
-        const empty = document.createElement('p');
-        empty.className = 'mz-lib-empty';
-        empty.textContent = query || filter !== 'all'
-            ? 'No saved characters match.'
-            : 'No characters yet \u2014 save one from a poster on the cast strip.';
-        fragment.append(empty);
+    // Coverage the cache knows now; the rest arrives and patches its card.
+    const needsKeys = new Set();
+    for (const [key, record] of Object.entries(entries)) {
+        const rows = peekSprites(record.name);
+        if (rows === null) {
+            ensureCoverage(record.name);
+            needsKeys.add(key);
+            continue;
+        }
+        if (spriteCoverage(rows).count < SUGGESTED_LABELS.length) needsKeys.add(key);
     }
 
+    const rows = visibleLibrary(entries, { query, filter, chatKeys, sceneKeys, needsKeys });
+    const inScene = [];
+    const rest = [];
     for (const record of rows) {
-        fragment.append(tile(record, sceneKeys.has(castKey(record.name))));
+        (sceneKeys.has(castKey(record.name)) ? inScene : rest).push(record);
+    }
+
+    const needle = query.trim();
+    const plain = !needle && filter === 'all';
+    const showSeen = (filter === 'all' || filter === 'chat') && !needle
+        ? counts.filter(row => !libraryEntry(row.name))
+        : [];
+
+    const fragment = document.createDocumentFragment();
+
+    if (inScene.length) {
+        fragment.append(shelf('In the scene', String(inScene.length), cardGrid(inScene, sceneKeys)));
+    }
+
+    if (rest.length || plain) {
+        const grid = cardGrid(rest, sceneKeys);
+        if (plain) grid.append(newCard());
+        fragment.append(shelf('Library', String(rest.length), grid));
+    }
+
+    if (showSeen.length) {
+        const seen = document.createElement('div');
+        seen.className = 'mz-lib-seen';
+        for (const row of showSeen) seen.append(seenRow(row));
+        fragment.append(shelf('Seen in this chat \u00b7 not saved', String(showSeen.length), seen));
+    }
+
+    if (!inScene.length && !rest.length && !showSeen.length) {
+        const empty = document.createElement('p');
+        empty.className = 'mz-lib-empty';
+        empty.textContent = filter === 'incomplete'
+            ? 'No one is missing sprites.'
+            : needle || filter !== 'all'
+                ? 'No saved characters match.'
+                : 'No characters yet \u2014 save one from a poster, or make one here.';
+        fragment.append(empty);
     }
 
     els.grid.replaceChildren(fragment);
 }
 
-function tile(record, inScene) {
+function shelf(title, count, content) {
+    const section = document.createElement('section');
+    section.className = 'mz-lib-shelf';
+
+    const head = document.createElement('div');
+    head.className = 'mz-lib-shelf-head';
+
+    const heading = document.createElement('h4');
+    heading.textContent = title;
+
+    const number = document.createElement('span');
+    number.textContent = count;
+
+    head.append(heading, number);
+    section.append(head, content);
+    return section;
+}
+
+function cardGrid(records, sceneKeys) {
+    const grid = document.createElement('div');
+    grid.className = 'mz-lib-grid';
+    for (const record of records) {
+        grid.append(card(record, sceneKeys.has(castKey(record.name))));
+    }
+    return grid;
+}
+
+/** One card: the portrait fills it, the name and coverage ride the scrim. */
+function card(record, inScene) {
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'mz-lib-tile' + (inScene ? ' is-scene' : '');
+    button.className = 'mz-lib-card';
     button.dataset.mzLibName = record.name;
     button.style.setProperty('--h', `${hueOf(record.name)}deg`);
-
     button.append(face(record));
 
     if (inScene) {
-        const dot = document.createElement('span');
-        dot.className = 'mz-lib-dot';
-        dot.title = 'In the scene now';
-        dot.setAttribute('aria-hidden', 'true');
-        button.append(dot);
+        const live = document.createElement('span');
+        live.className = 'mz-lib-live';
+        live.textContent = 'In scene';
+        button.append(live);
     }
 
+    const info = document.createElement('span');
+    info.className = 'mz-lib-card-info';
+
     const name = document.createElement('span');
-    name.className = 'mz-lib-name';
+    name.className = 'mz-lib-card-name';
     name.textContent = record.name;
-    button.append(name);
+
+    info.append(name, cardMeta(record.name));
+    button.append(info);
     return button;
+}
+
+/** The coverage line a card wears: "9/28" and its bar, or "No sprites yet". */
+function cardMeta(name) {
+    const meta = document.createElement('span');
+    meta.className = 'mz-lib-card-meta';
+    meta.dataset.mzLibMeta = name;
+    paintMeta(meta, peekSprites(name));
+    return meta;
+}
+
+function paintMeta(meta, rows) {
+    meta.replaceChildren();
+    if (rows === null) {
+        meta.textContent = '\u2026';
+        return;
+    }
+
+    const coverage = spriteCoverage(rows);
+    if (!coverage.files) {
+        meta.classList.add('is-none');
+        meta.textContent = 'No sprites yet';
+        return;
+    }
+
+    meta.classList.remove('is-none');
+    const count = document.createElement('span');
+    count.textContent = `${coverage.count}/28`;
+
+    const bar = document.createElement('span');
+    bar.className = 'mz-lib-bar-mini';
+    bar.style.setProperty('--fill', `${(coverage.count / SUGGESTED_LABELS.length) * 100}%`);
+    bar.append(document.createElement('i'));
+
+    meta.append(count, bar);
+}
+
+/** The sprite rows the cache already holds, or null when unheard-of. */
+function peekSprites(name) {
+    const cached = spriteCache.get(String(name ?? '').trim());
+    return cached ? cached.rows : null;
+}
+
+/**
+ * The grid's quiet bookkeeping: a card asks for its coverage once, and
+ * the number lands on the card when the listing answers. The "Needs
+ * sprites" filter re-renders whole - a card can leave it.
+ */
+function ensureCoverage(name) {
+    const key = String(name ?? '').trim();
+    if (!key || coveragePending.has(key)) return;
+    coveragePending.add(key);
+
+    fetchSprites(key).then(() => {
+        coveragePending.delete(key);
+        if (!win || win.hidden || view.kind !== 'grid') return;
+
+        if (filter === 'incomplete') {
+            renderGrid();
+            return;
+        }
+        for (const meta of win.querySelectorAll('[data-mz-lib-meta]')) {
+            if (meta.dataset.mzLibMeta === key) paintMeta(meta, peekSprites(key));
+        }
+    });
+}
+
+/** One "seen in this chat" row: the name, its turns, one-tap Save. */
+function seenRow(entry) {
+    const row = document.createElement('div');
+    row.className = 'mz-lib-seen-row';
+    row.style.setProperty('--h', `${hueOf(entry.name)}deg`);
+    row.append(face({ name: entry.name, portrait: '' }));
+
+    const who = document.createElement('b');
+    who.textContent = entry.name;
+    const turns = document.createElement('small');
+    turns.textContent = `named in ${entry.count} turn${entry.count === 1 ? '' : 's'}`;
+    who.append(turns);
+
+    const save = document.createElement('button');
+    save.type = 'button';
+    save.className = 'mz-btn-ghost';
+    save.dataset.mzLibSeenSave = entry.name;
+    save.textContent = 'Save';
+
+    row.append(who, save);
+    return row;
+}
+
+/** The "new character" card - the way in that is not a poster. */
+function newCard() {
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'mz-lib-new';
+    add.dataset.mzLibNew = '';
+    add.append(icon('mz-i-plus'));
+
+    const label = document.createElement('span');
+    label.textContent = 'New character';
+    add.append(label);
+    return add;
+}
+
+/**
+ * The new-character sheet: a name, an optional photo, Create. The face
+ * plate IS the photo door.
+ */
+function renderSheet() {
+    win?.querySelector('.mz-lib-scrim')?.remove();
+    if (!win || !newDraft) return;
+
+    const scrim = document.createElement('div');
+    scrim.className = 'mz-lib-scrim';
+
+    const sheet = document.createElement('div');
+    sheet.className = 'mz-lib-sheet';
+
+    const photo = document.createElement('button');
+    photo.type = 'button';
+    photo.className = 'mz-lib-sheet-photo';
+    photo.dataset.mzLibSheet = 'photo';
+    photo.title = 'Add a photo';
+    const plate = face({ name: newDraft.name || '', portrait: newDraft.portrait });
+    if (!newDraft.portrait) {
+        plate.classList.add('is-empty');
+        plate.querySelector('.mz-lib-initial').textContent = '+ photo';
+    }
+    photo.append(plate);
+
+    const body = document.createElement('div');
+
+    const title = document.createElement('h3');
+    title.textContent = 'New character';
+
+    const note = document.createElement('p');
+    note.textContent = 'Saved by name. Whenever a scene tag says this name, the library knows them.';
+
+    const label = document.createElement('label');
+    label.textContent = 'Name';
+    const input = document.createElement('input');
+    input.className = 'mz-select';
+    input.dataset.mzLibSheetName = '';
+    input.value = newDraft.name;
+    input.setAttribute('aria-label', 'Character name');
+    input.spellcheck = false;
+    input.addEventListener('input', () => { newDraft.name = input.value; });
+    label.append(input);
+
+    const actions = document.createElement('div');
+    actions.className = 'mz-lib-sheet-act';
+
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'mz-btn-ghost';
+    cancel.dataset.mzLibSheet = 'cancel';
+    cancel.textContent = 'Cancel';
+
+    const create = document.createElement('button');
+    create.type = 'button';
+    create.className = 'mz-lib-primary';
+    create.dataset.mzLibSheet = 'create';
+    create.textContent = 'Create';
+
+    actions.append(cancel, create);
+    body.append(title, note, label, actions);
+    sheet.append(photo, body);
+    scrim.append(sheet);
+    win.append(scrim);
+
+    // The scrim behind the sheet is the Cancel door too.
+    scrim.addEventListener('click', event => {
+        if (event.target !== scrim) return;
+        newDraft = null;
+        renderSheet();
+    });
+
+    input.focus();
+}
+
+function createPressed() {
+    const name = String(newDraft?.name ?? '').trim();
+    if (!name) {
+        notify('A character needs a name.', 'warning');
+        return;
+    }
+
+    const record = ensureInLibrary(name, newDraft.portrait);
+    newDraft = null;
+    renderSheet();
+    if (!record) return;
+
+    notify(`${record.name} saved to the library.`, 'success');
+    view = { kind: 'detail', name: record.name };
+    resetDetail();
+    renderWin();
 }
 
 /** The portrait plate shared by tiles and the detail hero. */
@@ -842,12 +1132,41 @@ function onClick(event) {
     const chip = event.target.closest('[data-mz-lib-filter]');
     if (chip) {
         const next = chip.dataset.mzLibFilter;
-        filter = next === 'chat' || next === 'scene' ? next : 'all';
+        filter = next === 'chat' || next === 'scene' || next === 'incomplete' ? next : 'all';
         if (view.kind === 'detail') {
             view = { kind: 'grid' };
             resetDetail();
         }
         renderWin();
+        return;
+    }
+
+    const sheet = event.target.closest('[data-mz-lib-sheet]');
+    if (sheet) {
+        const step = sheet.dataset.mzLibSheet;
+        if (step === 'cancel') {
+            newDraft = null;
+            renderSheet();
+        } else if (step === 'photo') {
+            portraitTarget = 'sheet';
+            openPicker('portrait');
+        } else if (step === 'create') {
+            createPressed();
+        }
+        return;
+    }
+
+    const seen = event.target.closest('[data-mz-lib-seen-save]');
+    if (seen) {
+        const record = ensureInLibrary(seen.dataset.mzLibSeenSave);
+        if (record) notify(`${record.name} saved to the library.`, 'success');
+        renderWin();
+        return;
+    }
+
+    if (event.target.closest('[data-mz-lib-new]')) {
+        newDraft = { name: '', portrait: '' };
+        renderSheet();
         return;
     }
 
@@ -864,8 +1183,10 @@ function onClick(event) {
 
     const portrait = event.target.closest('[data-mz-lib-portrait]');
     if (portrait) {
-        if (portrait.dataset.mzLibPortrait === 'change') openPicker('portrait');
-        else if (view.kind === 'detail') {
+        if (portrait.dataset.mzLibPortrait === 'change') {
+            portraitTarget = '';
+            openPicker('portrait');
+        } else if (view.kind === 'detail') {
             setPortrait(view.name, '');
             notify(`Portrait removed for ${view.name} in the library.`, 'info');
             renderWin();
@@ -920,10 +1241,11 @@ function addSpritePressed() {
 async function onFileChosen(kind, input) {
     const file = input?.files?.[0] || null;
     input.value = '';
-    if (!file || view.kind !== 'detail' || busy) return;
+    if (!file || busy) return;
 
-    const record = libraryEntry(view.name);
-    if (!record) return;
+    const forSheet = kind === 'portrait' && portraitTarget === 'sheet';
+    const record = forSheet ? null : (view.kind === 'detail' ? libraryEntry(view.name) : null);
+    if (!forSheet && !record) return;
 
     busy = true;
 
@@ -933,12 +1255,18 @@ async function onFileChosen(kind, input) {
             const path = await uploadImage({
                 image: prepared.image,
                 format: prepared.format,
-                filename: imageFileName(record.name, prepared.format),
+                filename: imageFileName(forSheet ? (newDraft?.name || 'character') : record.name, prepared.format),
             });
             if (!path) throw new Error('no path returned');
-            setPortrait(record.name, path);
-            notify(`Portrait saved for ${record.name}.`, 'success');
-            renderWin();
+
+            if (forSheet) {
+                newDraft.portrait = path;
+                renderSheet();
+            } else {
+                setPortrait(record.name, path);
+                notify(`Portrait saved for ${record.name}.`, 'success');
+                renderWin();
+            }
         } else if (kind === 'sprite') {
             const label = cleanSpriteLabel(win.dataset.mzLibPendingLabel || '');
             delete win.dataset.mzLibPendingLabel;
