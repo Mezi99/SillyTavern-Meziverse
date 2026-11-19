@@ -18,7 +18,7 @@
 
 import { icon } from './icons.js';
 import { castKey, chatMessages, imageSource, personaName, spriteDelete, spriteList, spriteUpload, spriteUploadZip, uploadImage } from './st.js';
-import { libraryEntries, libraryEntry, removeLibraryEntry, setLibraryEntry } from './settings.js';
+import { libraryEntries, libraryEntry, removeLibraryEntry, saveSettings, setLibraryEntry, settings } from './settings.js';
 import { notify } from './notify.js';
 import { hueOf, initials, seenNameCounts } from './scene.js';
 import { imageFileName, prepareImage } from './imageprep.js';
@@ -336,6 +336,15 @@ function invalidateSprites(name) {
 
 /* ---------- the window ---------- */
 
+// How close the window may sit to the frame's edges, how small it may
+// shrink, and the width below which it is the bottom sheet and keeps its
+// own place - the map window's numbers, its own limits.
+const WIN_EDGE = 10;
+const WIN_MIN_W = 560;
+const WIN_MIN_H = 420;
+const WIN_NARROW = 760;
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
 const WIN_HTML = `
     <header class="mz-libwin-head">
         <span class="mz-libwin-mark" aria-hidden="true"></span>
@@ -351,7 +360,8 @@ const WIN_HTML = `
         </div>
         <div class="mz-lib-shelves" data-mz-lib-grid></div>
         <div class="mz-lib-detail" data-mz-lib-detail hidden></div>
-    </div>`;
+    </div>
+    <div class="mz-libwin-grip" data-mz-libwin-grip aria-hidden="true"></div>`;
 
 let frameEl = null;
 let win = null;
@@ -382,6 +392,9 @@ let detailLoading = false;
 let removeStage = 'idle';
 // Files the names could not place: {id, file, name, url} each.
 let trayItems = [];
+// The window's own move and resize gestures, the map window's way.
+let winDrag = null;
+let winSizing = false;
 // One upload in flight at a time, per window.
 let busy = false;
 // Row-delete arming: spriteName → timer, so a stray click never eats art.
@@ -412,6 +425,8 @@ export function mountLibrary({ frame, presentNames: getPresent = null } = {}) {
     frame.append(win);
 
     els = {
+        winHead: win.querySelector('.mz-libwin-head'),
+        winGrip: win.querySelector('[data-mz-libwin-grip]'),
         head: win.querySelector('[data-mz-lib-head]'),
         body: win.querySelector('.mz-libwin-body'),
         filters: win.querySelector('[data-mz-lib-filters]'),
@@ -425,6 +440,7 @@ export function mountLibrary({ frame, presentNames: getPresent = null } = {}) {
     win.querySelector('.mz-libwin-close').append(icon('mz-i-close'));
 
     win.addEventListener('click', onClick);
+    wireWinDrag();
 
     // Typing in the search leaves a character's page for the grid it
     // filters - searching from anywhere lands somewhere honest.
@@ -493,6 +509,18 @@ export function mountLibrary({ frame, presentNames: getPresent = null } = {}) {
         }
         slot.classList.add('is-over');
     });
+
+    // A press outside the window closes it - the library is a panel, not a
+    // page. The pill that opens it toggles instead of piling on.
+    document.addEventListener('pointerdown', event => {
+        if (!win || win.hidden) return;
+        if (win.contains(event.target)) return;
+        if (event.target.closest?.('[data-mz-action="library-open"]')) return;
+        closeLibrary();
+    }, true);
+
+    // A resized window keeps the remembered box inside the frame.
+    window.addEventListener('resize', () => applyWinPlace());
 }
 
 function picker(kind, accept, multiple = false) {
@@ -530,6 +558,7 @@ export function openLibrary(name = null) {
     win.hidden = false;
     win.setAttribute('aria-hidden', 'false');
     frameEl?.classList.add('is-libwin-open');
+    applyWinPlace();
     renderWin();
     win.querySelector('[data-mz-lib-close]')?.focus({ preventScroll: true });
 }
@@ -556,6 +585,148 @@ export function libraryUiClosed() {
  */
 export function refreshLibrary() {
     if (isLibraryOpen()) renderWin();
+}
+
+/* ---------- the window's own move, resize and memory (the map's way) ---------- */
+
+/**
+ * Pins the window to an explicit box (left/top/width/height inline) - the
+ * state a drag or resize leaves it in, versus the CSS default of centred.
+ */
+function placeWinExplicit() {
+    if (win.classList.contains('is-placed')) return;
+    const rect = win.getBoundingClientRect();
+    const frameRect = frameEl.getBoundingClientRect();
+    win.classList.add('is-placed');
+    win.style.left = `${rect.left - frameRect.left}px`;
+    win.style.top = `${rect.top - frameRect.top}px`;
+    win.style.width = `${rect.width}px`;
+    win.style.height = `${rect.height}px`;
+}
+
+function resetWinPlace() {
+    win.classList.remove('is-placed');
+    win.style.left = win.style.top = win.style.width = win.style.height = '';
+}
+
+function saveWinPlace() {
+    if (!win.classList.contains('is-placed')) return;
+    settings().libWinPos = {
+        x: parseFloat(win.style.left) || 0,
+        y: parseFloat(win.style.top) || 0,
+    };
+    settings().libWinSize = {
+        w: parseFloat(win.style.width) || 0,
+        h: parseFloat(win.style.height) || 0,
+    };
+    saveSettings();
+}
+
+/** The window's remembered box, kept inside the frame - or the centred default. */
+function applyWinPlace() {
+    if (!win || win.hidden || winDrag || winSizing) return;
+
+    if (window.innerWidth <= WIN_NARROW) {
+        resetWinPlace();
+        return;
+    }
+
+    const pos = settings().libWinPos;
+    const size = settings().libWinSize;
+    const hasPlace = !!pos && Number.isFinite(pos.x) && Number.isFinite(pos.y);
+    const hasSize = !!size && Number.isFinite(size.w) && Number.isFinite(size.h);
+    if (!hasPlace && !hasSize) return;
+
+    placeWinExplicit();
+    if (hasSize) {
+        win.style.width = `${clamp(size.w, WIN_MIN_W, Math.max(WIN_MIN_W, frameEl.clientWidth - 2 * WIN_EDGE))}px`;
+        win.style.height = `${clamp(size.h, WIN_MIN_H, Math.max(WIN_MIN_H, frameEl.clientHeight - 2 * WIN_EDGE))}px`;
+    }
+    if (hasPlace) {
+        win.style.left = `${clamp(pos.x, WIN_EDGE, Math.max(WIN_EDGE, frameEl.clientWidth - win.offsetWidth - WIN_EDGE))}px`;
+        win.style.top = `${clamp(pos.y, WIN_EDGE, Math.max(WIN_EDGE, frameEl.clientHeight - win.offsetHeight - WIN_EDGE))}px`;
+    }
+}
+
+/**
+ * The window moves by its header and grows by its corner grip. The
+ * header's own controls still click - a 4px threshold separates the two,
+ * and the capture only lands once this IS a drag (a capture on press
+ * would retarget the click and kill the header's buttons).
+ */
+function wireWinDrag() {
+    win.addEventListener('dragstart', event => event.preventDefault());
+
+    els.winHead?.addEventListener('pointerdown', event => {
+        if (event.button > 0 || event.target.closest('button, input, textarea, select')) return;
+        winDrag = {
+            pointerId: event.pointerId,
+            dx: event.clientX - win.getBoundingClientRect().left,
+            dy: event.clientY - win.getBoundingClientRect().top,
+            x0: event.clientX,
+            y0: event.clientY,
+            moved: false,
+        };
+    });
+
+    els.winHead?.addEventListener('pointermove', event => {
+        if (!winDrag) return;
+        if (!winDrag.moved && Math.hypot(event.clientX - winDrag.x0, event.clientY - winDrag.y0) < 4) return;
+        if (!winDrag.moved) {
+            winDrag.moved = true;
+            placeWinExplicit();
+            try { els.winHead.setPointerCapture(winDrag.pointerId); } catch { /* the pointer went away mid-gesture */ }
+        }
+        win.classList.add('is-moving');
+        const frameRect = frameEl.getBoundingClientRect();
+        const x = clamp(event.clientX - frameRect.left - winDrag.dx, WIN_EDGE, frameEl.clientWidth - win.offsetWidth - WIN_EDGE);
+        const y = clamp(event.clientY - frameRect.top - winDrag.dy, WIN_EDGE, frameEl.clientHeight - win.offsetHeight - WIN_EDGE);
+        win.style.left = `${x}px`;
+        win.style.top = `${y}px`;
+    });
+
+    const endMove = () => {
+        if (!winDrag) return;
+        const moved = winDrag.moved;
+        win.classList.remove('is-moving');
+        if (moved) saveWinPlace();
+        setTimeout(() => { winDrag = null; }, 0);
+    };
+    els.winHead?.addEventListener('pointerup', endMove);
+    els.winHead?.addEventListener('pointercancel', endMove);
+
+    // A double-click on the header puts the window back to centre.
+    els.winHead?.addEventListener('dblclick', event => {
+        if (event.target.closest('button, input, textarea, select')) return;
+        settings().libWinPos = null;
+        settings().libWinSize = null;
+        saveSettings();
+        resetWinPlace();
+    });
+
+    els.winGrip?.addEventListener('pointerdown', event => {
+        if (event.button > 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+        placeWinExplicit();
+        winSizing = true;
+        const start = { x: event.clientX, y: event.clientY, w: win.offsetWidth, h: win.offsetHeight };
+        try { els.winGrip.setPointerCapture(event.pointerId); } catch { /* the pointer went away mid-gesture */ }
+        const move = event => {
+            const frameRect = frameEl.getBoundingClientRect();
+            const rect = win.getBoundingClientRect();
+            win.style.width = `${clamp(start.w + event.clientX - start.x, WIN_MIN_W, Math.max(WIN_MIN_W, frameRect.right - rect.left - WIN_EDGE))}px`;
+            win.style.height = `${clamp(start.h + event.clientY - start.y, WIN_MIN_H, Math.max(WIN_MIN_H, frameRect.bottom - rect.top - WIN_EDGE))}px`;
+        };
+        const up = () => {
+            els.winGrip.removeEventListener('pointermove', move);
+            els.winGrip.removeEventListener('pointerup', up);
+            winSizing = false;
+            saveWinPlace();
+        };
+        els.winGrip.addEventListener('pointermove', move);
+        els.winGrip.addEventListener('pointerup', up);
+    });
 }
 
 function detailView(name) {

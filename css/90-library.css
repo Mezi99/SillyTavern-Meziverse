@@ -78,6 +78,28 @@
     gap: 12px;
     padding: 9px 12px 9px 14px;
     border-bottom: 1px solid var(--mz-line);
+    cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.mz-libwin-head button { cursor: pointer; }
+.mz-libwin-head input { cursor: text; }
+
+/* the window's own place: dragged out of the centred default */
+.mz-libwin.is-placed { inset: auto; margin: 0; }
+.mz-libwin.is-moving { box-shadow: var(--mz-shadow); }
+
+/* the corner grip: the window grows to whatever the user wants and remembers */
+.mz-libwin-grip {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    z-index: 4;
+    width: 22px;
+    height: 22px;
+    cursor: nwse-resize;
+    background: linear-gradient(135deg, transparent 56%, color-mix(in srgb, var(--mz-text) 30%, transparent) 56%, color-mix(in srgb, var(--mz-text) 30%, transparent) 63%, transparent 63%, transparent 73%, color-mix(in srgb, var(--mz-text) 30%, transparent) 73%, color-mix(in srgb, var(--mz-text) 30%, transparent) 80%, transparent 80%);
 }
 
 .mz-libwin-mark {
@@ -891,6 +913,8 @@
         height: 88vh;
         border-radius: var(--mz-r-xl) var(--mz-r-xl) 0 0;
     }
+
+    .mz-libwin-grip { display: none; }
 
     .mz-lib-search { width: 120px; }
     .mz-lib-toolbar, .mz-lib-shelf { padding-left: 14px; padding-right: 14px; }

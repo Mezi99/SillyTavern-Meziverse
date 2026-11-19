@@ -2590,7 +2590,10 @@ function wireActions() {
                 saveSettings();
                 break;
             case 'library-open':
-                openLibrary();
+                // The pill is a toggle: the window's own press-outside
+                // close leaves the pill to open and shut it.
+                if (isLibraryOpen()) closeLibrary();
+                else openLibrary();
                 break;
             case 'map-open':
                 openMapWin();

@@ -83,6 +83,10 @@ const DEFAULTS = {
     // The full map window's remembered spot and size. Null = centred default.
     mapWinPos: null,
     mapWinSize: null,
+    // The Character Library window's remembered spot and size, the same way.
+    // Null = centred default.
+    libWinPos: null,
+    libWinSize: null,
     // The map's land: 'ink' paints the story's terrain under the chart,
     // 'flat' is the plain chart. The map window's Land chips edit this.
     mapTerrain: 'ink',
