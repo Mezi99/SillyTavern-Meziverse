@@ -38,6 +38,85 @@ export const SUGGESTED_LABELS = [
     'relief', 'remorse', 'sadness', 'surprise', 'neutral',
 ];
 
+/**
+ * The same 28 labels, regrouped into families so a board of slots is
+ * scannable: Core is what the stage falls back on (label → neutral →
+ * portrait), Warm and Tense are the feeling clusters, Mind the small
+ * thinking set. Anything outside these 28 is a character's own custom
+ * label and lives in its own family.
+ */
+export const EXPRESSION_FAMILIES = [
+    {
+        id: 'core',
+        name: 'Core',
+        note: 'what the stage falls back on',
+        labels: ['neutral', 'joy', 'sadness', 'anger', 'fear', 'surprise', 'disgust', 'love'],
+    },
+    {
+        id: 'warm',
+        name: 'Warm',
+        labels: ['admiration', 'amusement', 'approval', 'caring', 'desire', 'excitement', 'gratitude', 'optimism', 'pride', 'relief'],
+    },
+    {
+        id: 'tense',
+        name: 'Tense',
+        labels: ['annoyance', 'disappointment', 'disapproval', 'embarrassment', 'grief', 'nervousness', 'remorse'],
+    },
+    {
+        id: 'mind',
+        name: 'Mind',
+        labels: ['confusion', 'curiosity', 'realization'],
+    },
+];
+
+/** The fallback family - the slots that matter most when they are empty. */
+export const CORE_LABELS = EXPRESSION_FAMILIES[0].labels;
+
+/** The family a label belongs to: 'core' | 'warm' | 'tense' | 'mind' | 'custom'. */
+export function labelFamily(label) {
+    const folded = cleanSpriteLabel(label);
+    for (const family of EXPRESSION_FAMILIES) {
+        if (family.labels.includes(folded)) return family.id;
+    }
+    return 'custom';
+}
+
+/**
+ * The slot a dropped file's name asks for: `joy.png` → joy,
+ * `sadness-2.png` (or `Sadness_2.png`) → a second sadness. The match is
+ * the `cleanSpriteLabel` fold plus stripping a trailing number - the
+ * number names the file, not the feeling. A name that cannot be placed
+ * answers null and the file waits in the tray for the user's word.
+ *
+ * @param {string} fileName
+ * @param {string[]} knownLabels the 28 plus any custom labels already in the folder
+ * @returns {{label: string, extraIndex: number}|null} extraIndex is the
+ *   trailing number (0 when none) - a second file for a label
+ */
+export function matchLabel(fileName, knownLabels) {
+    const known = new Set();
+    for (const label of knownLabels || []) {
+        const folded = cleanSpriteLabel(label);
+        if (folded) known.add(folded);
+    }
+    if (!known.size) return null;
+
+    let base = String(fileName ?? '').split(/[?#]/)[0];
+    base = base.slice(base.lastIndexOf('/') + 1).replace(/\.[^.]+$/, '');
+    try {
+        base = decodeURIComponent(base);
+    } catch {
+        // A name that does not decode is matched as it stands.
+    }
+
+    const numbered = base.match(/^(.*?)[-\s_]?(\d+)$/);
+    const stem = (numbered ? numbered[1] : base).replace(/_/g, ' ');
+    const extraIndex = numbered ? Number(numbered[2]) : 0;
+
+    const label = cleanSpriteLabel(stem);
+    return known.has(label) ? { label, extraIndex } : null;
+}
+
 /** A library record with every field in its right shape. */
 export function normalizeLibraryRecord(raw = {}) {
     return {
@@ -113,6 +192,28 @@ export function spriteLabelMap(rows) {
 }
 
 /**
+ * How much of the 28 a sprite set covers - the numbers the cards and the
+ * board's ring wear. `count` is labels among the 28 (custom labels do not
+ * pad it), `core` among the fallback eight, `extra` the files beyond the
+ * counted ones (a second joy, or a custom label's picture).
+ */
+export function spriteCoverage(rows) {
+    const list = rows || [];
+    const set = new Set();
+    for (const row of list) {
+        if (row?.label) set.add(row.label);
+    }
+
+    let count = 0;
+    for (const label of SUGGESTED_LABELS) if (set.has(label)) count += 1;
+
+    let core = 0;
+    for (const label of CORE_LABELS) if (set.has(label)) core += 1;
+
+    return { count, core, files: list.length, extra: list.length - count, set };
+}
+
+/**
  * The portrait a poster wears: the chat's own portrait when it has one,
  * then the library's, then none (the initials plate). Per-chat wins -
  * a chat that casts someone differently keeps its own face.
@@ -128,10 +229,11 @@ export function resolveLibraryPortrait(key, chatImages, library) {
 /**
  * The records one filter view shows: 'all' is the whole library, 'chat'
  * the names any scene tag of this chat ever carried, 'scene' the ones on
- * stage right now - and the query narrows by name within whichever.
- * Sets arrive already folded to library keys; records only, name-sorted.
+ * stage right now, 'incomplete' the ones still missing sprites - and the
+ * query narrows by name within whichever. Sets arrive already folded to
+ * library keys; records only, name-sorted.
  */
-export function visibleLibrary(entries, { query = '', filter = 'all', chatKeys = null, sceneKeys = null } = {}) {
+export function visibleLibrary(entries, { query = '', filter = 'all', chatKeys = null, sceneKeys = null, needsKeys = null } = {}) {
     const needle = String(query ?? '').trim().toLowerCase();
     const rows = [];
 
@@ -139,6 +241,7 @@ export function visibleLibrary(entries, { query = '', filter = 'all', chatKeys =
         if (!record || typeof record !== 'object') continue;
         if (filter === 'chat' && !chatKeys?.has(key)) continue;
         if (filter === 'scene' && !sceneKeys?.has(key)) continue;
+        if (filter === 'incomplete' && !needsKeys?.has(key)) continue;
         if (needle && !String(record.name ?? '').toLowerCase().includes(needle)) continue;
         rows.push(record);
     }

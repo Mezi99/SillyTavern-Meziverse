@@ -6,10 +6,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+    CORE_LABELS,
+    EXPRESSION_FAMILIES,
     SUGGESTED_LABELS,
     cleanSpriteLabel,
+    labelFamily,
+    matchLabel,
     normalizeLibraryRecord,
     resolveLibraryPortrait,
+    spriteCoverage,
     spriteLabelMap,
     spriteNameFromPath,
     spriteRowsFromPayload,
@@ -113,5 +118,62 @@ test('visibleLibrary: the filters narrow saved records, the query narrows by nam
     assert.deepEqual(names(visibleLibrary(entries, { filter: 'scene', chatKeys, sceneKeys })), ['Sol']);
     assert.deepEqual(names(visibleLibrary(entries, { query: '  ma ' })), ['Mara Vane']);
     assert.deepEqual(names(visibleLibrary(entries, { filter: 'scene', query: 'k', chatKeys, sceneKeys })), []);
+    assert.deepEqual(names(visibleLibrary(entries, { filter: 'incomplete', needsKeys: new Set(['kai']) })), ['Kai']);
+    assert.deepEqual(names(visibleLibrary(entries, { filter: 'incomplete' })), []);
     assert.deepEqual(names(visibleLibrary(null)), []);
+});
+
+test('the families regroup the 28 without losing any', () => {
+    const flat = EXPRESSION_FAMILIES.flatMap(family => family.labels);
+    assert.equal(flat.length, 28);
+    assert.deepEqual(new Set(flat), new Set(SUGGESTED_LABELS));
+    assert.equal(CORE_LABELS.length, 8);
+    assert.equal(new Set(CORE_LABELS).size, 8);
+
+    assert.equal(labelFamily('joy'), 'core');
+    assert.equal(labelFamily('pride'), 'warm');
+    assert.equal(labelFamily('grief'), 'tense');
+    assert.equal(labelFamily('curiosity'), 'mind');
+    assert.equal(labelFamily('smug'), 'custom');
+    assert.equal(labelFamily(' Joy '), 'core');
+});
+
+test('matchLabel: filenames pick the slot, the trailing number picks the file', () => {
+    const known = SUGGESTED_LABELS;
+
+    assert.deepEqual(matchLabel('joy.png', known), { label: 'joy', extraIndex: 0 });
+    assert.deepEqual(matchLabel('sadness-2.png', known), { label: 'sadness', extraIndex: 2 });
+    assert.deepEqual(matchLabel('Sadness_2.png', known), { label: 'sadness', extraIndex: 2 });
+    assert.deepEqual(matchLabel('JOY-1.webp', known), { label: 'joy', extraIndex: 1 });
+    assert.deepEqual(matchLabel('nervousness.jpeg', known), { label: 'nervousness', extraIndex: 0 });
+
+    // names the fold cannot place wait in the tray
+    assert.equal(matchLabel('smug_face_final.png', known), null);
+    assert.equal(matchLabel('IMG_0412.png', known), null);
+    assert.equal(matchLabel('portrait.png', known), null);
+    assert.equal(matchLabel('', known), null);
+    assert.equal(matchLabel('joy.png', []), null);
+
+    // custom labels are known too when the folder already carries them
+    assert.deepEqual(matchLabel('big_grin.png', ['joy', 'big grin']), { label: 'big grin', extraIndex: 0 });
+});
+
+test('spriteCoverage: 28-counts, core counts, and the files beyond', () => {
+    const rows = [
+        { label: 'joy', spriteName: 'joy', path: '' },
+        { label: 'joy', spriteName: 'joy-1', path: '' },
+        { label: 'sadness', spriteName: 'sadness', path: '' },
+        { label: 'smug', spriteName: 'smug', path: '' },
+    ];
+    const coverage = spriteCoverage(rows);
+
+    assert.equal(coverage.count, 2);       // joy + sadness among the 28
+    assert.equal(coverage.core, 2);        // both are core
+    assert.equal(coverage.files, 4);
+    assert.equal(coverage.extra, 2);       // joy-1 + the custom 'smug'
+    assert.deepEqual(coverage.set, new Set(['joy', 'sadness', 'smug']));
+
+    const none = spriteCoverage(null);
+    assert.equal(none.count, 0);
+    assert.equal(none.extra, 0);
 });

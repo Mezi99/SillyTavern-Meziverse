@@ -409,6 +409,39 @@ export function seenNames(messages, persona = '') {
     return names;
 }
 
+/**
+ * Every name any scene tag ever carried, with how many turns named it -
+ * the "named in 14 turns" line under the library's seen rows. Most-seen
+ * first; ties keep first-seen order (the sort is stable). A name counts
+ * once per turn however many tags of that turn carried it.
+ *
+ * @param {object[]} messages
+ * @param {string} [persona]
+ * @returns {{name: string, count: number}[]}
+ */
+export function seenNameCounts(messages, persona = '') {
+    const order = [];
+    const counts = new Map();
+
+    for (const message of messages || []) {
+        const seenHere = new Set();
+        for (const { scene } of describeScenes(message, { persona })) {
+            for (const name of scene.present || []) {
+                const key = nameKey(name);
+                if (!key || seenHere.has(key)) continue;
+                seenHere.add(key);
+                if (!counts.has(key)) {
+                    counts.set(key, { name, count: 0 });
+                    order.push(key);
+                }
+                counts.get(key).count += 1;
+            }
+        }
+    }
+
+    return order.map(key => counts.get(key)).sort((a, b) => b.count - a.count);
+}
+
 /** Up to two letters for a portrait plate: 'Mara Voss' becomes 'MV'. */
 export function initials(name) {
     const words = text(name).trim().split(/\s+/).filter(Boolean);

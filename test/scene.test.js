@@ -20,6 +20,7 @@ import {
     parseClock,
     resolveScene,
     sceneAt,
+    seenNameCounts,
     seenNames,
     splitDate,
     splitLocation,
@@ -391,4 +392,23 @@ test('seenNames: the persona never counts, and neither does nothing', () => {
     assert.deepEqual(seenNames([{ mes: '<scene present="Mara, Akira" />' }], 'Akira'), ['Mara']);
     assert.deepEqual(seenNames(null), []);
     assert.deepEqual(seenNames([{ mes: 'no scenes here' }]), []);
+});
+
+test('seenNameCounts: most-seen first, once per turn however many tags', () => {
+    const messages = [
+        { mes: '<scene present="Mara, Kai" /><scene present="Mara" />' },
+        { mes: '<scene present="kai, Sol" />' },
+        { mes: 'plain prose, no tags at all' },
+        { mes: '<scene present="Kai" />' },
+    ];
+    assert.deepEqual(seenNameCounts(messages), [
+        { name: 'Kai', count: 3 },
+        { name: 'Mara', count: 1 },
+        { name: 'Sol', count: 1 },
+    ]);
+});
+
+test('seenNameCounts: the persona never counts, and neither does nothing', () => {
+    assert.deepEqual(seenNameCounts([{ mes: '<scene present="Mara, Akira" />' }], 'Akira'), [{ name: 'Mara', count: 1 }]);
+    assert.deepEqual(seenNameCounts(null), []);
 });
