@@ -616,6 +616,38 @@ function chooserKeys(event) {
     if (event.key === 'Escape') closeChooser();
 }
 
+/** The menu's own actions: swap the showing character, or walk away. */
+function onChooserClick(event) {
+    const name = chooser?.dataset?.mzChooserName || '';
+
+    const pick = event.target.closest('[data-mz-chooser-pick]');
+    if (pick) {
+        event.preventDefault();
+        const entry = pick.dataset.mzChooserPick || null;
+        closeChooser();
+        if (name) {
+            chooseLibraryFor(name, entry);
+            redrawCast();
+        }
+        return;
+    }
+
+    if (event.target.closest('[data-mz-chooser-add]')) {
+        event.preventDefault();
+        closeChooser();
+        openLibraryNewFor(name);
+        return;
+    }
+
+    const open = event.target.closest('[data-mz-chooser-open]');
+    if (open) {
+        event.preventDefault();
+        const target = open.dataset.mzChooserOpen;
+        closeChooser();
+        if (target) openLibrary(target);
+    }
+}
+
 function openChooser(button, name, match) {
     closeChooser();
 
@@ -662,6 +694,7 @@ function openChooser(button, name, match) {
     // Inside the scene's frame, so the menu sits above the stage - the
     // scene root is its own high stack and would swallow a body-level one.
     (button.closest('.mz-frame') || document.body).append(menu);
+    menu.addEventListener('click', onChooserClick);
 
     const rect = button.getBoundingClientRect();
     const left = Math.max(8, Math.min(rect.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - 8));
@@ -675,37 +708,6 @@ function openChooser(button, name, match) {
 }
 
 function onClick(event) {
-    const chooserPick = event.target.closest('[data-mz-chooser-pick]');
-    if (chooserPick) {
-        event.preventDefault();
-        const name = chooser?.dataset?.mzChooserName || '';
-        const entry = chooserPick.dataset.mzChooserPick || null;
-        closeChooser();
-        if (name) {
-            chooseLibraryFor(name, entry);
-            redrawCast();
-        }
-        return;
-    }
-
-    const chooserAdd = event.target.closest('[data-mz-chooser-add]');
-    if (chooserAdd) {
-        event.preventDefault();
-        const name = chooser?.dataset?.mzChooserName || '';
-        closeChooser();
-        openLibraryNewFor(name);
-        return;
-    }
-
-    const chooserOpen = event.target.closest('[data-mz-chooser-open]');
-    if (chooserOpen) {
-        event.preventDefault();
-        const target = chooserOpen.dataset.mzChooserOpen;
-        closeChooser();
-        if (target) openLibrary(target);
-        return;
-    }
-
     const toggle = event.target.closest('[data-mz-thought]');
     if (toggle) {
         const key = toggle.dataset.mzThought;
