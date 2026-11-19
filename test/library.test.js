@@ -13,6 +13,8 @@ import {
     labelFamily,
     matchLabel,
     normalizeLibraryRecord,
+    recordFirst,
+    resolveLibraryMatch,
     resolveLibraryPortrait,
     spriteCoverage,
     spriteLabelMap,
@@ -36,6 +38,66 @@ test('normalizeLibraryRecord keeps a given date and shrugs at nothing', () => {
     assert.equal(empty.name, '');
     assert.equal(empty.portrait, '');
     assert.ok(empty.addedAt);
+});
+
+test('the first-name field defaults to the name\'s first word and keeps its own', () => {
+    assert.equal(normalizeLibraryRecord({ name: 'Mike Smith' }).first, 'Mike');
+    assert.equal(normalizeLibraryRecord({ name: 'Mike Smith', first: 'Mikey' }).first, 'Mikey');
+    assert.equal(normalizeLibraryRecord({ name: 'Eli' }).first, 'Eli');
+
+    // records saved before the field existed ride the fallback
+    assert.equal(recordFirst({ name: 'Mike Reynolds' }), 'Mike');
+    assert.equal(recordFirst({ name: 'Mike Reynolds', first: ' Ren ' }), 'Ren');
+    assert.equal(recordFirst({}), '');
+});
+
+test('resolveLibraryMatch: the chat\'s binding beats everything', () => {
+    const entries = {
+        'mike smith': { name: 'Mike Smith', first: 'Mike', addedAt: '2026-01-01' },
+        'mike reynolds': { name: 'Mike Reynolds', first: 'Mike', addedAt: '2026-02-01' },
+    };
+    const match = resolveLibraryMatch('Mike', entries, { mike: 'mike smith' });
+    assert.equal(match.kind, 'one');
+    assert.equal(match.record.name, 'Mike Smith');
+});
+
+test('resolveLibraryMatch: a record named exactly like the tag wins alone', () => {
+    const entries = {
+        'mike': { name: 'Mike', addedAt: '2026-01-01' },
+        'mike smith': { name: 'Mike Smith', first: 'Mike', addedAt: '2026-02-01' },
+    };
+    const match = resolveLibraryMatch('  MIKE ', entries);
+    assert.equal(match.kind, 'one');
+    assert.equal(match.record.name, 'Mike');
+    assert.deepEqual(match.candidates.map(record => record.name), ['Mike']);
+});
+
+test('resolveLibraryMatch: one first-name claim binds itself, two are the two-Mikes case', () => {
+    const entries = {
+        'mara vane': { name: 'Mara Vane', first: 'Mara', addedAt: '2026-01-01' },
+    };
+    const one = resolveLibraryMatch('Mara', entries);
+    assert.equal(one.kind, 'one');
+    assert.equal(one.record.name, 'Mara Vane');
+
+    // two Mikes: the most recently used shows first, the candidates swap
+    const two = {
+        'mike smith': { name: 'Mike Smith', first: 'Mike', addedAt: '2026-01-01' },
+        'mike reynolds': { name: 'Mike Reynolds', first: 'Mike', addedAt: '2026-02-01' },
+    };
+    const match = resolveLibraryMatch('mike', two);
+    assert.equal(match.kind, 'ambiguous');
+    assert.equal(match.record.name, 'Mike Reynolds');          // added later
+    assert.deepEqual(match.candidates.map(record => record.name), ['Mike Reynolds', 'Mike Smith']);
+
+    // a use outweighs the add date
+    two['mike smith'].lastUsedAt = '2026-03-01';
+    const used = resolveLibraryMatch('Mike', two);
+    assert.equal(used.record.name, 'Mike Smith');
+
+    assert.equal(resolveLibraryMatch('Nobody', two), null);
+    assert.equal(resolveLibraryMatch('', two), null);
+    assert.equal(resolveLibraryMatch('Mike', null), null);
 });
 
 test('cleanSpriteLabel folds case and strips the folder-hostile marks', () => {
