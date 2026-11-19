@@ -38,7 +38,6 @@
 
 @media (hover: none) {
     .mz-cast-lib { opacity: 1; }
-    .mz-lib-sprite-del { opacity: 1; }
 }
 
 /* the poster's library button: lit while the character is saved */
@@ -93,6 +92,14 @@
     color: var(--mz-accent);
 }
 .mz-libwin-mark .ico { width: 14px; height: 14px; }
+
+.mz-libwin-head-mid {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
 
 .mz-libwin-head h2 {
     margin: 0;
@@ -832,190 +839,34 @@
     cursor: pointer;
 }
 
-/* ==========================================================================
-   One character's page - the PREVIOUS design (hero + sprite gallery +
-   staged removal foot). Kept until the stage/board replaces it; the mock's
-   rules above are for the new markup and stay quiet meanwhile.
-   ========================================================================== */
+/* ---------- the staged removal, and the arms the tools wear ---------- */
 
-.mz-lib-detail.is-old {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    padding: 18px;
-}
-
-.mz-lib-back {
-    align-self: flex-start;
-    padding: 0;
-    border: 0;
-    background: none;
-    color: var(--mz-text-muted);
-    font: inherit;
-    font-size: var(--mz-text-xs);
-    cursor: pointer;
-}
-
-.mz-lib-back:hover { color: var(--mz-text); }
-
-.mz-lib-hero {
-    display: flex;
-    align-items: flex-end;
-    gap: 16px;
-}
-
-.mz-lib-hero .mz-lib-face {
-    flex: none;
-    width: 128px;
-    border: 1px solid var(--mz-line);
-}
-
-.mz-lib-hero-tools {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    padding-bottom: 2px;
-}
-
-.mz-lib-detail.is-old .mz-lib-title {
-    margin: 0;
-    font-family: var(--mz-font-prose);
-    font-size: var(--mz-text-xl);
-    font-weight: 600;
-}
-
-.mz-lib-sec {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    padding-top: 14px;
-    border-top: 1px solid var(--mz-line);
-}
-
-.mz-lib-sec-head {
-    display: flex;
-    align-items: baseline;
-    gap: 10px;
-}
-
-.mz-lib-sec-head h4 {
-    margin: 0;
-    font-size: var(--mz-text-2xs);
-    font-weight: 600;
-    letter-spacing: .12em;
-    text-transform: uppercase;
-    color: var(--mz-text-dim);
-}
-
-.mz-lib-count {
-    margin-right: auto;
-    font-size: var(--mz-text-xs);
-    color: var(--mz-text-dim);
-}
-
-.mz-lib-bar {
+.mz-lib-stage-ask {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 8px;
-}
-
-.mz-lib-bar .mz-select { height: 30px; }
-.mz-lib-custom { width: 120px; }
-
-/* the sprite gallery: art fills each cell, the label rides on it */
-.mz-lib-sprites {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
-    gap: 12px;
-}
-
-.mz-lib-sprite {
-    position: relative;
-    aspect-ratio: 3 / 4;
-    border: 1px solid var(--mz-line);
-    border-radius: var(--mz-r-sm);
-    overflow: hidden;
-    background: var(--mz-surface-2);
-}
-
-.mz-lib-sprite img {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    background: var(--mz-scrim-ink);
-}
-
-.mz-lib-sprite-label {
-    position: absolute;
-    left: 6px;
-    bottom: 6px;
-    max-width: calc(100% - 12px);
-    padding: 2px 8px;
-    border-radius: var(--mz-r-pill);
-    background: color-mix(in srgb, var(--mz-scrim-ink) 62%, transparent);
-    overflow: hidden;
-    font-family: var(--mz-font-ui);
-    font-size: var(--mz-text-2xs);
-    font-weight: 500;
-    color: rgba(255, 255, 255, .88);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.mz-lib-sprite-del {
-    position: absolute;
-    top: 6px;
-    right: 6px;
-    opacity: 0;
-    transition: opacity var(--mz-dur) var(--mz-ease);
-}
-
-.mz-lib-sprite:hover .mz-lib-sprite-del,
-.mz-lib-sprite-del:focus-visible,
-.mz-lib-sprite-del.is-armed { opacity: 1; }
-
-.mz-lib-sprite-del.is-armed {
-    border-color: var(--mz-bad);
-    color: var(--mz-bad);
-}
-
-.mz-lib-add {
-    aspect-ratio: 3 / 4;
-    border: 1px dashed var(--mz-line-strong);
-    border-radius: var(--mz-r-sm);
-    background: none;
-    color: var(--mz-text-dim);
-    font-family: var(--mz-font-ui);
-    font-size: var(--mz-text-xl);
-    cursor: pointer;
-    transition: color var(--mz-dur-fast), border-color var(--mz-dur-fast);
-}
-
-.mz-lib-add:hover {
-    border-color: var(--mz-accent-line);
-    color: var(--mz-accent);
-}
-
-/* ---------- the staged removal ---------- */
-
-.mz-lib-foot {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 10px;
-    padding-top: 14px;
+    padding-top: 12px;
     border-top: 1px solid var(--mz-line);
 }
 
-.mz-lib-ask {
+.mz-lib-stage-ask p {
     flex: 1;
-    min-width: 200px;
+    min-width: 160px;
     margin: 0;
     font-size: var(--mz-text-sm);
     color: var(--mz-text-muted);
+}
+
+/* the armed delete: one more press and the sprite is gone */
+.mz-lib-stage-tools .is-armed {
+    border-color: var(--mz-bad);
+    background: color-mix(in srgb, var(--mz-bad) 16%, transparent);
+}
+
+.mz-lib-custom {
+    width: 120px;
+    height: 30px;
 }
 
 .mz-libwin .mz-btn-ghost.is-danger {
@@ -1072,7 +923,4 @@
     .mz-lib-tray, .mz-lib-drop { margin-left: 14px; margin-right: 14px; }
     .mz-lib-sheet { grid-template-columns: 1fr; }
     .mz-lib-sheet .mz-lib-face { width: 96px; }
-
-    /* the previous page's hero folds too */
-    .mz-lib-hero { flex-direction: column; align-items: flex-start; }
 }

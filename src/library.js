@@ -335,9 +335,7 @@ function invalidateSprites(name) {
 const WIN_HTML = `
     <header class="mz-libwin-head">
         <span class="mz-libwin-mark" aria-hidden="true"></span>
-        <h2>Character Library</h2>
-        <span class="mz-libwin-sum" data-mz-lib-sum></span>
-        <input class="mz-select mz-lib-search" type="search" data-mz-lib-search placeholder="Search characters" aria-label="Search characters" spellcheck="false">
+        <div class="mz-libwin-head-mid" data-mz-lib-head></div>
         <button class="mz-ibtn mz-libwin-close" type="button" data-mz-lib-close title="Close" aria-label="Close"></button>
     </header>
     <div class="mz-libwin-body">
@@ -357,6 +355,9 @@ let els = null;
 let lastFocus = null;
 
 // What the window shows: the grid of saved characters, or one of them.
+// A detail view also carries the page's own state: the looked-at slot
+// ({label, spriteName} or null), the board's filter, the thumbnail crop
+// and whether the `…` menu is open.
 let view = { kind: 'grid' };
 // The grid's search and filter, reset whenever the window opens.
 let query = '';
@@ -365,11 +366,17 @@ let filter = 'all';
 let newDraft = null;
 // Who the portrait picker is filling: 'sheet' or a record's name.
 let portraitTarget = '';
+// The label a picker press already knows, and the file it replaces.
+let pendingLabel = '';
+let pendingSpriteName = '';
 // The scene's present names, handed in by the scene that mounts us.
 let presentNames = () => [];
 // The detail's sprite rows and the staged removal, reset per character.
 let detailRows = [];
+let detailLoaded = false;
 let removeStage = 'idle';
+// Files the names could not place: {id, file, name, url} each.
+let trayItems = [];
 // One upload in flight at a time, per window.
 let busy = false;
 // Row-delete arming: spriteName → timer, so a stray click never eats art.
@@ -400,11 +407,13 @@ export function mountLibrary({ frame, presentNames: getPresent = null } = {}) {
     frame.append(win);
 
     els = {
-        sum: win.querySelector('[data-mz-lib-sum]'),
-        search: win.querySelector('[data-mz-lib-search]'),
+        head: win.querySelector('[data-mz-lib-head]'),
+        body: win.querySelector('.mz-libwin-body'),
         filters: win.querySelector('[data-mz-lib-filters]'),
         grid: win.querySelector('[data-mz-lib-grid]'),
         detail: win.querySelector('[data-mz-lib-detail]'),
+        sum: null,
+        search: null,
     };
 
     win.querySelector('.mz-libwin-mark').append(icon('mz-i-library'));
@@ -412,10 +421,31 @@ export function mountLibrary({ frame, presentNames: getPresent = null } = {}) {
 
     win.addEventListener('click', onClick);
 
-    // Escape closes the sheet first - the scene's own Esc chain gets the
-    // event only when nothing inside the window wants it.
+    // Typing in the search leaves a character's page for the grid it
+    // filters - searching from anywhere lands somewhere honest.
+    win.addEventListener('input', event => {
+        if (!event.target.closest('[data-mz-lib-search]')) return;
+        query = event.target.value;
+        if (view.kind === 'detail') {
+            view = { kind: 'grid' };
+            resetDetail();
+            renderWin();
+            return;
+        }
+        renderGrid();
+    });
+
+    // Escape closes the topmost thing first - the `…` menu, then the
+    // new-character sheet. The scene's own Esc chain gets the event only
+    // when nothing inside the window wants it.
     win.addEventListener('keydown', event => {
         if (event.key !== 'Escape') return;
+        if (view.kind === 'detail' && view.menu) {
+            event.stopPropagation();
+            view.menu = false;
+            win.querySelector('.mz-lib-menu')?.remove();
+            return;
+        }
         if (newDraft) {
             event.stopPropagation();
             newDraft = null;
@@ -423,25 +453,48 @@ export function mountLibrary({ frame, presentNames: getPresent = null } = {}) {
         }
     });
 
-    // Typing in the search leaves a character's page for the grid it
-    // filters - searching from anywhere lands somewhere honest.
-    els.search.addEventListener('input', () => {
-        query = els.search.value;
-        if (view.kind === 'detail') {
-            view = { kind: 'grid' };
-            resetDetail();
-        }
-        renderWin();
+    // The pickers live with the window; each remembers what it was for.
+    win.append(picker('portrait', 'image/*'), picker('sprite', 'image/*', true), picker('pack', '.zip,application/zip'));
+
+    // Files dragged over the board: one honest veil, and the drop does the
+    // placing. Filenames pick the slot, a drop ON a slot forces it, and
+    // whatever cannot be placed waits in the tray.
+    win.addEventListener('dragover', event => {
+        if (view.kind !== 'detail' || !hasFiles(event)) return;
+        event.preventDefault();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+        showDropVeil(true);
     });
 
-    // The pickers live with the window; each remembers what it was for.
-    win.append(picker('portrait', 'image/*'), picker('sprite', 'image/*'), picker('pack', '.zip,application/zip'));
+    win.addEventListener('dragleave', event => {
+        if (!win.contains(event.relatedTarget)) showDropVeil(false);
+    });
+
+    win.addEventListener('drop', event => {
+        if (view.kind !== 'detail' || !hasFiles(event)) return;
+        event.preventDefault();
+        showDropVeil(false);
+        for (const slot of win.querySelectorAll('.mz-lib-slot.is-over')) slot.classList.remove('is-over');
+        dropPressed(event);
+    });
+
+    // A slot the file hovers lights up - the drop will go to it.
+    els.detail.addEventListener('dragover', event => {
+        const slot = event.target.closest?.('[data-mz-lib-slot]');
+        if (!slot || !hasFiles(event)) return;
+        event.preventDefault();
+        for (const other of els.detail.querySelectorAll('.mz-lib-slot.is-over')) {
+            if (other !== slot) other.classList.remove('is-over');
+        }
+        slot.classList.add('is-over');
+    });
 }
 
-function picker(kind, accept) {
+function picker(kind, accept, multiple = false) {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = accept;
+    input.multiple = multiple;
     input.hidden = true;
     input.dataset.mzLibPicker = kind;
     input.addEventListener('change', () => onFileChosen(kind, input));
@@ -461,10 +514,9 @@ export function openLibrary(name = null) {
     if (!win) return;
 
     const record = name ? libraryEntry(name) : null;
-    view = record ? { kind: 'detail', name: record.name } : { kind: 'grid' };
+    view = record ? detailView(record.name) : { kind: 'grid' };
     query = '';
     filter = 'all';
-    if (els?.search) els.search.value = '';
     newDraft = null;
     renderSheet();
     resetDetail();
@@ -501,11 +553,20 @@ export function refreshLibrary() {
     if (isLibraryOpen()) renderWin();
 }
 
+function detailView(name) {
+    return { kind: 'detail', name, sel: null, boardFilter: 'all', fit: 'face', menu: false };
+}
+
 function resetDetail() {
     detailRows = [];
+    detailLoaded = false;
     removeStage = 'idle';
     for (const timer of armTimers.values()) clearTimeout(timer);
     armTimers.clear();
+    for (const item of trayItems) URL.revokeObjectURL(item.url);
+    trayItems = [];
+    pendingLabel = '';
+    pendingSpriteName = '';
 }
 
 /* ---------- rendering ---------- */
@@ -513,20 +574,16 @@ function resetDetail() {
 function renderWin() {
     if (!win) return;
 
-    const entries = libraryEntries();
-    const keys = Object.keys(entries);
-    const sceneKeys = foldSet(presentNames());
-    const inScene = keys.filter(key => sceneKeys.has(key)).length;
-    els.sum.textContent = keys.length ? `${keys.length} saved \u00b7 ${inScene} in scene` : '';
-
     const detail = view.kind === 'detail' ? libraryEntry(view.name) : null;
     if (view.kind === 'detail' && !detail) view = { kind: 'grid' };
 
     const showingDetail = view.kind === 'detail';
     els.grid.hidden = showingDetail;
     els.detail.hidden = !showingDetail;
-    els.detail.classList.toggle('is-old', showingDetail);
     els.filters.hidden = showingDetail;
+    els.body.classList.toggle('is-detail', showingDetail);
+
+    renderHead();
 
     for (const chip of win.querySelectorAll('[data-mz-lib-filter]')) {
         const on = chip.dataset.mzLibFilter === filter;
@@ -534,8 +591,67 @@ function renderWin() {
         chip.setAttribute('aria-pressed', String(on));
     }
 
-    if (showingDetail) renderDetail(detail);
-    else renderGrid();
+    win.querySelector('.mz-lib-menu')?.remove();
+    if (showingDetail) {
+        renderDetail(detail);
+        if (view.menu) renderMenu();
+    } else {
+        renderGrid();
+    }
+}
+
+/**
+ * The head follows the view: the grid's title with its search box, or the
+ * breadcrumb whose first half is the way back.
+ */
+function renderHead() {
+    if (view.kind !== 'detail') {
+        const entries = libraryEntries();
+        const keys = Object.keys(entries);
+        const sceneKeys = foldSet(presentNames());
+        const inScene = keys.filter(key => sceneKeys.has(key)).length;
+
+        els.head.innerHTML =
+            `<h2>Character Library</h2>
+            <span class="mz-libwin-sum"></span>
+            <input class="mz-select mz-lib-search" type="search" data-mz-lib-search placeholder="Search characters" aria-label="Search characters" spellcheck="false">`;
+
+        els.sum = els.head.querySelector('.mz-libwin-sum');
+        els.search = els.head.querySelector('[data-mz-lib-search]');
+        els.sum.textContent = keys.length ? `${keys.length} saved \u00b7 ${inScene} in scene` : '';
+        els.search.value = query;
+        return;
+    }
+
+    els.head.innerHTML =
+        `<div class="mz-libwin-crumb"><button type="button" data-mz-lib-back>Character Library</button><i>/</i><b></b></div>
+        <span class="mz-libwin-sum"></span>
+        <button class="mz-ibtn mz-libwin-menu" type="button" data-mz-lib-menu title="More" aria-label="More"></button>`;
+
+    els.head.querySelector('.mz-libwin-crumb b').textContent = String(view.name ?? '');
+    els.head.querySelector('[data-mz-lib-menu]').append(icon('mz-i-dots'));
+    els.sum = els.head.querySelector('.mz-libwin-sum');
+    els.search = null;
+}
+
+/** The header's quiet overflow: removal lives here, not in the page's foot. */
+function renderMenu() {
+    const menu = document.createElement('div');
+    menu.className = 'mz-lib-menu';
+
+    const copy = document.createElement('button');
+    copy.type = 'button';
+    copy.dataset.mzLibMenuItem = 'copy';
+    copy.append(icon('mz-i-copy'), document.createTextNode('Copy name for scene tags'));
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'is-danger';
+    remove.dataset.mzLibMenuItem = 'remove';
+    remove.append(icon('mz-i-trash'), document.createTextNode('Remove from library\u2026'));
+
+    menu.append(copy, remove);
+    win.append(menu);
 }
 
 function renderGrid() {
@@ -696,6 +812,66 @@ function paintMeta(meta, rows) {
 function peekSprites(name) {
     const cached = spriteCache.get(String(name ?? '').trim());
     return cached ? cached.rows : null;
+}
+
+function hasFiles(event) {
+    return [...(event.dataTransfer?.types || [])].includes('Files');
+}
+
+/** The veil a dragged file wears over the board: one dashed sheet. */
+function showDropVeil(on) {
+    const existing = win.querySelector('.mz-lib-dropveil');
+    if (!on) {
+        existing?.remove();
+        return;
+    }
+    if (existing) return;
+
+    const veil = document.createElement('div');
+    veil.className = 'mz-lib-dropveil';
+    veil.innerHTML = '<b>Drop to add sprites</b><span>Filenames pick the slot \u2014 joy.png, sadness-2.png. A .zip works too.</span>';
+    win.append(veil);
+}
+
+/** A drop on the board: zips unpack, images find their slot. */
+function dropPressed(event) {
+    if (view.kind !== 'detail') return;
+    const record = libraryEntry(view.name);
+    if (!record) return;
+
+    const files = [...(event.dataTransfer?.files || [])];
+    if (!files.length) return;
+
+    const zips = files.filter(file => /\.zip$/i.test(file.name));
+    const images = files.filter(file => !/\.zip$/i.test(file.name));
+    const slot = event.target?.closest?.('[data-mz-lib-slot]');
+
+    busy = true;
+    const work = [];
+
+    if (zips.length) {
+        work.push(spriteUploadZip({ name: record.name, file: zips[0] }).then(result => {
+            if (!result.ok) throw new Error(result.error || 'the pack was refused');
+            invalidateSprites(record.name);
+            notify(result.count
+                ? `Uploaded ${result.count} sprite${result.count === 1 ? '' : 's'} for ${record.name}.`
+                : 'The pack held no images.', result.count ? 'success' : 'warning');
+        }));
+    }
+
+    if (images.length) {
+        work.push(uploadSpriteFiles(record, images, slot?.dataset?.mzLibSlot || '', ''));
+    }
+
+    Promise.all(work)
+        .catch(error => {
+            console.warn('[Meziverse] the library drop failed', error);
+            notify(`Could not save that for ${record.name}.`, 'error');
+        })
+        .then(() => {
+            busy = false;
+            renderWin();
+        });
 }
 
 /**
@@ -883,141 +1059,122 @@ function face(record) {
     return plate;
 }
 
+/* ---------- one character's page: the stage and the board ---------- */
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function savedLine(iso) {
+    const date = new Date(String(iso ?? ''));
+    if (Number.isNaN(date.getTime())) return '';
+    return `Saved ${date.getDate()} ${MONTHS[date.getMonth()]}`;
+}
+
+/** The row the stage is showing: the selected sprite, or the portrait. */
+function selectedRow() {
+    if (!view.sel) return null;
+    return detailRows.find(row => row.label === view.sel.label && row.spriteName === view.sel.spriteName) || null;
+}
+
 function renderDetail(record) {
-    const fragment = document.createDocumentFragment();
+    els.detail.style.setProperty('--h', `${hueOf(record.name)}deg`);
+    els.detail.replaceChildren(buildStage(record), buildBoard(record));
+    loadDetailRows(record);
+}
 
-    const back = document.createElement('button');
-    back.type = 'button';
-    back.className = 'mz-lib-back';
-    back.dataset.mzLibBack = '';
-    back.textContent = '\u2190 All characters';
-    fragment.append(back);
+/** The page's left: the big preview, the name, the tools - the stage. */
+function buildStage(record) {
+    const stage = document.createElement('aside');
+    stage.className = 'mz-lib-stage';
 
-    const hero = document.createElement('div');
-    hero.className = 'mz-lib-hero';
-    hero.style.setProperty('--h', `${hueOf(record.name)}deg`);
-    hero.append(face(record));
+    const row = selectedRow();
 
-    const tools = document.createElement('div');
-    tools.className = 'mz-lib-hero-tools';
+    const preview = document.createElement('div');
+    preview.className = 'mz-lib-preview';
+    const source = row ? imageSource(row.path) : imageSource(record.portrait || '');
+    if (source) {
+        const image = document.createElement('img');
+        image.alt = '';
+        image.decoding = 'async';
+        image.src = source;
+        image.addEventListener('error', () => {
+            // The path outlived its file: fall back to the plate.
+            image.remove();
+            preview.classList.add('is-empty');
+        });
+        preview.append(image);
+    } else {
+        preview.classList.add('is-empty');
+    }
 
-    const change = document.createElement('button');
-    change.type = 'button';
-    change.className = 'mz-btn-ghost';
-    change.dataset.mzLibPortrait = 'change';
-    change.textContent = record.portrait ? 'Change portrait' : 'Add portrait';
+    const monogram = document.createElement('span');
+    monogram.className = 'mz-lib-initial';
+    monogram.textContent = initials(record.name);
+    preview.append(monogram);
 
-    const remove = document.createElement('button');
-    remove.type = 'button';
-    remove.className = 'mz-btn-ghost is-danger';
-    remove.dataset.mzLibPortrait = 'remove';
-    remove.textContent = 'Remove portrait';
-    remove.hidden = !record.portrait;
+    const tag = document.createElement('span');
+    tag.className = 'mz-lib-preview-tag' + (row ? ' is-label' : '');
+    tag.textContent = row ? row.label : 'Portrait';
+    preview.append(tag);
 
-    tools.append(change, remove);
-    hero.append(tools);
-    fragment.append(hero);
+    const who = document.createElement('div');
+    who.className = 'mz-lib-who';
 
     const title = document.createElement('h3');
     title.className = 'mz-lib-title';
     title.textContent = record.name;
-    fragment.append(title);
 
-    fragment.append(spritesSection(record));
-    fragment.append(footSection(record));
+    const meta = document.createElement('div');
+    meta.className = 'mz-lib-who-meta';
+    if (foldSet(presentNames()).has(castKey(record.name))) {
+        const live = document.createElement('span');
+        live.className = 'is-live';
+        live.textContent = 'In the scene now';
+        meta.append(live);
+    }
+    const saved = document.createElement('span');
+    saved.textContent = savedLine(record.addedAt);
+    meta.append(saved);
+    who.append(title, meta);
 
-    els.detail.replaceChildren(fragment);
-    renderSpriteRows(record);
+    const tools = document.createElement('div');
+    tools.className = 'mz-lib-stage-tools';
+    if (row) {
+        tools.append(
+            toolButton('sprite-replace', 'mz-i-swap', 'Replace'),
+            toolButton('sprite-portrait', 'mz-i-face', 'Use as portrait'),
+            toolButton('sprite-delete', 'mz-i-trash', 'Delete', 'is-danger'),
+        );
+    } else {
+        tools.append(toolButton('portrait-change', 'mz-i-camera', record.portrait ? 'Change portrait' : 'Add portrait'));
+        if (record.portrait) tools.append(toolButton('portrait-remove', 'mz-i-trash', 'Remove portrait', 'is-danger'));
+    }
+
+    const note = document.createElement('p');
+    note.className = 'mz-lib-stage-note';
+    note.textContent = row
+        ? `Stored as ${row.spriteName}. Click another slot to compare.`
+        : 'Click any slot to look at it here.';
+
+    stage.append(preview, who, tools, note);
+    if (removeStage !== 'idle') stage.append(removeBox(record));
+    return stage;
 }
 
-function spritesSection(record) {
-    const section = document.createElement('section');
-    section.className = 'mz-lib-sec';
-
-    const head = document.createElement('div');
-    head.className = 'mz-lib-sec-head';
-
-    const heading = document.createElement('h4');
-    heading.textContent = 'Expression sprites';
-
-    const count = document.createElement('span');
-    count.className = 'mz-lib-count';
-    count.dataset.mzLibCount = '';
-
-    const pack = document.createElement('button');
-    pack.type = 'button';
-    pack.className = 'mz-btn-ghost';
-    pack.dataset.mzLibSprite = 'pack';
-    pack.textContent = 'Upload pack';
-
-    head.append(heading, count, pack);
-
-    const bar = document.createElement('div');
-    bar.className = 'mz-lib-bar';
-
-    const select = document.createElement('select');
-    select.className = 'mz-select';
-    select.dataset.mzLibLabel = '';
-    select.setAttribute('aria-label', 'Expression label');
-    for (const label of SUGGESTED_LABELS) {
-        const option = document.createElement('option');
-        option.value = label;
-        option.textContent = label;
-        select.append(option);
-    }
-    const custom = document.createElement('option');
-    custom.value = 'custom';
-    custom.textContent = 'Custom\u2026';
-    select.append(custom);
-
-    const input = document.createElement('input');
-    input.className = 'mz-select mz-lib-custom';
-    input.type = 'text';
-    input.dataset.mzLibCustomLabel = '';
-    input.placeholder = 'label';
-    input.setAttribute('aria-label', 'Custom expression label');
-    input.hidden = true;
-    input.spellcheck = false;
-
-    const add = document.createElement('button');
-    add.type = 'button';
-    add.className = 'mz-btn-ghost';
-    add.dataset.mzLibSprite = 'add';
-    add.textContent = 'Add sprite';
-
-    bar.append(select, input, add);
-    section.append(head, bar);
-
-    const rows = document.createElement('div');
-    rows.className = 'mz-lib-sprites';
-    rows.dataset.mzLibSprites = '';
-    section.append(rows);
-
-    // The custom label's door: "Custom…" on the select.
-    select.addEventListener('change', () => {
-        input.hidden = select.value !== 'custom';
-        if (!input.hidden) input.focus();
-    });
-
-    return section;
+function toolButton(action, glyph, label, extra = '') {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'mz-btn-ghost' + (extra ? ` ${extra}` : '');
+    button.dataset.mzLibTool = action;
+    button.append(icon(glyph), document.createTextNode(label));
+    return button;
 }
 
-function footSection(record) {
-    const foot = document.createElement('div');
-    foot.className = 'mz-lib-foot';
-
-    if (removeStage === 'idle') {
-        const remove = document.createElement('button');
-        remove.type = 'button';
-        remove.className = 'mz-btn-ghost is-danger';
-        remove.dataset.mzLibRemove = '';
-        remove.textContent = 'Remove from library';
-        foot.append(remove);
-        return foot;
-    }
+/** The staged removal, kept out of the page's foot: idle → confirm → (sprites?) → gone. */
+function removeBox(record) {
+    const box = document.createElement('div');
+    box.className = 'mz-lib-stage-ask';
 
     const ask = document.createElement('p');
-    ask.className = 'mz-lib-ask';
     ask.textContent = removeStage === 'confirm'
         ? `Remove ${record.name} from the library?`
         : `Delete their ${detailRows.length} sprite${detailRows.length === 1 ? '' : 's'} too?`;
@@ -1034,82 +1191,380 @@ function footSection(record) {
     no.dataset.mzLibRemove = removeStage === 'confirm' ? 'cancel' : 'no-sprites';
     no.textContent = removeStage === 'confirm' ? 'Cancel' : 'No, keep them';
 
-    foot.append(ask, yes, no);
-    return foot;
+    box.append(ask, yes, no);
+    return box;
 }
 
-function renderSpriteRows(record) {
-    const holder = els.detail.querySelector('[data-mz-lib-sprites]');
-    const count = els.detail.querySelector('[data-mz-lib-count]');
-    if (!holder) return;
+/** The page's right: the expression board - every label, filled or empty. */
+function buildBoard(record) {
+    const board = document.createElement('div');
+    board.className = 'mz-lib-board';
+    board.dataset.fit = view.fit;
 
-    fetchSprites(record.name).then(rows => {
-        // The window may have moved on while the listing was in flight.
-        if (!win || win.hidden || view.kind !== 'detail' || view.name !== record.name) return;
-        detailRows = rows;
+    board.append(boardHead(record), boardBar());
 
-        if (count) {
-            count.textContent = rows.length
-                ? `${rows.length} sprite${rows.length === 1 ? '' : 's'}`
-                : 'none yet';
-        }
+    const scroll = document.createElement('div');
+    scroll.className = 'mz-lib-boardscroll';
+    scroll.dataset.mzLibScroll = '';
+    board.append(scroll);
 
-        const fragment = document.createDocumentFragment();
-        if (!rows.length) {
-            const empty = document.createElement('p');
-            empty.className = 'mz-lib-empty';
-            empty.textContent = 'No sprites yet \u2014 add one, or upload a whole pack.';
-            fragment.append(empty);
-        }
+    fillBoard(scroll, record);
+    return board;
+}
 
-        for (const row of rows) fragment.append(spriteRow(row));
-        fragment.append(addTile());
-        holder.replaceChildren(fragment);
-    });
+function boardHead(record) {
+    const head = document.createElement('div');
+    head.className = 'mz-lib-boardhead';
+
+    const coverage = spriteCoverage(detailRows);
+    const circ = 2 * Math.PI * 19;
+
+    const ring = document.createElement('div');
+    ring.className = 'mz-lib-ring';
+    ring.innerHTML = `<svg viewBox="0 0 46 46" aria-hidden="true"><circle class="t" cx="23" cy="23" r="19"/><circle class="f" cx="23" cy="23" r="19" stroke-dasharray="${circ.toFixed(1)}" stroke-dashoffset="${(circ * (1 - coverage.count / SUGGESTED_LABELS.length)).toFixed(1)}"/></svg>`;
+    const number = document.createElement('b');
+    number.textContent = String(coverage.count);
+    ring.append(number);
+
+    const cover = document.createElement('div');
+    cover.className = 'mz-lib-cover';
+    const heading = document.createElement('h3');
+    heading.textContent = 'Expressions';
+    const line = document.createElement('p');
+    const of = document.createElement('span');
+    of.textContent = `${coverage.count} of ${SUGGESTED_LABELS.length} \u00b7 `;
+    const core = document.createElement('em');
+    core.textContent = `core ${coverage.core} of ${CORE_LABELS.length}`;
+    line.append(of, core);
+    if (coverage.extra > 0) {
+        line.append(document.createTextNode(` \u00b7 ${coverage.extra} extra file${coverage.extra === 1 ? '' : 's'}`));
+    }
+    cover.append(heading, line);
+
+    const tools = document.createElement('div');
+    tools.className = 'mz-lib-boardtools';
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'mz-btn-ghost';
+    add.dataset.mzLibSprite = 'add';
+    add.append(icon('mz-i-image'), document.createTextNode('Add files'));
+    const pack = document.createElement('button');
+    pack.type = 'button';
+    pack.className = 'mz-btn-ghost';
+    pack.dataset.mzLibSprite = 'pack';
+    pack.append(icon('mz-i-upload'), document.createTextNode('Upload .zip'));
+    tools.append(add, pack);
+
+    head.append(ring, cover, tools);
+    return head;
+}
+
+function boardBar() {
+    const bar = document.createElement('div');
+    bar.className = 'mz-lib-bar2';
+
+    const seg = document.createElement('div');
+    seg.className = 'mz-lib-seg';
+    seg.setAttribute('role', 'group');
+    seg.setAttribute('aria-label', 'Filter slots');
+    const coverage = spriteCoverage(detailRows);
+    const total = SUGGESTED_LABELS.length;
+    for (const [key, label] of [['all', `All ${total}`], ['missing', `Missing ${total - coverage.count}`], ['filled', `Filled ${coverage.count}`]]) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.dataset.mzLibBoardFilter = key;
+        button.textContent = label;
+        button.classList.toggle('is-on', view.boardFilter === key);
+        seg.append(button);
+    }
+
+    const spacer = document.createElement('span');
+    spacer.className = 'mz-lib-spacer';
+
+    const hint = document.createElement('span');
+    hint.className = 'mz-lib-hint';
+    hint.textContent = 'Drop files anywhere on the board';
+
+    const fit = document.createElement('div');
+    fit.className = 'mz-lib-seg';
+    fit.setAttribute('role', 'group');
+    fit.setAttribute('aria-label', 'Thumbnail crop');
+    for (const key of ['face', 'full']) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.dataset.mzLibFit = key;
+        button.textContent = key === 'face' ? 'Face' : 'Full';
+        button.classList.toggle('is-on', view.fit === key);
+        fit.append(button);
+    }
+
+    bar.append(seg, spacer, hint, fit);
+    return bar;
 }
 
 /**
- * One sprite as a gallery cell: the art fills the tile, the label rides
- * on it, and the delete arms on hover. The file name is the cell's title.
+ * The board's scroll: the tray first (files the names could not place),
+ * then the drop panel when the set is empty, then the families of slots.
  */
-function spriteRow(row) {
-    const item = document.createElement('div');
-    item.className = 'mz-lib-sprite';
-    item.dataset.mzLibSpriteName = row.spriteName;
-    item.title = row.spriteName;
+function fillBoard(scroll, record) {
+    const fragment = document.createDocumentFragment();
 
-    const image = document.createElement('img');
-    image.alt = row.label;
-    image.decoding = 'async';
-    image.loading = 'lazy';
-    image.src = imageSource(row.path);
+    if (trayItems.length) fragment.append(trayBox());
+    if (!detailRows.length && detailLoaded) fragment.append(dropPanel());
 
-    const label = document.createElement('span');
-    label.className = 'mz-lib-sprite-label';
-    label.textContent = row.label;
+    const custom = [...new Set(detailRows.map(row => row.label))]
+        .filter(label => labelFamily(label) === 'custom')
+        .sort();
 
-    const del = document.createElement('button');
-    del.type = 'button';
-    del.className = 'mz-ibtn mz-lib-sprite-del is-danger';
-    del.dataset.mzLibSpriteDel = row.spriteName;
-    del.title = 'Delete sprite';
-    del.setAttribute('aria-label', `Delete sprite ${row.spriteName}`);
-    del.append(icon('mz-i-trash'));
+    const families = [...EXPRESSION_FAMILIES];
+    if (custom.length) families.push({ id: 'custom', name: 'Custom', labels: custom });
 
-    item.append(image, label, del);
-    return item;
+    const coverage = spriteCoverage(detailRows);
+    for (const family of families) {
+        const labels = family.labels.filter(label => {
+            const has = coverage.set.has(label);
+            return view.boardFilter === 'all' || (view.boardFilter === 'missing' ? !has : has);
+        });
+        if (!labels.length) continue;
+        fragment.append(famSection(family, labels, coverage));
+    }
+
+    scroll.replaceChildren(fragment);
 }
 
-/** The gallery's add tile - the one-by-one door, same as "Add sprite". */
-function addTile() {
+function famSection(family, labels, coverage) {
+    const section = document.createElement('div');
+    section.className = 'mz-lib-fam';
+
+    const head = document.createElement('div');
+    head.className = 'mz-lib-fam-head';
+
+    const name = document.createElement('h5');
+    name.textContent = family.name;
+
+    const have = family.labels.filter(label => coverage.set.has(label)).length;
+    const count = document.createElement('span');
+    count.textContent = `${have}/${family.labels.length}`;
+    count.classList.toggle('is-full', have === family.labels.length);
+
+    const note = document.createElement('p');
+    note.textContent = family.note || '';
+
+    head.append(name, count, note);
+
+    const slots = document.createElement('div');
+    slots.className = 'mz-lib-slots';
+    for (const label of labels) slots.append(slotCell(label, family.id === 'core'));
+    if (family.id === 'custom' && view.boardFilter !== 'filled') slots.append(customTile());
+
+    section.append(head, slots);
+    return section;
+}
+
+/**
+ * One slot: the face when the label has a picture, a dashed outline that
+ * waits when it does not. Clicking a filled slot looks at it on the stage
+ * (again to cycle its files); clicking a missing one opens the picker
+ * with the label already set.
+ */
+function slotCell(label, core) {
+    const mine = detailRows.filter(row => row.label === label);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.mzLibSlot = label;
+
+    if (!mine.length) {
+        button.className = 'mz-lib-slot is-missing' + (core ? ' is-core' : '');
+        button.title = `Add ${label}`;
+        button.setAttribute('aria-label', `Add a sprite for ${label}`);
+        button.innerHTML = '<svg class="mz-lib-ghost" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+        const name = document.createElement('span');
+        name.className = 'mz-lib-slot-label';
+        name.textContent = label;
+        button.append(name);
+        return button;
+    }
+
+    button.className = 'mz-lib-slot is-filled' + (view.sel?.label === label ? ' is-sel' : '');
+    button.title = mine.map(row => row.spriteName).join(', ');
+    button.setAttribute('aria-label', `Look at ${label}`);
+
+    const image = document.createElement('img');
+    image.alt = '';
+    image.decoding = 'async';
+    image.loading = 'lazy';
+    const shown = view.sel?.label === label
+        ? mine.find(row => row.spriteName === view.sel.spriteName) || mine[0]
+        : mine[0];
+    image.src = imageSource(shown.path);
+    button.append(image);
+
+    if (mine.length > 1) {
+        const stack = document.createElement('span');
+        stack.className = 'mz-lib-stack';
+        stack.textContent = `\u00d7${mine.length}`;
+        button.append(stack);
+    }
+
+    const name = document.createElement('span');
+    name.className = 'mz-lib-slot-label';
+    name.textContent = label;
+    button.append(name);
+    return button;
+}
+
+/** The custom family's own door: name a label outside the 28. */
+function customTile() {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'mz-lib-slot is-missing';
+    button.dataset.mzLibCustom = '';
+    button.title = 'Add a custom label';
+    button.setAttribute('aria-label', 'Add a custom label');
+    button.innerHTML = '<svg class="mz-lib-ghost" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+    const name = document.createElement('span');
+    name.className = 'mz-lib-slot-label';
+    name.textContent = 'custom\u2026';
+    button.append(name);
+    return button;
+}
+
+/**
+ * The page's rows arrive from the listing; when they land, the board
+ * repaints. The window may have moved on while the listing was in flight.
+ */
+function loadDetailRows(record) {
+    detailLoaded = peekSprites(record.name) !== null;
+    detailRows = peekSprites(record.name) || [];
+
+    fetchSprites(record.name).then(rows => {
+        if (!win || win.hidden || view.kind !== 'detail' || view.name !== record.name) return;
+        detailRows = rows;
+        detailLoaded = true;
+
+        // A selection can outlive its file.
+        if (view.sel && !rows.some(row => row.spriteName === view.sel.spriteName)) view.sel = null;
+
+        renderDetail(record);
+    });
+}
+
+/** Files the names could not place: a thumb, the name, one label picker each. */
+function trayBox() {
+    const box = document.createElement('div');
+    box.className = 'mz-lib-tray';
+
+    const head = document.createElement('div');
+    head.className = 'mz-lib-tray-head';
+
+    const title = document.createElement('b');
+    title.textContent = `${trayItems.length} file${trayItems.length === 1 ? '' : 's'} need${trayItems.length === 1 ? 's' : ''} a label`;
+
+    const note = document.createElement('span');
+    note.textContent = 'Pick one, or drag the picture onto a slot.';
+
+    const dismiss = document.createElement('button');
+    dismiss.type = 'button';
+    dismiss.className = 'mz-btn-ghost';
+    dismiss.dataset.mzLibTrayDismiss = '';
+    dismiss.textContent = 'Dismiss';
+
+    head.append(title, note, dismiss);
+
+    const row = document.createElement('div');
+    row.className = 'mz-lib-tray-row';
+    for (const item of trayItems) row.append(trayItem(item));
+
+    box.append(head, row);
+    return box;
+}
+
+function trayItem(item) {
+    const wrap = document.createElement('div');
+    wrap.className = 'mz-lib-tray-item';
+
+    const thumb = document.createElement('span');
+    thumb.className = 'thumb';
+    const image = document.createElement('img');
+    image.alt = '';
+    image.src = item.url;
+    thumb.append(image);
+
+    const side = document.createElement('div');
+    const name = document.createElement('small');
+    name.textContent = item.name;
+
+    const select = document.createElement('select');
+    select.className = 'mz-select';
+    select.dataset.mzLibTrayPick = item.id;
+    select.setAttribute('aria-label', `Label for ${item.name}`);
+    const choose = document.createElement('option');
+    choose.value = '';
+    choose.textContent = 'Choose label\u2026';
+    select.append(choose);
+    for (const label of SUGGESTED_LABELS) {
+        const option = document.createElement('option');
+        option.value = label;
+        option.textContent = label;
+        select.append(option);
+    }
+    const other = document.createElement('option');
+    other.value = 'custom';
+    other.textContent = 'Custom\u2026';
+    select.append(other);
+
+    select.addEventListener('change', () => {
+        if (select.value === 'custom') {
+            // A custom label: a small input replaces the picker.
+            const input = document.createElement('input');
+            input.className = 'mz-select mz-lib-custom';
+            input.type = 'text';
+            input.placeholder = 'label';
+            input.setAttribute('aria-label', `Custom label for ${item.name}`);
+            input.spellcheck = false;
+            select.replaceWith(input);
+            input.focus();
+            input.addEventListener('keydown', event => {
+                if (event.key !== 'Enter') return;
+                event.preventDefault();
+                trayLabelChosen(item.id, cleanSpriteLabel(input.value));
+            });
+            return;
+        }
+        if (select.value) trayLabelChosen(item.id, select.value);
+    });
+
+    side.append(name, select);
+    wrap.append(thumb, side);
+    return wrap;
+}
+
+/** The empty set's door: one big panel that explains the naming rule. */
+function dropPanel() {
+    const panel = document.createElement('div');
+    panel.className = 'mz-lib-drop';
+    panel.innerHTML =
+        `<b>Drop the sprites here</b>
+        <p>Images or a .zip. Filenames pick the slot: <code>joy.png</code> \u2192 joy, <code>sadness-2.png</code> \u2192 a second sadness. Anything the names can't place waits for you to choose.</p>`;
+
+    panel.prepend(icon('mz-i-upload'));
+
+    const tools = document.createElement('div');
+    tools.className = 'mz-lib-drop-tools';
     const add = document.createElement('button');
     add.type = 'button';
-    add.className = 'mz-lib-add';
+    add.className = 'mz-btn-ghost';
     add.dataset.mzLibSprite = 'add';
-    add.title = 'Add a sprite';
-    add.setAttribute('aria-label', 'Add a sprite');
-    add.textContent = '+';
-    return add;
+    add.textContent = 'Add files\u2026';
+    const pack = document.createElement('button');
+    pack.type = 'button';
+    pack.className = 'mz-btn-ghost';
+    pack.dataset.mzLibSprite = 'pack';
+    pack.textContent = 'Upload .zip';
+    tools.append(add, pack);
+    panel.append(tools);
+
+    return panel;
 }
 
 /* ---------- interaction ---------- */
@@ -1119,6 +1574,38 @@ function onClick(event) {
 
     if (event.target.closest('[data-mz-lib-close]')) {
         closeLibrary();
+        return;
+    }
+
+    // The `…` menu closes on any click outside it - and the click still
+    // lands on whatever was pressed.
+    const menuButton = event.target.closest('[data-mz-lib-menu]');
+    const inMenu = event.target.closest('.mz-lib-menu');
+    if (view.kind === 'detail' && view.menu && !menuButton && !inMenu) {
+        view.menu = false;
+        win.querySelector('.mz-lib-menu')?.remove();
+    }
+
+    if (menuButton) {
+        view.menu = !view.menu;
+        if (view.menu) renderMenu();
+        else win.querySelector('.mz-lib-menu')?.remove();
+        return;
+    }
+
+    const menuItem = event.target.closest('[data-mz-lib-menu-item]');
+    if (menuItem) {
+        view.menu = false;
+        win.querySelector('.mz-lib-menu')?.remove();
+        if (menuItem.dataset.mzLibMenuItem === 'copy') {
+            const name = String(view.name ?? '');
+            navigator.clipboard?.writeText(name).then(
+                () => notify(`"${name}" copied - paste it into a scene tag.`, 'success'),
+                () => notify('Could not reach the clipboard.', 'warning'),
+            );
+        } else {
+            removePressed('start');
+        }
         return;
     }
 
@@ -1174,36 +1661,62 @@ function onClick(event) {
     if (tile) {
         const record = libraryEntry(tile.dataset.mzLibName);
         if (record) {
-            view = { kind: 'detail', name: record.name };
+            view = detailView(record.name);
             resetDetail();
             renderWin();
         }
         return;
     }
 
-    const portrait = event.target.closest('[data-mz-lib-portrait]');
-    if (portrait) {
-        if (portrait.dataset.mzLibPortrait === 'change') {
-            portraitTarget = '';
-            openPicker('portrait');
-        } else if (view.kind === 'detail') {
-            setPortrait(view.name, '');
-            notify(`Portrait removed for ${view.name} in the library.`, 'info');
-            renderWin();
-        }
+    const tool = event.target.closest('[data-mz-lib-tool]');
+    if (tool) {
+        toolPressed(tool.dataset.mzLibTool);
+        return;
+    }
+
+    const slot = event.target.closest('[data-mz-lib-slot]');
+    if (slot) {
+        slotPressed(slot.dataset.mzLibSlot);
+        return;
+    }
+
+    const custom = event.target.closest('[data-mz-lib-custom]');
+    if (custom) {
+        customPressed(custom);
+        return;
+    }
+
+    const boardFilter = event.target.closest('[data-mz-lib-board-filter]');
+    if (boardFilter) {
+        view.boardFilter = boardFilter.dataset.mzLibBoardFilter;
+        renderWin();
+        return;
+    }
+
+    const fit = event.target.closest('[data-mz-lib-fit]');
+    if (fit) {
+        view.fit = fit.dataset.mzLibFit;
+        renderWin();
+        return;
+    }
+
+    const dismiss = event.target.closest('[data-mz-lib-tray-dismiss]');
+    if (dismiss) {
+        for (const item of trayItems) URL.revokeObjectURL(item.url);
+        trayItems = [];
+        renderWin();
         return;
     }
 
     const sprite = event.target.closest('[data-mz-lib-sprite]');
     if (sprite) {
-        if (sprite.dataset.mzLibSprite === 'add') addSpritePressed();
-        else openPicker('pack');
-        return;
-    }
-
-    const del = event.target.closest('[data-mz-lib-sprite-del]');
-    if (del) {
-        spriteDeletePressed(del.dataset.mzLibSpriteDel, del);
+        if (sprite.dataset.mzLibSprite === 'add') {
+            pendingLabel = '';
+            pendingSpriteName = '';
+            openPicker('sprite');
+        } else {
+            openPicker('pack');
+        }
         return;
     }
 
@@ -1221,27 +1734,104 @@ function openPicker(kind) {
     }
 }
 
-function addSpritePressed() {
-    if (view.kind !== 'detail' || busy) return;
+/** A sprite path with its cache-buster gone - safe to store as a portrait. */
+function cleanPath(path) {
+    return String(path ?? '').split(/[?#]/)[0];
+}
 
-    const select = els.detail.querySelector('[data-mz-lib-label]');
-    const custom = els.detail.querySelector('[data-mz-lib-custom-label]');
-    const raw = select?.value === 'custom' ? custom?.value : select?.value;
-    const label = cleanSpriteLabel(raw);
+function toolPressed(action) {
+    if (view.kind !== 'detail') return;
+    const record = libraryEntry(view.name);
+    if (!record) return;
 
-    if (!label) {
-        notify('That sprite needs a label.', 'warning');
+    if (action === 'portrait-change') {
+        portraitTarget = '';
+        openPicker('portrait');
+    } else if (action === 'portrait-remove') {
+        setPortrait(record.name, '');
+        notify(`Portrait removed for ${record.name} in the library.`, 'info');
+        renderWin();
+    } else if (action === 'sprite-replace') {
+        const row = selectedRow();
+        if (!row) return;
+        pendingLabel = row.label;
+        pendingSpriteName = row.spriteName;
+        openPicker('sprite');
+    } else if (action === 'sprite-portrait') {
+        const row = selectedRow();
+        if (!row) return;
+        setPortrait(record.name, cleanPath(row.path));
+        notify(`"${row.label}" is now ${record.name}'s portrait.`, 'success');
+        renderWin();
+    } else if (action === 'sprite-delete') {
+        spriteDeletePressed();
+    }
+}
+
+/**
+ * Clicking a slot looks at it on the stage; clicking again steps through
+ * its files, and after the last one goes back to the portrait. A missing
+ * slot opens the picker with its label already set - no dropdown.
+ */
+function slotPressed(label) {
+    if (view.kind !== 'detail') return;
+
+    const mine = detailRows.filter(row => row.label === label);
+    if (!mine.length) {
+        pendingLabel = label;
+        pendingSpriteName = '';
+        openPicker('sprite');
         return;
     }
 
-    win.dataset.mzLibPendingLabel = label;
-    openPicker('sprite');
+    if (view.sel?.label !== label) {
+        view.sel = { label, spriteName: mine[0].spriteName };
+    } else {
+        const index = mine.findIndex(row => row.spriteName === view.sel.spriteName);
+        view.sel = index < mine.length - 1
+            ? { label, spriteName: mine[index + 1].spriteName }
+            : null;
+    }
+    renderWin();
+}
+
+/** The custom door: name a label outside the 28, then pick its picture. */
+function customPressed(button) {
+    const input = document.createElement('input');
+    input.className = 'mz-select mz-lib-custom';
+    input.type = 'text';
+    input.placeholder = 'label';
+    input.setAttribute('aria-label', 'Custom expression label');
+    input.spellcheck = false;
+    button.replaceWith(input);
+    input.focus();
+
+    let done = false;
+    const commit = () => {
+        if (done) return;
+        done = true;
+        const label = cleanSpriteLabel(input.value);
+        if (label) {
+            pendingLabel = label;
+            pendingSpriteName = '';
+            openPicker('sprite');
+        } else {
+            renderWin();
+        }
+    };
+
+    input.addEventListener('keydown', event => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        commit();
+    });
+    input.addEventListener('blur', commit);
 }
 
 async function onFileChosen(kind, input) {
-    const file = input?.files?.[0] || null;
+    const files = [...(input?.files || [])];
     input.value = '';
-    if (!file || busy) return;
+    if (!files.length || busy) return;
 
     const forSheet = kind === 'portrait' && portraitTarget === 'sheet';
     const record = forSheet ? null : (view.kind === 'detail' ? libraryEntry(view.name) : null);
@@ -1251,7 +1841,7 @@ async function onFileChosen(kind, input) {
 
     try {
         if (kind === 'portrait') {
-            const prepared = await prepareImage(file);
+            const prepared = await prepareImage(files[0]);
             const path = await uploadImage({
                 image: prepared.image,
                 format: prepared.format,
@@ -1268,17 +1858,14 @@ async function onFileChosen(kind, input) {
                 renderWin();
             }
         } else if (kind === 'sprite') {
-            const label = cleanSpriteLabel(win.dataset.mzLibPendingLabel || '');
-            delete win.dataset.mzLibPendingLabel;
-            if (!label) throw new Error('no label chosen');
-
-            const result = await spriteUpload({ name: record.name, label, spriteName: label, file });
-            if (!result.ok) throw new Error(result.error || 'the sprite was refused');
-            invalidateSprites(record.name);
-            notify(`Sprite "${label}" saved for ${record.name}.`, 'success');
+            const forced = pendingLabel;
+            const replace = pendingSpriteName;
+            pendingLabel = '';
+            pendingSpriteName = '';
+            await uploadSpriteFiles(record, files, forced, replace);
             renderWin();
         } else if (kind === 'pack') {
-            const result = await spriteUploadZip({ name: record.name, file });
+            const result = await spriteUploadZip({ name: record.name, file: files[0] });
             if (!result.ok) throw new Error(result.error || 'the pack was refused');
             invalidateSprites(record.name);
             notify(result.count
@@ -1288,29 +1875,105 @@ async function onFileChosen(kind, input) {
         }
     } catch (error) {
         console.warn('[Meziverse] the library upload failed', error);
-        notify(`Could not save that for ${record.name}.`, 'error');
+        notify(`Could not save that for ${record.name || 'the library'}.`, 'error');
     } finally {
         busy = false;
     }
 }
 
 /**
+ * The 0-step path: filenames pick their slot (`joy.png` → joy,
+ * `sadness-2.png` → a second sadness), a forced label overrides the name,
+ * and whatever cannot be placed waits in the tray. One label, one file -
+ * a second file for a label is numbered.
+ */
+async function uploadSpriteFiles(record, files, forcedLabel = '', forcedSpriteName = '') {
+    const known = [...SUGGESTED_LABELS];
+    for (const row of detailRows) {
+        if (!known.includes(row.label)) known.push(row.label);
+    }
+
+    const batch = new Set();
+    let placed = 0;
+
+    for (const file of files) {
+        const match = forcedLabel
+            ? { label: forcedLabel, extraIndex: 0 }
+            : matchLabel(file.name, known);
+        if (!match) {
+            trayItems.push({
+                id: `${Date.now()}-${trayItems.length}`,
+                file,
+                name: file.name,
+                url: URL.createObjectURL(file),
+            });
+            continue;
+        }
+
+        let spriteName = match.extraIndex > 0 ? `${match.label}-${match.extraIndex}` : match.label;
+        if (forcedSpriteName && files.length === 1) spriteName = forcedSpriteName;
+
+        // Within one batch the name is one file's alone.
+        if (batch.has(spriteName)) {
+            let n = 2;
+            while (batch.has(`${match.label}-${n}`)) n += 1;
+            spriteName = `${match.label}-${n}`;
+        }
+        batch.add(spriteName);
+
+        const result = await spriteUpload({ name: record.name, label: match.label, spriteName, file });
+        if (result.ok) placed += 1;
+        else notify(`Could not save ${file.name}.`, 'error');
+    }
+
+    if (placed) {
+        invalidateSprites(record.name);
+        notify(`${placed} sprite${placed === 1 ? '' : 's'} saved for ${record.name}.`, 'success');
+    }
+}
+
+/** A tray file got its label - up it goes, out of the tray. */
+function trayLabelChosen(id, label) {
+    const index = trayItems.findIndex(item => item.id === id);
+    if (index < 0) return;
+
+    const [item] = trayItems.splice(index, 1);
+    URL.revokeObjectURL(item.url);
+
+    const record = view.kind === 'detail' ? libraryEntry(view.name) : null;
+    if (!record || !label) {
+        renderWin();
+        return;
+    }
+
+    busy = true;
+    uploadSpriteFiles(record, [item.file], label, '').then(() => {
+        busy = false;
+        renderWin();
+    });
+}
+
+/**
  * Sprite deletion is armed twice: one press arms the button ("Delete?"),
  * a second within a few seconds deletes. A stray click never eats art.
  */
-function spriteDeletePressed(spriteName, button) {
-    if (view.kind !== 'detail' || busy) return;
+function spriteDeletePressed() {
+    const row = selectedRow();
+    if (!row || busy) return;
 
-    if (armTimers.has(spriteName)) {
-        clearTimeout(armTimers.get(spriteName));
-        armTimers.delete(spriteName);
+    const button = els.detail.querySelector('[data-mz-lib-tool="sprite-delete"]');
+    const key = `sel:${row.spriteName}`;
+
+    if (armTimers.has(key)) {
+        clearTimeout(armTimers.get(key));
+        armTimers.delete(key);
     } else {
-        button.classList.add('is-armed');
-        button.title = 'Press again to delete';
-        armTimers.set(spriteName, setTimeout(() => {
-            armTimers.delete(spriteName);
-            button.classList.remove('is-armed');
-            button.title = 'Delete sprite';
+        button?.classList.add('is-armed');
+        if (button) button.title = 'Press again to delete';
+        armTimers.set(key, setTimeout(() => {
+            armTimers.delete(key);
+            button?.classList.remove('is-armed');
+            if (button) button.title = 'Delete';
         }, 4000));
         return;
     }
@@ -1319,7 +1982,7 @@ function spriteDeletePressed(spriteName, button) {
     if (!record) return;
 
     busy = true;
-    spriteDelete({ name: record.name, label: '', spriteName }).then(result => {
+    spriteDelete({ name: record.name, label: row.label, spriteName: row.spriteName }).then(result => {
         busy = false;
         if (!result.ok) {
             notify('Could not delete that sprite.', 'error');
@@ -1327,6 +1990,7 @@ function spriteDeletePressed(spriteName, button) {
         }
         invalidateSprites(record.name);
         notify('Sprite deleted.', 'info');
+        view.sel = null;
         renderWin();
     });
 }
@@ -1345,6 +2009,7 @@ function removePressed(step) {
 
     if (step === 'start') {
         removeStage = 'confirm';
+        view.menu = false;
         renderWin();
         return;
     }
