@@ -373,7 +373,6 @@ function forgetRecord(name) {
 }
 
 /* ---------- sprite cache ---------- */
-
 const SPRITE_TTL = 10 * 60 * 1000;
 const spriteCache = new Map();
 
@@ -399,6 +398,52 @@ function invalidateSprites(name) {
     // says so, and the next render reads the listing again.
     detailLoaded = false;
     detailLoading = false;
+}
+
+function fileExt(path) {
+    const clean = String(path ?? '').split(/[?#]/)[0];
+    const match = clean.match(/(\.[A-Za-z0-9]+)$/);
+    return match ? match[1] : '.png';
+}
+
+/**
+ * Copies a character's sprites into another folder, byte for byte, and -
+ * unless `copy` - clears the source afterwards. SillyTavern has no rename
+ * endpoint, so a move is a copy followed by deletes; labels and file names
+ * travel unchanged, so the set lands exactly as it was.
+ *
+ * @returns {Promise<{done: number, failed: string[]}>}
+ */
+async function migrateSprites(fromName, toName, { copy = false } = {}) {
+    const rows = await fetchSprites(fromName, true);
+    const failed = [];
+    let done = 0;
+
+    for (const row of rows) {
+        try {
+            const response = await fetch(imageSource(row.path));
+            if (!response.ok) throw new Error(`fetch failed (${response.status})`);
+            const blob = await response.blob();
+            const file = new File([blob], `${row.spriteName}${fileExt(row.path)}`, { type: blob.type || 'image/png' });
+            const result = await spriteUpload({ name: toName, label: row.label, spriteName: row.spriteName, file });
+            if (!result.ok) throw new Error(result.error || 'upload refused');
+            done += 1;
+        } catch (error) {
+            console.warn('[Meziverse] could not migrate a sprite', error);
+            failed.push(row.spriteName);
+        }
+    }
+
+    if (!copy) {
+        for (const row of rows) {
+            if (failed.includes(row.spriteName)) continue; // originals stay when the copy failed
+            await spriteDelete({ name: fromName, label: row.label, spriteName: row.spriteName });
+        }
+    }
+
+    invalidateSprites(fromName);
+    invalidateSprites(toName);
+    return { done, failed };
 }
 
 /* ---------- the window ---------- */
@@ -443,8 +488,10 @@ let view = { kind: 'grid' };
 // The grid's search and filter, reset whenever the window opens.
 let query = '';
 let filter = 'all';
-// The new-character sheet's draft while it is open, or null.
+// The name sheet's draft (new / rename / duplicate) while it is open, or null.
 let newDraft = null;
+// The name the sheet's commit was blocked on, or ''.
+let sheetConflict = '';
 // Who the portrait picker is filling: 'sheet' or a record's name.
 let portraitTarget = '';
 // The label a picker press already knows, and the file it replaces.
@@ -888,13 +935,18 @@ function renderMenu() {
     copy.dataset.mzLibMenuItem = 'copy';
     copy.append(icon('mz-i-copy'), document.createTextNode('Copy name for scene tags'));
 
+    const duplicate = document.createElement('button');
+    duplicate.type = 'button';
+    duplicate.dataset.mzLibMenuItem = 'duplicate';
+    duplicate.append(icon('mz-i-layers'), document.createTextNode('Duplicate character\u2026'));
+
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.className = 'is-danger';
     remove.dataset.mzLibMenuItem = 'remove';
     remove.append(icon('mz-i-trash'), document.createTextNode('Remove from library\u2026'));
 
-    menu.append(copy, remove);
+    menu.append(copy, duplicate, remove);
     win.append(menu);
 }
 
@@ -1180,49 +1232,66 @@ function newCard() {
 }
 
 /**
- * The new-character sheet: a name, an optional photo, Create. The face
- * plate IS the photo door.
+ * The name sheet - one shape for three doors: a brand-new character, a
+ * rename (the sprite folder travels with the name) and a duplicate (the
+ * sprites are copied, both keep their own set). A taken name blocks and
+ * offers the shortcut: rename the existing one first.
  */
 function renderSheet() {
     win?.querySelector('.mz-lib-scrim')?.remove();
     if (!win || !newDraft) return;
 
+    const mode = newDraft.mode || 'new';
+
     const scrim = document.createElement('div');
     scrim.className = 'mz-lib-scrim';
 
     const sheet = document.createElement('div');
-    sheet.className = 'mz-lib-sheet';
+    sheet.className = 'mz-lib-sheet' + (mode === 'new' ? '' : ' is-plain');
 
-    const photo = document.createElement('button');
-    photo.type = 'button';
-    photo.className = 'mz-lib-sheet-photo';
-    photo.dataset.mzLibSheet = 'photo';
-    photo.title = 'Add a photo';
-    const plate = face({ name: newDraft.name || '', portrait: newDraft.portrait });
-    if (!newDraft.portrait) {
-        plate.classList.add('is-empty');
-        plate.querySelector('.mz-lib-initial').textContent = '+ photo';
+    if (mode === 'new') {
+        const photo = document.createElement('button');
+        photo.type = 'button';
+        photo.className = 'mz-lib-sheet-photo';
+        photo.dataset.mzLibSheet = 'photo';
+        photo.title = 'Add a photo';
+        const plate = face({ name: newDraft.name || '', portrait: newDraft.portrait });
+        if (!newDraft.portrait) {
+            plate.classList.add('is-empty');
+            plate.querySelector('.mz-lib-initial').textContent = '+ photo';
+        }
+        photo.append(plate);
+        sheet.append(photo);
     }
-    photo.append(plate);
 
     const body = document.createElement('div');
 
     const title = document.createElement('h3');
-    title.textContent = 'New character';
+    title.textContent = {
+        rename: 'Rename character',
+        duplicate: 'Duplicate character',
+    }[mode] || 'New character';
 
     const note = document.createElement('p');
-    note.textContent = 'Saved by name. Whenever a scene tag says this name, the library knows them.';
+    note.textContent = {
+        rename: 'The sprite folder moves with the name. This is a clean rename \u2014 the old name is gone.',
+        duplicate: 'The sprites are copied; both characters carry their own set.',
+    }[mode] || 'Saved by name. Whenever a scene tag says this name, the library knows them.';
 
-    const label = document.createElement('label');
-    label.textContent = 'Name';
-    const input = document.createElement('input');
-    input.className = 'mz-select';
-    input.dataset.mzLibSheetName = '';
-    input.value = newDraft.name;
-    input.setAttribute('aria-label', 'Character name');
-    input.spellcheck = false;
-    input.addEventListener('input', () => { newDraft.name = input.value; });
-    label.append(input);
+    const nameField = field('Name', 'Character name', newDraft.name, value => {
+        newDraft.name = value;
+        const firstInput = sheet.querySelector('[data-mz-lib-sheet-first]');
+        if (firstInput && !newDraft.firstTouched) {
+            firstInput.placeholder = recordFirst({ name: value }) || 'the name tags use';
+        }
+    });
+
+    const firstField = field('Answers to', 'the name tags use', newDraft.first, value => {
+        newDraft.first = value;
+        newDraft.firstTouched = true;
+    }, true);
+    firstField.querySelector('input').dataset.mzLibSheetFirst = '';
+    firstField.querySelector('input').placeholder = recordFirst({ name: newDraft.name }) || 'the name tags use';
 
     const actions = document.createElement('div');
     actions.className = 'mz-lib-sheet-act';
@@ -1233,15 +1302,31 @@ function renderSheet() {
     cancel.dataset.mzLibSheet = 'cancel';
     cancel.textContent = 'Cancel';
 
-    const create = document.createElement('button');
-    create.type = 'button';
-    create.className = 'mz-lib-primary';
-    create.dataset.mzLibSheet = 'create';
-    create.textContent = 'Create';
+    const commit = document.createElement('button');
+    commit.type = 'button';
+    commit.className = 'mz-lib-primary';
+    commit.dataset.mzLibSheet = 'create';
+    commit.textContent = { rename: 'Rename', duplicate: 'Duplicate' }[mode] || 'Create';
 
-    actions.append(cancel, create);
-    body.append(title, note, label, actions);
-    sheet.append(photo, body);
+    actions.append(cancel, commit);
+    body.append(title, note, nameField, firstField);
+
+    if (sheetConflict) {
+        const clash = document.createElement('div');
+        clash.className = 'mz-lib-sheet-conflict';
+        const ask = document.createElement('p');
+        ask.textContent = `A ${sheetConflict} already exists. Nothing was overwritten \u2014 give one of them another name.`;
+        const shortcut = document.createElement('button');
+        shortcut.type = 'button';
+        shortcut.className = 'mz-btn-ghost';
+        shortcut.dataset.mzLibSheet = 'conflict-rename';
+        shortcut.textContent = `Rename the existing ${sheetConflict}\u2026`;
+        clash.append(ask, shortcut);
+        body.append(clash);
+    }
+
+    body.append(actions);
+    sheet.append(body);
     scrim.append(sheet);
     win.append(scrim);
 
@@ -1252,23 +1337,145 @@ function renderSheet() {
         renderSheet();
     });
 
-    input.focus();
+    // Enter anywhere in the sheet commits.
+    sheet.addEventListener('keydown', event => {
+        if (event.key !== 'Enter' || event.target.tagName !== 'INPUT') return;
+        event.preventDefault();
+        commitSheet();
+    });
+
+    sheet.querySelector('input')?.focus();
 }
 
-function createPressed() {
+/** One labelled text field of the name sheet. */
+function field(labelText, aria, value, onInput, isSecond = false) {
+    const label = document.createElement('label');
+    label.textContent = labelText;
+
+    const input = document.createElement('input');
+    input.className = 'mz-select';
+    input.type = 'text';
+    input.value = value || '';
+    input.setAttribute('aria-label', aria);
+    input.spellcheck = false;
+    input.addEventListener('input', () => onInput(input.value));
+    if (isSecond) input.dataset.mzLibSheetFirst = '';
+
+    label.append(input);
+    return label;
+}
+
+/** Opens the name sheet for a new character, a rename or a duplicate. */
+function openSheetFor(mode, record = null) {
+    newDraft = {
+        mode,
+        name: record?.name || '',
+        first: record ? recordFirst(record) : '',
+        firstTouched: false,
+        portrait: '',
+        sourceName: record?.name || '',
+    };
+    sheetConflict = '';
+    renderSheet();
+}
+
+function commitSheet() {
+    const mode = newDraft?.mode || 'new';
     const name = String(newDraft?.name ?? '').trim();
     if (!name) {
         notify('A character needs a name.', 'warning');
         return;
     }
+    const first = String(newDraft?.first ?? '').trim() || recordFirst({ name });
 
-    const record = ensureInLibrary(name, newDraft.portrait);
+    if (mode === 'new') {
+        const record = ensureInLibrary(name, newDraft.portrait);
+        newDraft = null;
+        renderSheet();
+        if (!record) return;
+
+        notify(`${record.name} saved to the library.`, 'success');
+        view = detailView(record.name);
+        resetDetail();
+        renderWin();
+        return;
+    }
+
+    const sourceName = String(newDraft.sourceName ?? '');
+    const source = libraryEntry(sourceName);
+    if (!source) {
+        newDraft = null;
+        renderSheet();
+        return;
+    }
+
+    // A taken name blocks and keeps both - the shortcut renames the other.
+    const taken = libraryEntry(name);
+    if (taken && castKey(name) !== castKey(sourceName)) {
+        sheetConflict = taken.name;
+        renderSheet();
+        return;
+    }
+
     newDraft = null;
     renderSheet();
+    if (mode === 'rename') renameRecord(sourceName, name, first);
+    else duplicateRecord(sourceName, name, first);
+}
+
+/**
+ * The rename: the record re-keys, the sprites travel to the new folder
+ * (SillyTavern has no rename endpoint - the move is a copy and deletes),
+ * the portrait path carries over. A clean break: the old name is gone.
+ */
+async function renameRecord(oldName, newName, first) {
+    const record = libraryEntry(oldName);
     if (!record) return;
 
-    notify(`${record.name} saved to the library.`, 'success');
-    view = detailView(record.name);
+    const sameKey = castKey(oldName) === castKey(newName);
+
+    busy = true;
+    // On the same folded key (a case lift, say) the folder keeps its name -
+    // only the record's fields change. Note a case-only rename leaves the
+    // folder as-is; folder lookup is case-insensitive on Windows.
+    const result = (!sameKey && oldName !== newName)
+        ? await migrateSprites(oldName, newName, { copy: false })
+        : { done: 0, failed: [] };
+    busy = false;
+
+    const renamed = normalizeLibraryRecord({ name: newName, first, portrait: record.portrait, addedAt: record.addedAt });
+    if (record.lastUsedAt) renamed.lastUsedAt = record.lastUsedAt;
+    setLibraryEntry(newName, renamed);
+    if (!sameKey) removeLibraryEntry(oldName);
+
+    notify(`${oldName} is now ${newName}.`, 'success');
+    if (result.failed.length) {
+        notify(`${result.failed.length} sprite${result.failed.length === 1 ? '' : 's'} could not move - the originals stay under ${oldName}.`, 'warning');
+    }
+
+    view = detailView(newName);
+    resetDetail();
+    renderWin();
+}
+
+/** The duplicate: the sprites are copied, the portrait shared, both stand. */
+async function duplicateRecord(oldName, newName, first) {
+    const record = libraryEntry(oldName);
+    if (!record) return;
+
+    busy = true;
+    const result = await migrateSprites(oldName, newName, { copy: true });
+    busy = false;
+
+    setLibraryEntry(newName, normalizeLibraryRecord({ name: newName, first, portrait: record.portrait }));
+    notify(result.done
+        ? `${newName} now carries a copy of ${oldName}'s ${result.done} sprite${result.done === 1 ? '' : 's'}.`
+        : `${newName} saved to the library.`, 'success');
+    if (result.failed.length) {
+        notify(`${result.failed.length} sprite${result.failed.length === 1 ? '' : 's'} could not be copied.`, 'warning');
+    }
+
+    view = detailView(newName);
     resetDetail();
     renderWin();
 }
@@ -1394,9 +1601,22 @@ function buildStage(record) {
     const who = document.createElement('div');
     who.className = 'mz-lib-who';
 
+    const titleRow = document.createElement('div');
+    titleRow.className = 'mz-lib-title-row';
+
     const title = document.createElement('h3');
     title.className = 'mz-lib-title';
     title.textContent = record.name;
+
+    const pencil = document.createElement('button');
+    pencil.type = 'button';
+    pencil.className = 'mz-ibtn mz-lib-rename';
+    pencil.dataset.mzLibTool = 'rename';
+    pencil.title = 'Rename character';
+    pencil.setAttribute('aria-label', `Rename ${record.name}`);
+    pencil.append(icon('mz-i-pencil'));
+
+    titleRow.append(title, pencil);
 
     const meta = document.createElement('div');
     meta.className = 'mz-lib-who-meta';
@@ -1409,7 +1629,7 @@ function buildStage(record) {
     const saved = document.createElement('span');
     saved.textContent = savedLine(record.addedAt);
     meta.append(saved);
-    who.append(title, meta);
+    who.append(titleRow, meta);
 
     const tools = document.createElement('div');
     tools.className = 'mz-lib-stage-tools';
@@ -1852,12 +2072,16 @@ function onClick(event) {
     if (menuItem) {
         view.menu = false;
         win.querySelector('.mz-lib-menu')?.remove();
-        if (menuItem.dataset.mzLibMenuItem === 'copy') {
+        const action = menuItem.dataset.mzLibMenuItem;
+        if (action === 'copy') {
             const name = String(view.name ?? '');
             navigator.clipboard?.writeText(name).then(
                 () => notify(`"${name}" copied - paste it into a scene tag.`, 'success'),
                 () => notify('Could not reach the clipboard.', 'warning'),
             );
+        } else if (action === 'duplicate') {
+            const record = libraryEntry(view.name);
+            if (record) openSheetFor('duplicate', record);
         } else {
             removePressed('start');
         }
@@ -1892,8 +2116,11 @@ function onClick(event) {
         } else if (step === 'photo') {
             portraitTarget = 'sheet';
             openPicker('portrait');
+        } else if (step === 'conflict-rename') {
+            const other = libraryEntry(sheetConflict);
+            if (other) openSheetFor('rename', other);
         } else if (step === 'create') {
-            createPressed();
+            commitSheet();
         }
         return;
     }
@@ -1907,8 +2134,7 @@ function onClick(event) {
     }
 
     if (event.target.closest('[data-mz-lib-new]')) {
-        newDraft = { name: '', portrait: '' };
-        renderSheet();
+        openSheetFor('new');
         return;
     }
 
@@ -2002,6 +2228,8 @@ function toolPressed(action) {
     if (action === 'portrait-change') {
         portraitTarget = '';
         openPicker('portrait');
+    } else if (action === 'rename') {
+        openSheetFor('rename', record);
     } else if (action === 'portrait-remove') {
         setPortrait(record.name, '');
         notify(`Portrait removed for ${record.name} in the library.`, 'info');
