@@ -349,7 +349,7 @@ const WIN_HTML = `
             <button type="button" class="mz-lib-chip" data-mz-lib-filter="scene">In scene</button>
             <button type="button" class="mz-lib-chip" data-mz-lib-filter="incomplete">Needs sprites</button>
         </div>
-        <div class="mz-lib-grid" data-mz-lib-grid></div>
+        <div class="mz-lib-shelves" data-mz-lib-grid></div>
         <div class="mz-lib-detail" data-mz-lib-detail hidden></div>
     </div>`;
 
