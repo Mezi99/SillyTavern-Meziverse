@@ -619,6 +619,7 @@ let detailRows = [];
 let detailLoaded = false;
 let detailLoading = false;
 let removeStage = 'idle';
+let removeRows = null;
 // Files the names could not place: {id, file, name, url} each.
 let trayItems = [];
 // The window's own move and resize gestures, the map window's way.
@@ -967,6 +968,7 @@ function resetDetail() {
     detailLoaded = false;
     detailLoading = false;
     removeStage = 'idle';
+    removeRows = null;
     for (const timer of armTimers.values()) clearTimeout(timer);
     armTimers.clear();
     for (const item of trayItems) URL.revokeObjectURL(item.url);
@@ -1877,7 +1879,10 @@ function buildStage(record) {
         ? `Stored as ${row.spriteName}. Click another slot to compare.`
         : 'Click any slot to look at it here.';
 
-    stage.append(preview, who, aliasesAtGlance(record), tools, note);
+    stage.append(preview, who);
+    const chips = aliasesAtGlance(record);
+    if (chips) stage.append(chips);
+    stage.append(tools, note);
     if (removeStage !== 'idle') stage.append(removeBox(record));
     return stage;
 }
@@ -1919,9 +1924,10 @@ function removeBox(record) {
     box.className = 'mz-lib-stage-ask';
 
     const ask = document.createElement('p');
+    const count = removeRows?.length ?? 0;
     ask.textContent = removeStage === 'confirm'
         ? `Remove ${record.name} from the library?`
-        : `Delete their ${detailRows.length} sprite${detailRows.length === 1 ? '' : 's'} too?`;
+        : `Delete their ${count} sprite${count === 1 ? '' : 's'} too?`;
 
     const yes = document.createElement('button');
     yes.type = 'button';
@@ -2775,13 +2781,14 @@ function spriteDeletePressed(row, button) {
 }
 
 /** The staged removal: idle → confirm → (sprites?) → gone. */
-function removePressed(step) {
+async function removePressed(step) {
     if (view.kind !== 'detail') return;
     const record = libraryEntry(view.name);
     if (!record) return;
 
     if (step === 'cancel') {
         removeStage = 'idle';
+        removeRows = null;
         renderWin();
         return;
     }
@@ -2794,9 +2801,16 @@ function removePressed(step) {
     }
 
     if (step === 'yes') {
-        // The character goes; their sprites are offered next when they
-        // have any, and left exactly as they are otherwise.
-        if (detailRows.length) {
+        // The sprites question must not race the listing: an unfetched
+        // folder looks empty and its art would be orphaned. Ask the
+        // server what is really there, then decide.
+        busy = true;
+        const rows = await fetchSprites(record.name, true);
+        busy = false;
+        if (view.kind !== 'detail' || libraryEntry(view.name)?.name !== record.name) return;
+
+        if (rows.length) {
+            removeRows = rows;
             removeStage = 'sprites';
             renderWin();
             return;
@@ -2808,7 +2822,7 @@ function removePressed(step) {
     }
 
     if (step === 'yes-sprites') {
-        const rows = [...detailRows];
+        const rows = removeRows || [];
         forgetRecord(record.name);
         notify(`${record.name} removed from the library.`, 'info');
         leaveDetail();
