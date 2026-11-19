@@ -1104,17 +1104,19 @@ function renderGrid() {
         fragment.append(shelf('In the scene', String(inScene.length), cardGrid(inScene, sceneKeys)));
     }
 
-    if (rest.length || plain) {
-        const grid = cardGrid(rest, sceneKeys);
-        if (plain) grid.append(newCard());
-        fragment.append(shelf('Library', String(rest.length), grid));
-    }
-
+    // Seen-but-unsaved rides high: with a big library, the small shelf of
+    // this chat's newcomers is easier to find above the long listing.
     if (showSeen.length) {
         const seen = document.createElement('div');
         seen.className = 'mz-lib-seen';
         for (const row of showSeen) seen.append(seenRow(row));
         fragment.append(shelf('Seen in this chat \u00b7 not saved', String(showSeen.length), seen));
+    }
+
+    if (rest.length || plain) {
+        const grid = cardGrid(rest, sceneKeys);
+        if (plain) grid.append(newCard());
+        fragment.append(shelf('Library', String(rest.length), grid));
     }
 
     if (!inScene.length && !rest.length && !showSeen.length) {
@@ -2089,10 +2091,15 @@ function famSection(family, labels, coverage) {
     count.textContent = `${have}/${family.labels.length}`;
     count.classList.toggle('is-full', have === family.labels.length);
 
-    const note = document.createElement('p');
-    note.textContent = family.note || '';
+    head.append(name, count);
 
-    head.append(name, count, note);
+    // The family's whisper rides inline, right of the count.
+    if (family.note) {
+        const note = document.createElement('span');
+        note.className = 'mz-lib-fam-note';
+        note.textContent = `(${family.note})`;
+        head.append(note);
+    }
 
     const slots = document.createElement('div');
     slots.className = 'mz-lib-slots';
@@ -2151,8 +2158,35 @@ function slotCell(label, core) {
     const name = document.createElement('span');
     name.className = 'mz-lib-slot-label';
     name.textContent = label;
-    button.append(name);
+    button.append(name, slotTools(label, shown));
     return button;
+}
+
+/** The slot's own hover tools: replace this file, or delete it (armed). */
+function slotTools(label, row) {
+    const wrap = document.createElement('span');
+    wrap.className = 'mz-lib-slot-tools';
+
+    const replace = document.createElement('button');
+    replace.type = 'button';
+    replace.className = 'mz-lib-slot-tool';
+    replace.dataset.mzLibSlotTool = 'replace';
+    replace.dataset.mzLibSpriteName = row.spriteName;
+    replace.title = `Replace ${row.spriteName}`;
+    replace.setAttribute('aria-label', `Replace ${row.spriteName}`);
+    replace.append(icon('mz-i-swap'));
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'mz-lib-slot-tool is-danger';
+    del.dataset.mzLibSlotTool = 'delete';
+    del.dataset.mzLibSpriteName = row.spriteName;
+    del.title = `Delete ${row.spriteName}`;
+    del.setAttribute('aria-label', `Delete ${row.spriteName}`);
+    del.append(icon('mz-i-trash'));
+
+    wrap.append(replace, del);
+    return wrap;
 }
 
 /** The custom family's own door: name a label outside the 28. */
@@ -2402,6 +2436,19 @@ function onClick(event) {
         return;
     }
 
+    const slotTool = event.target.closest('[data-mz-lib-slot-tool]');
+    if (slotTool) {
+        const row = detailRows.find(item => item.spriteName === slotTool.dataset.mzLibSpriteName);
+        if (slotTool.dataset.mzLibSlotTool === 'replace' && row) {
+            pendingLabel = row.label;
+            pendingSpriteName = row.spriteName;
+            openPicker('sprite');
+        } else {
+            spriteDeletePressed(row, slotTool);
+        }
+        return;
+    }
+
     const slot = event.target.closest('[data-mz-lib-slot]');
     if (slot) {
         slotPressed(slot.dataset.mzLibSlot);
@@ -2494,20 +2541,12 @@ function toolPressed(action) {
 
     if (action === 'rename') {
         openSheetFor('rename', record);
-    } else if (action === 'sprite-replace') {
-        const row = selectedRow();
-        if (!row) return;
-        pendingLabel = row.label;
-        pendingSpriteName = row.spriteName;
-        openPicker('sprite');
     } else if (action === 'sprite-portrait') {
         const row = selectedRow();
         if (!row) return;
         setPortrait(record.name, cleanPath(row.path));
         notify(`"${row.label}" is now ${record.name}'s default image.`, 'success');
         renderWin();
-    } else if (action === 'sprite-delete') {
-        spriteDeletePressed();
     }
 }
 
@@ -2700,13 +2739,10 @@ function trayLabelChosen(id, label) {
  * Sprite deletion is armed twice: one press arms the button ("Delete?"),
  * a second within a few seconds deletes. A stray click never eats art.
  */
-function spriteDeletePressed() {
-    const row = selectedRow();
+function spriteDeletePressed(row, button) {
     if (!row || busy) return;
 
-    const button = els.detail.querySelector('[data-mz-lib-tool="sprite-delete"]');
     const key = `sel:${row.spriteName}`;
-
     if (armTimers.has(key)) {
         clearTimeout(armTimers.get(key));
         armTimers.delete(key);
@@ -2716,7 +2752,7 @@ function spriteDeletePressed() {
         armTimers.set(key, setTimeout(() => {
             armTimers.delete(key);
             button?.classList.remove('is-armed');
-            if (button) button.title = 'Delete';
+            if (button) button.title = `Delete ${row.spriteName}`;
         }, 4000));
         return;
     }
@@ -2733,7 +2769,7 @@ function spriteDeletePressed() {
         }
         invalidateSprites(record.name);
         notify('Sprite deleted.', 'info');
-        view.sel = null;
+        if (view.sel?.spriteName === row.spriteName) view.sel = null;
         renderWin();
     });
 }

@@ -51,6 +51,11 @@
    The window: a head that is a way back, and one body per view
    ========================================================================== */
 
+/* buttons speak at a medium weight - nothing bold (the breadcrumb and the
+   card names keep their titles' semibold) */
+.mz-libwin button,
+.mz-chooser button { font-weight: 500; }
+
 .mz-libwin {
     position: absolute;
     z-index: var(--mz-z-sheet);
@@ -634,7 +639,7 @@
 }
 .mz-lib-fam-head span { font-size: var(--mz-text-xs); color: var(--mz-text-dim); }
 .mz-lib-fam-head .is-full { color: var(--mz-ok); }
-.mz-lib-fam-head p { flex: 1; margin: 0; font-size: var(--mz-text-2xs); color: var(--mz-text-dim); text-align: right; }
+.mz-lib-fam-note { font-size: var(--mz-text-2xs); color: var(--mz-text-dim); }
 
 .mz-lib-slots {
     display: grid;
@@ -755,6 +760,58 @@
     border-style: solid;
     border-color: var(--mz-accent);
     background: var(--mz-accent-soft);
+}
+
+/* the slot's own tools: replace and delete, on hover (always on touch) */
+.mz-lib-slot-tools {
+    position: absolute;
+    z-index: 2;
+    top: 5px;
+    right: 5px;
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity var(--mz-dur) var(--mz-ease);
+}
+
+.mz-lib-slot:hover .mz-lib-slot-tools,
+.mz-lib-slot:focus-within .mz-lib-slot-tools,
+.mz-lib-slot-tools:focus-within { opacity: 1; }
+
+.mz-lib-slot-tool {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, .22);
+    border-radius: var(--mz-r-pill);
+    background: color-mix(in srgb, var(--mz-scrim-ink) 62%, transparent);
+    color: rgba(255, 255, 255, .85);
+    cursor: pointer;
+    transition: background var(--mz-dur-fast), border-color var(--mz-dur-fast), color var(--mz-dur-fast);
+}
+
+.mz-lib-slot-tool:hover {
+    background: color-mix(in srgb, var(--mz-scrim-ink) 82%, transparent);
+    color: #fff;
+}
+
+.mz-lib-slot-tool.is-danger:hover {
+    border-color: rgba(207, 125, 118, .55);
+    color: var(--mz-bad);
+}
+
+.mz-lib-slot-tool.is-armed {
+    border-color: var(--mz-bad);
+    background: color-mix(in srgb, var(--mz-bad) 22%, transparent);
+    color: var(--mz-bad);
+}
+
+.mz-lib-slot-tool .ico { width: 12px; height: 12px; }
+
+@media (hover: none) {
+    .mz-lib-slot-tools { opacity: 1; }
 }
 
 /* ---- files the filenames could not place ---- */
@@ -1173,7 +1230,6 @@
     .mz-lib-hint { display: none; }
     .mz-lib-boardscroll { overflow: visible; padding: 2px 14px 22px; }
     .mz-lib-slots { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; }
-    .mz-lib-fam-head p { display: none; }
     .mz-lib-tray, .mz-lib-drop { margin-left: 14px; margin-right: 14px; }
     .mz-lib-sheet { grid-template-columns: 1fr; }
     .mz-lib-sheet .mz-lib-face { width: 96px; }

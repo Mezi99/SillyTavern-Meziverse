@@ -2179,6 +2179,7 @@ body.mz-open .popup { z-index: 9500 !important; }
     border: 1px solid var(--mz-line-strong);
     border-radius: var(--mz-r-sm);
     font-size: var(--mz-text-sm);
+    font-weight: 500;
     color: var(--mz-text);
 }
 .mz-btn-ghost:hover { border-color: var(--mz-accent-line); color: var(--mz-accent); }
