@@ -959,7 +959,7 @@ function wireWinDrag() {
 }
 
 function detailView(name) {
-    return { kind: 'detail', name, sel: null, boardFilter: 'all', fit: 'face', menu: false };
+    return { kind: 'detail', name, sel: null, boardFilter: 'all', fit: 'face', menu: false, tab: 'expressions' };
 }
 
 function resetDetail() {
@@ -1654,10 +1654,122 @@ function renderDetail(record) {
     }
 
     els.detail.style.setProperty('--h', `${hueOf(record.name)}deg`);
-    els.detail.replaceChildren(buildStage(record), buildBoard(record));
+    els.detail.replaceChildren(buildStage(record), buildPane(record));
 
     // One fetch per page; when it lands it repaints and stops there.
     if (!detailLoaded && !detailLoading) loadDetailRows(record);
+}
+
+/** The page's right: the tab bar and whichever page is showing. */
+function buildPane(record) {
+    const pane = document.createElement('div');
+    pane.className = 'mz-lib-pane';
+
+    const tabs = document.createElement('div');
+    tabs.className = 'mz-lib-tabs';
+    tabs.setAttribute('role', 'tablist');
+    for (const [key, label] of [['expressions', 'Expressions'], ['aliases', 'Aliases']]) {
+        const tab = document.createElement('button');
+        tab.type = 'button';
+        tab.className = 'mz-lib-tab' + ((view.tab || 'expressions') === key ? ' is-on' : '');
+        tab.dataset.mzLibTab = key;
+        tab.setAttribute('role', 'tab');
+        tab.setAttribute('aria-selected', String((view.tab || 'expressions') === key));
+        tab.textContent = label;
+        tabs.append(tab);
+    }
+
+    pane.append(tabs);
+    pane.append((view.tab || 'expressions') === 'aliases' ? buildAliases(record) : buildBoard(record));
+    return pane;
+}
+
+/**
+ * The Aliases page: the explanation over a pills editor. The pills are the
+ * EXTRA names only - the primary "Answers to" lives in the name sheets.
+ */
+function buildAliases(record) {
+    const panel = document.createElement('div');
+    panel.className = 'mz-lib-aliases';
+
+    const note = document.createElement('p');
+    note.className = 'mz-lib-aliases-note';
+    note.textContent = 'Other names the AI might use for this character (a revealed full name "Sarah Greenfield" for "Sarah", a nickname, or a title.)';
+
+    const pills = document.createElement('div');
+    pills.className = 'mz-lib-pills';
+    const aliases = recordAnswersTo(record).slice(1); // extras only - the primary is [0]
+    for (const alias of aliases) pills.append(aliasPill(alias));
+
+    const add = document.createElement('div');
+    add.className = 'mz-lib-pill-add';
+    const input = document.createElement('input');
+    input.className = 'mz-select';
+    input.type = 'text';
+    input.dataset.mzLibAliasInput = '';
+    input.placeholder = 'Add a name\u2026';
+    input.setAttribute('aria-label', 'Add an alias');
+    input.spellcheck = false;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'mz-btn-ghost';
+    button.dataset.mzLibAliasAdd = '';
+    button.textContent = 'Add';
+    add.append(input, button);
+
+    input.addEventListener('keydown', event => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        addAlias(record.name, input.value);
+    });
+
+    panel.append(note, pills, add);
+    return panel;
+}
+
+function aliasPill(alias) {
+    const pill = document.createElement('span');
+    pill.className = 'mz-lib-pill';
+    pill.textContent = alias;
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'mz-lib-pill-x';
+    del.dataset.mzLibAliasDel = alias;
+    del.title = `Remove ${alias}`;
+    del.setAttribute('aria-label', `Remove alias ${alias}`);
+    del.textContent = '\u00d7';
+    pill.append(del);
+    return pill;
+}
+
+function addAlias(name, value) {
+    const record = libraryEntry(name);
+    if (!record) return;
+
+    const alias = String(value ?? '').trim();
+    if (!alias) return;
+
+    const key = castKey(alias);
+    const clash = castKey(record.name) === key || recordAnswersTo(record).some(other => castKey(other) === key);
+    if (clash) {
+        notify(`"${alias}" already names this character.`, 'warning');
+        return;
+    }
+
+    setLibraryEntry(record.name, { aliases: [...(record.aliases || []), alias] });
+    notify(`"${alias}" now answers for ${record.name}.`, 'success');
+    renderWin();
+}
+
+function dropAlias(name, alias) {
+    const record = libraryEntry(name);
+    if (!record) return;
+
+    setLibraryEntry(record.name, {
+        aliases: (record.aliases || []).filter(other => castKey(other) !== castKey(alias)),
+    });
+    renderWin();
 }
 
 /**
@@ -1750,15 +1862,11 @@ function buildStage(record) {
 
     const tools = document.createElement('div');
     tools.className = 'mz-lib-stage-tools';
+    // Only the sprite-selected page carries a tool now: the default image
+    // is the poster's to set and the chooser's to disengage - the old
+    // Change/Remove portrait buttons are gone by design.
     if (row) {
-        tools.append(
-            toolButton('sprite-replace', 'mz-i-swap', 'Replace'),
-            toolButton('sprite-portrait', 'mz-i-face', 'Use as portrait'),
-            toolButton('sprite-delete', 'mz-i-trash', 'Delete', 'is-danger'),
-        );
-    } else {
-        tools.append(toolButton('portrait-change', 'mz-i-camera', record.portrait ? 'Change portrait' : 'Add portrait'));
-        if (record.portrait) tools.append(toolButton('portrait-remove', 'mz-i-trash', 'Remove portrait', 'is-danger'));
+        tools.append(toolButton('sprite-portrait', 'mz-i-face', 'Use as portrait'));
     }
 
     const note = document.createElement('p');
@@ -1767,9 +1875,31 @@ function buildStage(record) {
         ? `Stored as ${row.spriteName}. Click another slot to compare.`
         : 'Click any slot to look at it here.';
 
-    stage.append(preview, who, tools, note);
+    stage.append(preview, who, aliasesAtGlance(record), tools, note);
     if (removeStage !== 'idle') stage.append(removeBox(record));
     return stage;
+}
+
+/** The names this one answers to, at a glance where the tools used to be. */
+function aliasesAtGlance(record) {
+    const aliases = recordAnswersTo(record).slice(1);
+    if (!aliases.length) return null;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'mz-lib-alias-chips';
+
+    const lead = document.createElement('span');
+    lead.className = 'mz-lib-alias-lead';
+    lead.textContent = 'Also answers to';
+    wrap.append(lead);
+
+    for (const alias of aliases) {
+        const chip = document.createElement('span');
+        chip.className = 'mz-lib-alias-chip';
+        chip.textContent = alias;
+        wrap.append(chip);
+    }
+    return wrap;
 }
 
 function toolButton(action, glyph, label, extra = '') {
@@ -2291,6 +2421,26 @@ function onClick(event) {
         return;
     }
 
+    const tab = event.target.closest('[data-mz-lib-tab]');
+    if (tab) {
+        view.tab = tab.dataset.mzLibTab === 'aliases' ? 'aliases' : 'expressions';
+        renderWin();
+        return;
+    }
+
+    const aliasAdd = event.target.closest('[data-mz-lib-alias-add]');
+    if (aliasAdd) {
+        const input = els.detail.querySelector('[data-mz-lib-alias-input]');
+        addAlias(view.name, input?.value || '');
+        return;
+    }
+
+    const aliasDel = event.target.closest('[data-mz-lib-alias-del]');
+    if (aliasDel) {
+        dropAlias(view.name, aliasDel.dataset.mzLibAliasDel);
+        return;
+    }
+
     const fit = event.target.closest('[data-mz-lib-fit]');
     if (fit) {
         view.fit = fit.dataset.mzLibFit;
@@ -2342,15 +2492,8 @@ function toolPressed(action) {
     const record = libraryEntry(view.name);
     if (!record) return;
 
-    if (action === 'portrait-change') {
-        portraitTarget = '';
-        openPicker('portrait');
-    } else if (action === 'rename') {
+    if (action === 'rename') {
         openSheetFor('rename', record);
-    } else if (action === 'portrait-remove') {
-        setPortrait(record.name, '');
-        notify(`Portrait removed for ${record.name} in the library.`, 'info');
-        renderWin();
     } else if (action === 'sprite-replace') {
         const row = selectedRow();
         if (!row) return;
@@ -2361,7 +2504,7 @@ function toolPressed(action) {
         const row = selectedRow();
         if (!row) return;
         setPortrait(record.name, cleanPath(row.path));
-        notify(`"${row.label}" is now ${record.name}'s portrait.`, 'success');
+        notify(`"${row.label}" is now ${record.name}'s default image.`, 'success');
         renderWin();
     } else if (action === 'sprite-delete') {
         spriteDeletePressed();
