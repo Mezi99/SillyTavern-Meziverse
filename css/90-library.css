@@ -36,6 +36,7 @@
 
 @media (hover: none) {
     .mz-cast-lib { opacity: 1; }
+    .mz-lib-sprite-del { opacity: 1; }
 }
 
 /* the poster's library button: lit while the character is saved */
@@ -105,6 +106,12 @@
     white-space: nowrap;
 }
 
+.mz-lib-search {
+    flex: none;
+    width: 170px;
+    height: 30px;
+}
+
 .mz-libwin-close { flex: none; }
 
 .mz-libwin-body {
@@ -114,6 +121,32 @@
 }
 
 /* ---------- the grid ---------- */
+
+.mz-lib-filters {
+    display: flex;
+    gap: 8px;
+    padding: 14px 18px 0;
+}
+
+.mz-lib-chip {
+    padding: 4px 12px;
+    border: 1px solid var(--mz-line);
+    border-radius: var(--mz-r-pill);
+    background: none;
+    color: var(--mz-text-dim);
+    font-family: var(--mz-font-ui);
+    font-size: var(--mz-text-xs);
+    cursor: pointer;
+    transition: color var(--mz-dur-fast), border-color var(--mz-dur-fast), background var(--mz-dur-fast);
+}
+
+.mz-lib-chip:hover { color: var(--mz-text); border-color: var(--mz-line-strong); }
+
+.mz-lib-chip.is-on {
+    border-color: var(--mz-accent-line);
+    background: var(--mz-accent-wash);
+    color: var(--mz-accent);
+}
 
 .mz-lib-grid {
     display: grid;
@@ -129,6 +162,7 @@
 }
 
 .mz-lib-tile {
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -139,6 +173,18 @@
     font: inherit;
     text-align: left;
     cursor: pointer;
+}
+
+.mz-lib-dot {
+    position: absolute;
+    z-index: 2;
+    top: 7px;
+    right: 7px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--mz-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--mz-scrim-ink) 55%, transparent);
 }
 
 .mz-lib-tile .mz-lib-face {
@@ -265,6 +311,7 @@
 }
 
 .mz-lib-count {
+    margin-right: auto;
     font-size: var(--mz-text-xs);
     color: var(--mz-text-dim);
 }
@@ -279,16 +326,16 @@
 .mz-lib-bar .mz-select { height: 30px; }
 .mz-lib-custom { width: 120px; }
 
+/* the sprite gallery: art fills each cell, the label rides on it */
 .mz-lib-sprites {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
     gap: 12px;
 }
 
 .mz-lib-sprite {
     position: relative;
-    display: flex;
-    flex-direction: column;
+    aspect-ratio: 3 / 4;
     border: 1px solid var(--mz-line);
     border-radius: var(--mz-r-sm);
     overflow: hidden;
@@ -296,24 +343,27 @@
 }
 
 .mz-lib-sprite img {
+    position: absolute;
+    inset: 0;
     width: 100%;
-    aspect-ratio: 4 / 3;
+    height: 100%;
     object-fit: cover;
     background: var(--mz-scrim-ink);
 }
 
 .mz-lib-sprite-label {
-    padding: 6px 8px 0;
-    font-size: var(--mz-text-xs);
-    font-weight: 500;
-    color: var(--mz-text);
-}
-
-.mz-lib-sprite-file {
-    padding: 2px 8px 7px;
+    position: absolute;
+    left: 6px;
+    bottom: 6px;
+    max-width: calc(100% - 12px);
+    padding: 2px 8px;
+    border-radius: var(--mz-r-pill);
+    background: color-mix(in srgb, var(--mz-scrim-ink) 62%, transparent);
     overflow: hidden;
+    font-family: var(--mz-font-ui);
     font-size: var(--mz-text-2xs);
-    color: var(--mz-text-dim);
+    font-weight: 500;
+    color: rgba(255, 255, 255, .88);
     text-overflow: ellipsis;
     white-space: nowrap;
 }
@@ -322,11 +372,34 @@
     position: absolute;
     top: 6px;
     right: 6px;
+    opacity: 0;
+    transition: opacity var(--mz-dur) var(--mz-ease);
 }
+
+.mz-lib-sprite:hover .mz-lib-sprite-del,
+.mz-lib-sprite-del:focus-visible,
+.mz-lib-sprite-del.is-armed { opacity: 1; }
 
 .mz-lib-sprite-del.is-armed {
     border-color: var(--mz-bad);
     color: var(--mz-bad);
+}
+
+.mz-lib-add {
+    aspect-ratio: 3 / 4;
+    border: 1px dashed var(--mz-line-strong);
+    border-radius: var(--mz-r-sm);
+    background: none;
+    color: var(--mz-text-dim);
+    font-family: var(--mz-font-ui);
+    font-size: var(--mz-text-xl);
+    cursor: pointer;
+    transition: color var(--mz-dur-fast), border-color var(--mz-dur-fast);
+}
+
+.mz-lib-add:hover {
+    border-color: var(--mz-accent-line);
+    color: var(--mz-accent);
 }
 
 /* ---------- the staged removal ---------- */
@@ -370,4 +443,5 @@
 
     .mz-lib-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
     .mz-lib-hero { flex-direction: column; align-items: flex-start; }
+    .mz-lib-search { width: 120px; }
 }

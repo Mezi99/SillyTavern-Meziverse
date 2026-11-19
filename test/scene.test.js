@@ -20,6 +20,7 @@ import {
     parseClock,
     resolveScene,
     sceneAt,
+    seenNames,
     splitDate,
     splitLocation,
     splitPresent,
@@ -375,4 +376,19 @@ test('describeSpeeches gathers a message in order, cached', () => {
 
     assert.deepEqual(describeSpeeches(null), []);
     assert.deepEqual(describeSpeeches('a string'), []);
+});
+
+test('seenNames: every name any scene ever carried, first-seen order', () => {
+    const messages = [
+        { mes: '<scene present="Mara Vane, Kai" />' },
+        { mes: 'plain prose, no tags at all' },
+        { mes: '<scene present="kai, Sol" />' },
+    ];
+    assert.deepEqual(seenNames(messages), ['Mara Vane', 'Kai', 'Sol']);
+});
+
+test('seenNames: the persona never counts, and neither does nothing', () => {
+    assert.deepEqual(seenNames([{ mes: '<scene present="Mara, Akira" />' }], 'Akira'), ['Mara']);
+    assert.deepEqual(seenNames(null), []);
+    assert.deepEqual(seenNames([{ mes: 'no scenes here' }]), []);
 });

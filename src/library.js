@@ -17,10 +17,10 @@
  */
 
 import { icon } from './icons.js';
-import { imageSource, spriteDelete, spriteList, spriteUpload, spriteUploadZip, uploadImage } from './st.js';
+import { castKey, chatMessages, imageSource, personaName, spriteDelete, spriteList, spriteUpload, spriteUploadZip, uploadImage } from './st.js';
 import { libraryEntries, libraryEntry, removeLibraryEntry, setLibraryEntry } from './settings.js';
 import { notify } from './notify.js';
-import { hueOf, initials } from './scene.js';
+import { hueOf, initials, seenNames } from './scene.js';
 import { imageFileName, prepareImage } from './imageprep.js';
 
 /* ---------- the pure core ---------- */
@@ -125,6 +125,38 @@ export function resolveLibraryPortrait(key, chatImages, library) {
     return typeof portrait === 'string' ? portrait.trim() : '';
 }
 
+/**
+ * The records one filter view shows: 'all' is the whole library, 'chat'
+ * the names any scene tag of this chat ever carried, 'scene' the ones on
+ * stage right now - and the query narrows by name within whichever.
+ * Sets arrive already folded to library keys; records only, name-sorted.
+ */
+export function visibleLibrary(entries, { query = '', filter = 'all', chatKeys = null, sceneKeys = null } = {}) {
+    const needle = String(query ?? '').trim().toLowerCase();
+    const rows = [];
+
+    for (const [key, record] of Object.entries(entries || {})) {
+        if (!record || typeof record !== 'object') continue;
+        if (filter === 'chat' && !chatKeys?.has(key)) continue;
+        if (filter === 'scene' && !sceneKeys?.has(key)) continue;
+        if (needle && !String(record.name ?? '').toLowerCase().includes(needle)) continue;
+        rows.push(record);
+    }
+
+    rows.sort((a, b) => String(a?.name ?? '').localeCompare(String(b?.name ?? '')));
+    return rows;
+}
+
+/** The folded keys of a name list - the same fold the library keys on. */
+function foldSet(names) {
+    const set = new Set();
+    for (const name of names || []) {
+        const key = castKey(name);
+        if (key) set.add(key);
+    }
+    return set;
+}
+
 /* ---------- the library store's one door ---------- */
 
 const changeListeners = new Set();
@@ -202,9 +234,15 @@ const WIN_HTML = `
         <span class="mz-libwin-mark" aria-hidden="true"></span>
         <h2>Character Library</h2>
         <span class="mz-libwin-sum" data-mz-lib-sum></span>
+        <input class="mz-select mz-lib-search" type="search" data-mz-lib-search placeholder="Search characters" aria-label="Search characters" spellcheck="false">
         <button class="mz-ibtn mz-libwin-close" type="button" data-mz-lib-close title="Close" aria-label="Close"></button>
     </header>
     <div class="mz-libwin-body">
+        <div class="mz-lib-filters" role="group" aria-label="Filter characters" data-mz-lib-filters>
+            <button type="button" class="mz-lib-chip" data-mz-lib-filter="all">All</button>
+            <button type="button" class="mz-lib-chip" data-mz-lib-filter="chat">This chat</button>
+            <button type="button" class="mz-lib-chip" data-mz-lib-filter="scene">In scene</button>
+        </div>
         <div class="mz-lib-grid" data-mz-lib-grid></div>
         <div class="mz-lib-detail" data-mz-lib-detail hidden></div>
     </div>`;
@@ -216,6 +254,11 @@ let lastFocus = null;
 
 // What the window shows: the grid of saved characters, or one of them.
 let view = { kind: 'grid' };
+// The grid's search and filter, reset whenever the window opens.
+let query = '';
+let filter = 'all';
+// The scene's present names, handed in by the scene that mounts us.
+let presentNames = () => [];
 // The detail's sprite rows and the staged removal, reset per character.
 let detailRows = [];
 let removeStage = 'idle';
@@ -226,13 +269,15 @@ const armTimers = new Map();
 
 /**
  * Builds the library window where the scene keeps it: one child of the
- * frame, shown and hidden like the map window.
+ * frame, shown and hidden like the map window. `presentNames` hands the
+ * window the scene's cast - the "In scene" filter and marks read it live.
  *
- * @param {{frame:Element}} parts
+ * @param {{frame:Element, presentNames?:() => string[]}} parts
  */
-export function mountLibrary({ frame } = {}) {
+export function mountLibrary({ frame, presentNames: getPresent = null } = {}) {
     if (win || !frame) return;
     frameEl = frame;
+    if (typeof getPresent === 'function') presentNames = getPresent;
 
     win = document.createElement('section');
     win.className = 'mz-libwin';
@@ -246,6 +291,8 @@ export function mountLibrary({ frame } = {}) {
 
     els = {
         sum: win.querySelector('[data-mz-lib-sum]'),
+        search: win.querySelector('[data-mz-lib-search]'),
+        filters: win.querySelector('[data-mz-lib-filters]'),
         grid: win.querySelector('[data-mz-lib-grid]'),
         detail: win.querySelector('[data-mz-lib-detail]'),
     };
@@ -254,6 +301,17 @@ export function mountLibrary({ frame } = {}) {
     win.querySelector('.mz-libwin-close').append(icon('mz-i-close'));
 
     win.addEventListener('click', onClick);
+
+    // Typing in the search leaves a character's page for the grid it
+    // filters - searching from anywhere lands somewhere honest.
+    els.search.addEventListener('input', () => {
+        query = els.search.value;
+        if (view.kind === 'detail') {
+            view = { kind: 'grid' };
+            resetDetail();
+        }
+        renderWin();
+    });
 
     // The pickers live with the window; each remembers what it was for.
     win.append(picker('portrait', 'image/*'), picker('sprite', 'image/*'), picker('pack', '.zip,application/zip'));
@@ -283,7 +341,10 @@ export function openLibrary(name = null) {
 
     const record = name ? libraryEntry(name) : null;
     view = record ? { kind: 'detail', name: record.name } : { kind: 'grid' };
-    if (record) resetDetail();
+    query = '';
+    filter = 'all';
+    if (els?.search) els.search.value = '';
+    resetDetail();
 
     lastFocus = document.activeElement;
     win.hidden = false;
@@ -321,8 +382,10 @@ function renderWin() {
     if (!win) return;
 
     const entries = libraryEntries();
-    const count = Object.keys(entries).length;
-    els.sum.textContent = count ? `${count} saved` : '';
+    const keys = Object.keys(entries);
+    const sceneKeys = foldSet(presentNames());
+    const inScene = keys.filter(key => sceneKeys.has(key)).length;
+    els.sum.textContent = keys.length ? `${keys.length} saved \u00b7 ${inScene} in scene` : '';
 
     const detail = view.kind === 'detail' ? libraryEntry(view.name) : null;
     if (view.kind === 'detail' && !detail) view = { kind: 'grid' };
@@ -330,38 +393,57 @@ function renderWin() {
     const showingDetail = view.kind === 'detail';
     els.grid.hidden = showingDetail;
     els.detail.hidden = !showingDetail;
+    els.filters.hidden = showingDetail;
+
+    for (const chip of win.querySelectorAll('[data-mz-lib-filter]')) {
+        const on = chip.dataset.mzLibFilter === filter;
+        chip.classList.toggle('is-on', on);
+        chip.setAttribute('aria-pressed', String(on));
+    }
 
     if (showingDetail) renderDetail(detail);
     else renderGrid();
 }
 
 function renderGrid() {
-    const fragment = document.createDocumentFragment();
-    const entries = Object.values(libraryEntries())
-        .sort((a, b) => String(a?.name ?? '').localeCompare(String(b?.name ?? '')));
+    const chatKeys = foldSet(seenNames(chatMessages(), personaName()));
+    const sceneKeys = foldSet(presentNames());
+    const rows = visibleLibrary(libraryEntries(), { query, filter, chatKeys, sceneKeys });
 
-    if (!entries.length) {
+    const fragment = document.createDocumentFragment();
+    if (!rows.length) {
         const empty = document.createElement('p');
         empty.className = 'mz-lib-empty';
-        empty.textContent = 'No characters yet \u2014 save one from a poster on the cast strip.';
+        empty.textContent = query || filter !== 'all'
+            ? 'No saved characters match.'
+            : 'No characters yet \u2014 save one from a poster on the cast strip.';
         fragment.append(empty);
     }
 
-    for (const record of entries) {
-        fragment.append(tile(record));
+    for (const record of rows) {
+        fragment.append(tile(record, sceneKeys.has(castKey(record.name))));
     }
 
     els.grid.replaceChildren(fragment);
 }
 
-function tile(record) {
+function tile(record, inScene) {
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'mz-lib-tile';
+    button.className = 'mz-lib-tile' + (inScene ? ' is-scene' : '');
     button.dataset.mzLibName = record.name;
     button.style.setProperty('--h', `${hueOf(record.name)}deg`);
 
     button.append(face(record));
+
+    if (inScene) {
+        const dot = document.createElement('span');
+        dot.className = 'mz-lib-dot';
+        dot.title = 'In the scene now';
+        dot.setAttribute('aria-hidden', 'true');
+        button.append(dot);
+    }
+
     const name = document.createElement('span');
     name.className = 'mz-lib-name';
     name.textContent = record.name;
@@ -460,7 +542,13 @@ function spritesSection(record) {
     count.className = 'mz-lib-count';
     count.dataset.mzLibCount = '';
 
-    head.append(heading, count);
+    const pack = document.createElement('button');
+    pack.type = 'button';
+    pack.className = 'mz-btn-ghost';
+    pack.dataset.mzLibSprite = 'pack';
+    pack.textContent = 'Upload pack';
+
+    head.append(heading, count, pack);
 
     const bar = document.createElement('div');
     bar.className = 'mz-lib-bar';
@@ -495,13 +583,7 @@ function spritesSection(record) {
     add.dataset.mzLibSprite = 'add';
     add.textContent = 'Add sprite';
 
-    const pack = document.createElement('button');
-    pack.type = 'button';
-    pack.className = 'mz-btn-ghost';
-    pack.dataset.mzLibSprite = 'pack';
-    pack.textContent = 'Upload pack';
-
-    bar.append(select, input, add, pack);
+    bar.append(select, input, add);
     section.append(head, bar);
 
     const rows = document.createElement('div');
@@ -579,17 +661,23 @@ function renderSpriteRows(record) {
         }
 
         for (const row of rows) fragment.append(spriteRow(row));
+        fragment.append(addTile());
         holder.replaceChildren(fragment);
     });
 }
 
+/**
+ * One sprite as a gallery cell: the art fills the tile, the label rides
+ * on it, and the delete arms on hover. The file name is the cell's title.
+ */
 function spriteRow(row) {
     const item = document.createElement('div');
     item.className = 'mz-lib-sprite';
     item.dataset.mzLibSpriteName = row.spriteName;
+    item.title = row.spriteName;
 
     const image = document.createElement('img');
-    image.alt = '';
+    image.alt = row.label;
     image.decoding = 'async';
     image.loading = 'lazy';
     image.src = imageSource(row.path);
@@ -597,10 +685,6 @@ function spriteRow(row) {
     const label = document.createElement('span');
     label.className = 'mz-lib-sprite-label';
     label.textContent = row.label;
-
-    const file = document.createElement('span');
-    file.className = 'mz-lib-sprite-file';
-    file.textContent = row.spriteName;
 
     const del = document.createElement('button');
     del.type = 'button';
@@ -610,8 +694,20 @@ function spriteRow(row) {
     del.setAttribute('aria-label', `Delete sprite ${row.spriteName}`);
     del.append(icon('mz-i-trash'));
 
-    item.append(image, label, file, del);
+    item.append(image, label, del);
     return item;
+}
+
+/** The gallery's add tile - the one-by-one door, same as "Add sprite". */
+function addTile() {
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'mz-lib-add';
+    add.dataset.mzLibSprite = 'add';
+    add.title = 'Add a sprite';
+    add.setAttribute('aria-label', 'Add a sprite');
+    add.textContent = '+';
+    return add;
 }
 
 /* ---------- interaction ---------- */
@@ -627,6 +723,18 @@ function onClick(event) {
     if (event.target.closest('[data-mz-lib-back]')) {
         view = { kind: 'grid' };
         resetDetail();
+        renderWin();
+        return;
+    }
+
+    const chip = event.target.closest('[data-mz-lib-filter]');
+    if (chip) {
+        const next = chip.dataset.mzLibFilter;
+        filter = next === 'chat' || next === 'scene' ? next : 'all';
+        if (view.kind === 'detail') {
+            view = { kind: 'grid' };
+            resetDetail();
+        }
         renderWin();
         return;
     }

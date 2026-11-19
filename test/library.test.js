@@ -13,6 +13,7 @@ import {
     spriteLabelMap,
     spriteNameFromPath,
     spriteRowsFromPayload,
+    visibleLibrary,
 } from '../src/library.js';
 
 test('normalizeLibraryRecord trims its fields and stamps the date', () => {
@@ -95,4 +96,22 @@ test('SUGGESTED_LABELS is SillyTavern\'s own 28', () => {
     assert.equal(SUGGESTED_LABELS.length, 28);
     assert.equal(new Set(SUGGESTED_LABELS).size, 28);
     assert.ok(SUGGESTED_LABELS.includes('neutral'));
+});
+
+test('visibleLibrary: the filters narrow saved records, the query narrows by name', () => {
+    const entries = {
+        'mara vane': { name: 'Mara Vane', portrait: '' },
+        'kai': { name: 'Kai', portrait: '' },
+        'sol': { name: 'Sol', portrait: '' },
+    };
+    const chatKeys = new Set(['mara vane', 'sol']);
+    const sceneKeys = new Set(['sol']);
+    const names = rows => rows.map(record => record.name);
+
+    assert.deepEqual(names(visibleLibrary(entries)), ['Kai', 'Mara Vane', 'Sol']);
+    assert.deepEqual(names(visibleLibrary(entries, { filter: 'chat', chatKeys, sceneKeys })), ['Mara Vane', 'Sol']);
+    assert.deepEqual(names(visibleLibrary(entries, { filter: 'scene', chatKeys, sceneKeys })), ['Sol']);
+    assert.deepEqual(names(visibleLibrary(entries, { query: '  ma ' })), ['Mara Vane']);
+    assert.deepEqual(names(visibleLibrary(entries, { filter: 'scene', query: 'k', chatKeys, sceneKeys })), []);
+    assert.deepEqual(names(visibleLibrary(null)), []);
 });

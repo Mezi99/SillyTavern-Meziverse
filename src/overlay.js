@@ -73,7 +73,7 @@ const FRAME_HTML = `
     <div class="mz-scrim" aria-hidden="true"></div>
 
     <header class="mz-header">
-        <div class="mz-brand"><b>Meziverse</b><small class="mz-version">v${VERSION}</small><span class="mz-hair mz-quick-hair" aria-hidden="true"></span><div class="mz-autoquick" role="group" aria-label="Quick toggles"><button class="mz-qpill mz-bgauto" type="button" role="switch" aria-checked="false" title="Backgrounds follow the story" aria-label="Backgrounds follow the story" data-mz-action="bg-auto">${svg('image')}</button><button class="mz-qpill mz-musicauto" type="button" role="switch" aria-checked="true" title="Music from story requests" aria-label="Music from story requests" data-mz-action="music-auto">${svg('music')}</button><button class="mz-qpill" type="button" role="switch" aria-checked="true" title="Map on or off" aria-label="Map" data-mz-action="map">${svg('map')}</button></div></div>
+        <div class="mz-brand"><b>Meziverse</b><small class="mz-version">v${VERSION}</small><span class="mz-hair mz-quick-hair" aria-hidden="true"></span><div class="mz-autoquick" role="group" aria-label="Quick toggles"><button class="mz-qpill mz-bgauto" type="button" role="switch" aria-checked="false" title="Backgrounds follow the story" aria-label="Backgrounds follow the story" data-mz-action="bg-auto">${svg('image')}</button><button class="mz-qpill mz-musicauto" type="button" role="switch" aria-checked="true" title="Music from story requests" aria-label="Music from story requests" data-mz-action="music-auto">${svg('music')}</button><button class="mz-qpill" type="button" role="switch" aria-checked="true" title="Map on or off" aria-label="Map" data-mz-action="map">${svg('map')}</button><button class="mz-qpill" type="button" title="Character Library" aria-label="Character Library" data-mz-action="library-open">${svg('library')}</button></div></div>
         <div class="mz-chatname" data-mz="chatname"><b class="is-empty">No chat open</b></div>
         <div class="mz-header-tools">
             <div class="mz-music-slot" data-mz="music-slot"></div>
@@ -319,10 +319,6 @@ const FRAME_HTML = `
                 <div class="mz-set-row">
                     <span class="mz-set-label"><b>Avatars</b></span>
                     <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Avatars" data-mz-action="avatars"><i></i></button>
-                </div>
-                <div class="mz-set-row">
-                    <span class="mz-set-label"><b>Character Library</b><button type="button" class="mz-hint" data-tip="Characters saved by name, with portraits and sprites - available in every chat." aria-label="Characters saved by name, with portraits and sprites - available in every chat.">i</button></span>
-                    <button class="mz-btn-ghost" type="button" data-mz-action="library-open">Open</button>
                 </div>
                 <div class="mz-set-row">
                     <span class="mz-set-label"><b>Speech bubbles</b></span>
@@ -702,7 +698,7 @@ export function mount() {
     mountDock(root);
     mountMusic({ slot: root.querySelector('[data-mz="music-slot"]'), frame });
     mountMap({ frame, goto: index => transcript?.show(index) });
-    mountLibrary({ frame });
+    mountLibrary({ frame, presentNames: () => lastShown?.scene?.present || [] });
 
     transcript = createTranscript({
         frame,

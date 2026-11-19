@@ -382,6 +382,33 @@ export function splitPresent(value, persona = '') {
     return present;
 }
 
+/**
+ * Every name any scene tag of these messages ever carried - the chat's
+ * whole cast history, first-seen order, persona excluded. The Character
+ * Library's "This chat" filter reads this.
+ *
+ * @param {object[]} messages
+ * @param {string} [persona]
+ * @returns {string[]}
+ */
+export function seenNames(messages, persona = '') {
+    const seen = new Set();
+    const names = [];
+
+    for (const message of messages || []) {
+        for (const { scene } of describeScenes(message, { persona })) {
+            for (const name of scene.present || []) {
+                const key = nameKey(name);
+                if (!key || seen.has(key)) continue;
+                seen.add(key);
+                names.push(name);
+            }
+        }
+    }
+
+    return names;
+}
+
 /** Up to two letters for a portrait plate: 'Mara Voss' becomes 'MV'. */
 export function initials(name) {
     const words = text(name).trim().split(/\s+/).filter(Boolean);
