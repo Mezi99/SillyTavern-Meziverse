@@ -40,11 +40,17 @@
     .mz-cast-lib { opacity: 1; }
 }
 
-/* the poster's library button: lit while the character is saved */
+/* the poster's library button: lit while the character is saved, dim
+   while this chat has disengaged the library for them */
 .mz-port-tool.is-lib.is-on {
     border-color: hsl(var(--h) 40% 70% / .55);
     color: #fff;
     background: color-mix(in srgb, var(--mz-scrim-ink) 62%, transparent);
+}
+
+.mz-port-tool.is-lib.is-off {
+    opacity: .55;
+    border-style: dashed;
 }
 
 /* ==========================================================================

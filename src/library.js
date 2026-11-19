@@ -17,7 +17,7 @@
  */
 
 import { icon } from './icons.js';
-import { castKey, chatMessages, imageSource, libBindStore, libOffStore, personaName, setLibBind, setLibOff, spriteDelete, spriteList, spriteUpload, spriteUploadZip, uploadImage } from './st.js';
+import { castImages, castKey, chatMessages, imageSource, libBindStore, libOffStore, personaName, setCastImage, setLibBind, setLibOff, spriteDelete, spriteList, spriteUpload, spriteUploadZip, uploadImage } from './st.js';
 import { libraryEntries, libraryEntry, removeLibraryEntry, saveSettings, setLibraryEntry, settings } from './settings.js';
 import { notify } from './notify.js';
 import { hueOf, initials, seenNameCounts } from './scene.js';
@@ -371,35 +371,86 @@ export function groupCastNames(names, entries, bindings = null, off = null) {
 }
 
 /**
- * The face a poster wears: the chat's own portrait first (a chat that
- * casts someone differently keeps its own face), then the library
- * character this tag resolves to - bound or not.
+ * The cast strip's poster groups for the LIVE stores - one character,
+ * one poster, aliases and offs included.
+ */
+export function groupCastLive(names) {
+    return groupCastNames(names, libraryEntries(), libBindStore(), libOffStore());
+}
+
+/**
+ * The face a poster wears. An engaged character wears their library
+ * images - the default image, and the sprites the stage draws - and the
+ * chat's own avatar is ignored while engaged. The chat-file avatar serves
+ * the unsaved and the disengaged, exactly as it always has.
  */
 export function resolvePosterPortrait(name, chatImages = null) {
+    const match = matchLibraryName(name);
+    if (match?.record) return String(match.record.portrait ?? '').trim();
+
     const key = castKey(name);
     const chat = chatImages?.[key];
-    if (typeof chat === 'string' && chat.trim()) return chat.trim();
+    return typeof chat === 'string' ? chat.trim() : '';
+}
 
+/** The poster's library state as one small string - for render signatures. */
+export function posterStateFor(name) {
     const match = matchLibraryName(name);
-    return String(match?.record?.portrait ?? '').trim();
+    if (match?.record) return match.record.name;
+    return libOffStore()[castKey(name)] ? 'off' : '';
+}
+
+/**
+ * Everyone a name COULD mean in the open chat, ignoring this chat's
+ * library-offs - the chooser's list for a disengaged character.
+ */
+export function libraryCandidatesFor(name) {
+    return resolveLibraryMatch(name, libraryEntries(), libBindStore());
 }
 
 /**
  * The user's word on which character a tag shows in this chat - the swap
- * the poster's chooser offers. The choice is remembered per chat and the
- * chosen one counts as used.
+ * the poster's chooser offers. Choosing also ENGAGES the library for the
+ * name (picking a character is the opposite of disengaging), and coming
+ * back from a disengage takes the poster's image as the new default: that
+ * is why they left. The chosen one counts as used.
  */
 export function chooseLibraryFor(tagName, entryKey) {
+    const key = castKey(tagName);
+    const wasOff = !!libOffStore()[key];
+
     setLibBind(tagName, entryKey);
+    setLibOff(tagName, false);
 
     const record = entryKey ? libraryEntry(entryKey) : null;
     if (record) {
+        if (wasOff) {
+            const chat = castImages()?.[key];
+            if (typeof chat === 'string' && chat.trim()) setPortrait(record.name, chat.trim());
+        }
         record.lastUsedAt = new Date().toISOString();
         setLibraryEntry(record.name, { lastUsedAt: record.lastUsedAt });
         notify(`"${tagName}" now shows ${record.name}.`, 'info');
     } else {
         notify(`"${tagName}" no longer shows a library character.`, 'info');
     }
+}
+
+/**
+ * Library off for this name in this chat: the character becomes a
+ * temporary one wearing the chat-file avatar, like any unsaved face. The
+ * face showing now is copied there first, so nobody loses their face
+ * mid-story.
+ */
+export function disengageLibraryFor(name) {
+    const key = castKey(name);
+    const match = resolveLibraryMatch(name, libraryEntries(), libBindStore());
+    const face = String(match?.record?.portrait ?? '').trim();
+    const chat = castImages()?.[key];
+    if (face && !(typeof chat === 'string' && chat.trim())) setCastImage(name, face);
+
+    setLibOff(name, true);
+    notify(`"${name}" is not using the library in this chat.`, 'info');
 }
 
 /** Opens the window on a fresh name sheet - the chooser's "Add as new…". */
@@ -440,6 +491,20 @@ function foldSet(names) {
         if (key) set.add(key);
     }
     return set;
+}
+
+/**
+ * The record keys the shown scene has on stage: a name marks the library
+ * character it RESOLVES to - aliases included - and an off name marks
+ * nobody.
+ */
+function sceneRecordKeys() {
+    const keys = new Set();
+    for (const name of presentNames()) {
+        const match = matchLibraryName(name);
+        if (match?.record) keys.add(castKey(match.record.name));
+    }
+    return keys;
 }
 
 /* ---------- the library store's one door ---------- */
@@ -1016,7 +1081,7 @@ function renderHead() {
     if (view.kind !== 'detail') {
         const entries = libraryEntries();
         const keys = Object.keys(entries);
-        const sceneKeys = foldSet(presentNames());
+        const sceneKeys = sceneRecordKeys();
         const inScene = keys.filter(key => sceneKeys.has(key)).length;
 
         els.head.innerHTML =
@@ -1069,7 +1134,7 @@ function renderMenu() {
 
 function renderGrid() {
     const entries = libraryEntries();
-    const sceneKeys = foldSet(presentNames());
+    const sceneKeys = sceneRecordKeys();
     const counts = seenNameCounts(chatMessages(), personaName());
     const chatKeys = foldSet(counts.map(row => row.name));
 
@@ -1853,7 +1918,7 @@ function buildStage(record) {
 
     const meta = document.createElement('div');
     meta.className = 'mz-lib-who-meta';
-    if (foldSet(presentNames()).has(castKey(record.name))) {
+    if (sceneRecordKeys().has(castKey(record.name))) {
         const live = document.createElement('span');
         live.className = 'is-live';
         live.textContent = 'In the scene now';
