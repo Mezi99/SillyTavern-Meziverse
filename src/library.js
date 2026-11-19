@@ -328,6 +328,10 @@ async function fetchSprites(name, force = false) {
 
 function invalidateSprites(name) {
     spriteCache.delete(String(name ?? '').trim());
+    // The page holds the rows it already fetched; when the set changes it
+    // says so, and the next render reads the listing again.
+    detailLoaded = false;
+    detailLoading = false;
 }
 
 /* ---------- the window ---------- */
