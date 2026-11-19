@@ -659,7 +659,9 @@ function openChooser(button, name, match) {
     page.append(icon('mz-i-library'), document.createTextNode('Open page'));
     menu.append(page);
 
-    document.body.append(menu);
+    // Inside the scene's frame, so the menu sits above the stage - the
+    // scene root is its own high stack and would swallow a body-level one.
+    (button.closest('.mz-frame') || document.body).append(menu);
 
     const rect = button.getBoundingClientRect();
     const left = Math.max(8, Math.min(rect.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - 8));
