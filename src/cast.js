@@ -11,9 +11,9 @@ import { castImages, castKey, currentChatId, imageSource, removeCastImage, say, 
 import { hueOf, initials } from './scene.js';
 import { icon } from './icons.js';
 import { notify } from './notify.js';
-import { avatarsOn, entryOn, libraryEntries, libraryHas, modeOn } from './settings.js';
+import { avatarsOn, entryOn, modeOn } from './settings.js';
 import { closeFloats, placeFloat, registerFloat } from './floats.js';
-import { ensureInLibrary, onLibraryChange, openLibrary, resolveLibraryPortrait } from './library.js';
+import { chooseLibraryFor, ensureInLibrary, matchLibraryName, onLibraryChange, openLibrary, openLibraryNewFor, resolvePosterPortrait } from './library.js';
 import { imageFileName, prepareImage } from './imageprep.js';
 
 const FALLBACK_FLOOR = 180;
@@ -152,11 +152,10 @@ export function renderCast(scene) {
     }
 
     const images = castImages();
-    const library = libraryEntries();
     const fragment = document.createDocumentFragment();
 
     for (const name of names) {
-        fragment.append(poster(name, resolveLibraryPortrait(castKey(name), images, library)));
+        fragment.append(poster(name, resolvePosterPortrait(name, images)));
     }
 
     track.replaceChildren(fragment);
@@ -183,7 +182,7 @@ export function redrawCast() {
  */
 export function castAvatar(name) {
     return {
-        src: imageSource(resolveLibraryPortrait(castKey(name), castImages(), libraryEntries())),
+        src: imageSource(resolvePosterPortrait(name, castImages())),
         initial: initials(name),
     };
 }
@@ -555,13 +554,15 @@ function poster(name, path) {
     change.setAttribute('aria-label', change.title);
     change.append(icon('mz-i-camera'));
 
-    const member = libraryHas(name);
+    const match = matchLibraryName(name);
     const library = document.createElement('button');
     library.type = 'button';
-    library.className = 'mz-port-tool is-lib' + (member ? ' is-on' : '');
+    library.className = 'mz-port-tool is-lib' + (match ? ' is-on' : '');
     library.dataset.mzCastLibAdd = name;
-    library.title = member
-        ? `${name} is in the Character Library`
+    library.title = match
+        ? (match.kind === 'ambiguous'
+            ? `${name} could be ${match.candidates.map(record => record.name).join(' or ')} \u2014 choose which shows`
+            : `${match.record.name} is in the Character Library`)
         : `Add ${name} to the Character Library`;
     library.setAttribute('aria-label', library.title);
     library.append(icon('mz-i-library'));
@@ -594,7 +595,115 @@ function poster(name, path) {
 
 /* ---------- attaching a portrait ---------- */
 
+/* The two-Mikes chooser: which library character a one-word tag shows on
+   this story's poster. One pick per chat, changeable any time. */
+
+let chooser = null;
+
+function closeChooser() {
+    chooser?.remove();
+    chooser = null;
+    document.removeEventListener('pointerdown', chooserOutside, true);
+    document.removeEventListener('keydown', chooserKeys);
+}
+
+function chooserOutside(event) {
+    if (chooser?.contains(event.target)) return;
+    closeChooser();
+}
+
+function chooserKeys(event) {
+    if (event.key === 'Escape') closeChooser();
+}
+
+function openChooser(button, name, match) {
+    closeChooser();
+
+    const menu = document.createElement('div');
+    menu.className = 'mz-chooser';
+    menu.dataset.mzChooserName = name;
+
+    const head = document.createElement('p');
+    head.className = 'mz-chooser-head';
+    head.textContent = `"${name}" shows:`;
+    menu.append(head);
+
+    for (const record of match.candidates) {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'mz-chooser-row' + (record === match.record ? ' is-on' : '');
+        row.dataset.mzChooserPick = record.name;
+        row.textContent = record.name;
+        if (record === match.record) row.append(icon('mz-i-check'));
+        menu.append(row);
+    }
+
+    const none = document.createElement('button');
+    none.type = 'button';
+    none.className = 'mz-chooser-row is-quiet';
+    none.dataset.mzChooserPick = '';
+    none.textContent = 'Nobody for now';
+    menu.append(none);
+
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'mz-chooser-row';
+    add.dataset.mzChooserAdd = '';
+    add.append(icon('mz-i-plus'), document.createTextNode('Add as new character\u2026'));
+    menu.append(add);
+
+    const page = document.createElement('button');
+    page.type = 'button';
+    page.className = 'mz-chooser-row';
+    page.dataset.mzChooserOpen = match.record?.name || '';
+    page.append(icon('mz-i-library'), document.createTextNode('Open page'));
+    menu.append(page);
+
+    document.body.append(menu);
+
+    const rect = button.getBoundingClientRect();
+    const left = Math.max(8, Math.min(rect.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - 8));
+    const top = Math.min(rect.bottom + 6, window.innerHeight - menu.offsetHeight - 8);
+    menu.style.left = `${left}px`;
+    menu.style.top = `${Math.max(8, top)}px`;
+
+    chooser = menu;
+    document.addEventListener('pointerdown', chooserOutside, true);
+    document.addEventListener('keydown', chooserKeys);
+}
+
 function onClick(event) {
+    const chooserPick = event.target.closest('[data-mz-chooser-pick]');
+    if (chooserPick) {
+        event.preventDefault();
+        const name = chooser?.dataset?.mzChooserName || '';
+        const entry = chooserPick.dataset.mzChooserPick || null;
+        closeChooser();
+        if (name) {
+            chooseLibraryFor(name, entry);
+            redrawCast();
+        }
+        return;
+    }
+
+    const chooserAdd = event.target.closest('[data-mz-chooser-add]');
+    if (chooserAdd) {
+        event.preventDefault();
+        const name = chooser?.dataset?.mzChooserName || '';
+        closeChooser();
+        openLibraryNewFor(name);
+        return;
+    }
+
+    const chooserOpen = event.target.closest('[data-mz-chooser-open]');
+    if (chooserOpen) {
+        event.preventDefault();
+        const target = chooserOpen.dataset.mzChooserOpen;
+        closeChooser();
+        if (target) openLibrary(target);
+        return;
+    }
+
     const toggle = event.target.closest('[data-mz-thought]');
     if (toggle) {
         const key = toggle.dataset.mzThought;
@@ -614,10 +723,18 @@ function onClick(event) {
     if (library) {
         event.preventDefault();
         const name = library.dataset.mzCastLibAdd;
+        const match = matchLibraryName(name);
 
-        // Already saved: the button is the door into that entry.
-        if (libraryHas(name)) {
-            openLibrary(name);
+        // Several characters answer to this name - the chooser decides
+        // which one this story's poster shows.
+        if (match && match.kind === 'ambiguous') {
+            openChooser(library, name, match);
+            return;
+        }
+
+        // Saved: the button is the door into that entry.
+        if (match) {
+            openLibrary(match.record.name);
             return;
         }
 
@@ -740,11 +857,10 @@ function announceAdded(name, status) {
 
 function castSignature() {
     const images = castImages();
-    const library = libraryEntries();
     const chat = currentChatId() || '';
     const busy = busyName && busyChat === chat ? busyName : '';
     const cast = names
-        .map(name => `${name}\u0002${resolveLibraryPortrait(castKey(name), images, library)}\u0002${libraryHas(name) ? 1 : 0}`)
+        .map(name => `${name}\u0002${resolvePosterPortrait(name, images)}\u0002${matchLibraryName(name)?.record?.name ?? ''}`)
         .join('\u0001');
 
     return `${chat}\u0003${busy}\u0003${cast}`;

@@ -17,7 +17,7 @@
  */
 
 import { icon } from './icons.js';
-import { castKey, chatMessages, imageSource, personaName, spriteDelete, spriteList, spriteUpload, spriteUploadZip, uploadImage } from './st.js';
+import { castKey, chatMessages, imageSource, libBindStore, personaName, setLibBind, spriteDelete, spriteList, spriteUpload, spriteUploadZip, uploadImage } from './st.js';
 import { libraryEntries, libraryEntry, removeLibraryEntry, saveSettings, setLibraryEntry, settings } from './settings.js';
 import { notify } from './notify.js';
 import { hueOf, initials, seenNameCounts } from './scene.js';
@@ -291,6 +291,53 @@ export function resolveLibraryPortrait(key, chatImages, library) {
 
     const portrait = library?.[key]?.portrait;
     return typeof portrait === 'string' ? portrait.trim() : '';
+}
+
+/**
+ * What a tag name means in the open chat: the library character it
+ * resolves to, everyone who answers to it when several do, and which one
+ * is showing. Reads the live stores - the two-Mikes case included.
+ */
+export function matchLibraryName(name) {
+    return resolveLibraryMatch(name, libraryEntries(), libBindStore());
+}
+
+/**
+ * The face a poster wears: the chat's own portrait first (a chat that
+ * casts someone differently keeps its own face), then the library
+ * character this tag resolves to - bound or not.
+ */
+export function resolvePosterPortrait(name, chatImages = null) {
+    const key = castKey(name);
+    const chat = chatImages?.[key];
+    if (typeof chat === 'string' && chat.trim()) return chat.trim();
+
+    const match = matchLibraryName(name);
+    return String(match?.record?.portrait ?? '').trim();
+}
+
+/**
+ * The user's word on which character a tag shows in this chat - the swap
+ * the poster's chooser offers. The choice is remembered per chat and the
+ * chosen one counts as used.
+ */
+export function chooseLibraryFor(tagName, entryKey) {
+    setLibBind(tagName, entryKey);
+
+    const record = entryKey ? libraryEntry(entryKey) : null;
+    if (record) {
+        record.lastUsedAt = new Date().toISOString();
+        setLibraryEntry(record.name, { lastUsedAt: record.lastUsedAt });
+        notify(`"${tagName}" now shows ${record.name}.`, 'info');
+    } else {
+        notify(`"${tagName}" no longer shows a library character.`, 'info');
+    }
+}
+
+/** Opens the window on a fresh name sheet - the chooser's "Add as new…". */
+export function openLibraryNewFor(tagName) {
+    openLibrary();
+    openSheetFor('new', null, { name: String(tagName ?? ''), first: recordFirst({ name: tagName }) });
 }
 
 /**
@@ -977,8 +1024,10 @@ function renderGrid() {
 
     const needle = query.trim();
     const plain = !needle && filter === 'all';
+    // A name counts as saved when any record answers to it - a "Mike" is
+    // covered by a saved Mike Smith just as much as by a plain Mike.
     const showSeen = (filter === 'all' || filter === 'chat') && !needle
-        ? counts.filter(row => !libraryEntry(row.name))
+        ? counts.filter(row => !matchLibraryName(row.name))
         : [];
 
     const fragment = document.createDocumentFragment();
@@ -1366,11 +1415,11 @@ function field(labelText, aria, value, onInput, isSecond = false) {
 }
 
 /** Opens the name sheet for a new character, a rename or a duplicate. */
-function openSheetFor(mode, record = null) {
+function openSheetFor(mode, record = null, seed = null) {
     newDraft = {
         mode,
-        name: record?.name || '',
-        first: record ? recordFirst(record) : '',
+        name: record?.name || String(seed?.name ?? ''),
+        first: record ? recordFirst(record) : String(seed?.first ?? ''),
         firstTouched: false,
         portrait: '',
         sourceName: record?.name || '',

@@ -843,6 +843,49 @@
 .mz-lib-menu button.is-danger { color: var(--mz-bad); }
 .mz-lib-menu .ico { width: 14px; height: 14px; }
 
+/* ---- the two-Mikes chooser: which character a tag shows ---- */
+
+.mz-chooser {
+    position: fixed;
+    z-index: 100;
+    min-width: 210px;
+    padding: 5px;
+    border: 1px solid var(--mz-line-strong);
+    border-radius: var(--mz-r);
+    background: var(--mz-surface-solid);
+    box-shadow: var(--mz-shadow-sm);
+}
+
+.mz-chooser-head {
+    margin: 0;
+    padding: 5px 10px 7px;
+    font-size: var(--mz-text-2xs);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--mz-text-dim);
+}
+
+.mz-chooser-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    padding: 7px 10px;
+    border: 0;
+    border-radius: var(--mz-r-sm);
+    background: none;
+    color: var(--mz-text);
+    font: inherit;
+    font-size: var(--mz-text-sm);
+    text-align: left;
+    cursor: pointer;
+}
+
+.mz-chooser-row:hover { background: var(--mz-surface-2); }
+.mz-chooser-row.is-on { color: var(--mz-accent); }
+.mz-chooser-row.is-quiet { color: var(--mz-text-dim); }
+.mz-chooser-row .ico { width: 14px; height: 14px; margin-left: auto; }
+
 /* ---- the new-character sheet ---- */
 
 .mz-lib-scrim {

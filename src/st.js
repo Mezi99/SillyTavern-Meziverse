@@ -785,6 +785,33 @@ export function bgStore() {
 }
 
 /**
+ * The open chat's library bindings: which library character a one-word
+ * tag name means in THIS story (`chatMetadata.meziverse.libBind`), so two
+ * characters answering to "Mike" can split across chats. tagKey → entryKey.
+ */
+export function libBindStore() {
+    const metadata = ctx()?.chatMetadata;
+    if (!metadata || typeof metadata !== 'object') return {};
+    const store = metadata.meziverse?.libBind;
+    return store && typeof store === 'object' && !Array.isArray(store) ? store : {};
+}
+
+/** Binds a tag name to a library character in this chat; null clears it. */
+export function setLibBind(tagName, entryKey) {
+    const metadata = ctx()?.chatMetadata;
+    const key = castKey(tagName);
+    if (!metadata || typeof metadata !== 'object' || !key) return;
+
+    if (!metadata.meziverse || typeof metadata.meziverse !== 'object') metadata.meziverse = {};
+    if (!metadata.meziverse.libBind || typeof metadata.meziverse.libBind !== 'object') metadata.meziverse.libBind = {};
+
+    if (entryKey) metadata.meziverse.libBind[key] = castKey(entryKey);
+    else delete metadata.meziverse.libBind[key];
+
+    saveChatMetadata();
+}
+
+/**
  * The open chat's terrain record - the map's land as one small JSON
  * (`chatMetadata.meziverse.terrain`). Null with no chat open or before
  * anything has been derived. The record is read-only here; writing goes
