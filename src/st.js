@@ -812,6 +812,33 @@ export function setLibBind(tagName, entryKey) {
 }
 
 /**
+ * The open chat's library-offs: which names the library must ignore in
+ * THIS story (`chatMetadata.meziverse.libOff`) - a temporary character
+ * that shares a name with a saved one. tagKey → true.
+ */
+export function libOffStore() {
+    const metadata = ctx()?.chatMetadata;
+    if (!metadata || typeof metadata !== 'object') return {};
+    const store = metadata.meziverse?.libOff;
+    return store && typeof store === 'object' && !Array.isArray(store) ? store : {};
+}
+
+/** Disengages (or re-engages) the library for a tag name in this chat. */
+export function setLibOff(tagName, off) {
+    const metadata = ctx()?.chatMetadata;
+    const key = castKey(tagName);
+    if (!metadata || typeof metadata !== 'object' || !key) return;
+
+    if (!metadata.meziverse || typeof metadata.meziverse !== 'object') metadata.meziverse = {};
+    if (!metadata.meziverse.libOff || typeof metadata.meziverse.libOff !== 'object') metadata.meziverse.libOff = {};
+
+    if (off) metadata.meziverse.libOff[key] = true;
+    else delete metadata.meziverse.libOff[key];
+
+    saveChatMetadata();
+}
+
+/**
  * The open chat's terrain record - the map's land as one small JSON
  * (`chatMetadata.meziverse.terrain`). Null with no chat open or before
  * anything has been derived. The record is read-only here; writing goes

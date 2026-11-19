@@ -10,9 +10,11 @@ import {
     EXPRESSION_FAMILIES,
     SUGGESTED_LABELS,
     cleanSpriteLabel,
+    groupCastNames,
     labelFamily,
     matchLabel,
     normalizeLibraryRecord,
+    recordAnswersTo,
     recordFirst,
     resolveLibraryMatch,
     resolveLibraryPortrait,
@@ -49,6 +51,67 @@ test('the first-name field defaults to the name\'s first word and keeps its own'
     assert.equal(recordFirst({ name: 'Mike Reynolds' }), 'Mike');
     assert.equal(recordFirst({ name: 'Mike Reynolds', first: ' Ren ' }), 'Ren');
     assert.equal(recordFirst({}), '');
+});
+
+test('aliases are trimmed, folded-unique names a record answers to', () => {
+    const record = normalizeLibraryRecord({ name: 'Eli', aliases: [' Elijah ', 'Jameson', 'elijah', ''] });
+    assert.deepEqual(record.aliases, ['Elijah', 'Jameson']);
+
+    // the primary name is not repeated as an alias claim
+    assert.deepEqual(recordAnswersTo(record), ['Eli', 'Elijah', 'Jameson']);
+    assert.deepEqual(recordAnswersTo({ name: 'Sarah Greenfield', aliases: ['The Gardener'] }), ['Sarah', 'The Gardener']);
+    assert.deepEqual(normalizeLibraryRecord({ name: 'A', aliases: 'nope' }).aliases, []);
+});
+
+test('resolveLibraryMatch: an alias claim finds its character', () => {
+    const entries = {
+        'eli': { name: 'Eli', first: 'Eli', aliases: ['Elijah', 'Jameson'] },
+    };
+    const match = resolveLibraryMatch('Elijah', entries);
+    assert.equal(match.kind, 'one');
+    assert.equal(match.record.name, 'Eli');
+
+    assert.equal(resolveLibraryMatch('Jameson', entries).record.name, 'Eli');
+    assert.equal(resolveLibraryMatch('Nobody', entries), null);
+});
+
+test('resolveLibraryMatch: two characters claiming one alias are ambiguous', () => {
+    const entries = {
+        'sarah': { name: 'Sarah', first: 'Sarah', aliases: ['The Gardener'], addedAt: '2026-01-01' },
+        'nine': { name: 'Nine', first: 'Nine', aliases: ['The Gardener'], addedAt: '2026-02-01' },
+    };
+    const match = resolveLibraryMatch('The Gardener', entries);
+    assert.equal(match.kind, 'ambiguous');
+    assert.deepEqual(match.candidates.map(record => record.name), ['Nine', 'Sarah']);
+});
+
+test('resolveLibraryMatch: a library-off name matches nothing', () => {
+    const entries = {
+        'mike smith': { name: 'Mike Smith', first: 'Mike' },
+        'mike reynolds': { name: 'Mike Reynolds', first: 'Mike' },
+    };
+    assert.equal(resolveLibraryMatch('Mike', entries, null, { mike: true }), null);
+    assert.equal(resolveLibraryMatch('Mike', entries, null, new Set(['mike'])), null);
+    assert.ok(resolveLibraryMatch('Mike', entries, null, {}));
+    // the off is per name: the full name still finds its record
+    assert.equal(resolveLibraryMatch('Mike Smith', entries, null, { mike: true }).record.name, 'Mike Smith');
+});
+
+test('groupCastNames: one character shows one poster, labelled by the first name used', () => {
+    const entries = {
+        'eli': { name: 'Eli', first: 'Eli', aliases: ['Elijah'] },
+    };
+
+    const merged = groupCastNames(['Elijah', 'Eli', 'Megan'], entries);
+    assert.deepEqual(merged.map(group => ({ name: group.name, names: group.names })), [
+        { name: 'Elijah', names: ['Elijah', 'Eli'] },
+        { name: 'Megan', names: ['Megan'] },
+    ]);
+
+    // a library-off name never merges with anyone
+    const apart = groupCastNames(['Eli', 'Elijah'], entries, null, { elijah: true });
+    assert.deepEqual(apart.map(group => group.name), ['Eli', 'Elijah']);
+    assert.deepEqual(groupCastNames(null, entries), []);
 });
 
 test('resolveLibraryMatch: the chat\'s binding beats everything', () => {

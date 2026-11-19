@@ -17,7 +17,7 @@
  */
 
 import { icon } from './icons.js';
-import { castKey, chatMessages, imageSource, libBindStore, personaName, setLibBind, spriteDelete, spriteList, spriteUpload, spriteUploadZip, uploadImage } from './st.js';
+import { castKey, chatMessages, imageSource, libBindStore, libOffStore, personaName, setLibBind, setLibOff, spriteDelete, spriteList, spriteUpload, spriteUploadZip, uploadImage } from './st.js';
 import { libraryEntries, libraryEntry, removeLibraryEntry, saveSettings, setLibraryEntry, settings } from './settings.js';
 import { notify } from './notify.js';
 import { hueOf, initials, seenNameCounts } from './scene.js';
@@ -124,8 +124,24 @@ export function normalizeLibraryRecord(raw = {}) {
         name,
         portrait: String(raw?.portrait ?? '').trim(),
         first: String(raw?.first ?? '').trim() || firstWord(name),
+        aliases: aliasList(raw?.aliases),
         addedAt: String(raw?.addedAt ?? '').trim() || new Date().toISOString(),
     };
+}
+
+/** The alias list in its right shape: trimmed, folded-unique, in order. */
+function aliasList(raw) {
+    if (!Array.isArray(raw)) return [];
+    const out = [];
+    const seen = new Set();
+    for (const value of raw) {
+        const name = String(value ?? '').trim();
+        const key = castKey(name);
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        out.push(name);
+    }
+    return out;
 }
 
 /** The first word of a name - the one-word name tags carry. */
@@ -144,21 +160,41 @@ export function recordFirst(record) {
 }
 
 /**
+ * Every name this record answers to in scene tags: the primary `first`
+ * plus its aliases - "Sarah Greenfield" answering to "Sarah", "Elijah",
+ * a nickname, or a title.
+ */
+export function recordAnswersTo(record) {
+    const names = [];
+    const primary = recordFirst(record);
+    if (primary) names.push(primary);
+
+    for (const alias of aliasList(record?.aliases)) {
+        if (castKey(alias) !== castKey(primary)) names.push(alias);
+    }
+    return names;
+}
+
+/**
  * What a scene tag's name resolves to in the library. The chain: the
  * chat's own binding first (this story's Mike is THAT Mike), then a record
  * named exactly so (explicit setup is the default), then the most recently
- * used of the records answering to the name through `first` - the two-Mikes
- * case. Whenever more than one record answers to a name the match is
- * 'ambiguous': the pick shows at once and `candidates` offers the swap.
+ * used of the records answering to the name through `first` or an alias -
+ * the two-Mikes case. Whenever more than one record answers to a name the
+ * match is 'ambiguous': the pick shows at once and `candidates` offers the
+ * swap. A name the chat has switched OFF (a temporary character) matches
+ * nothing at all.
  *
  * @param {string} tagName a name as a scene tag carries it
  * @param {object} entries library entries keyed by fold
  * @param {object} [bindings] the chat's tagKey → entryKey choices
+ * @param {object|Set} [off] the chat's library-off names (tagKey → true)
  * @returns {null | {kind: 'one'|'ambiguous', record: object, candidates: object[]}}
  */
-export function resolveLibraryMatch(tagName, entries, bindings = null) {
+export function resolveLibraryMatch(tagName, entries, bindings = null, off = null) {
     const key = castKey(tagName);
     if (!key) return null;
+    if (off instanceof Set ? off.has(key) : !!off?.[key]) return null;
 
     const store = entries && typeof entries === 'object' ? entries : {};
 
@@ -169,7 +205,8 @@ export function resolveLibraryMatch(tagName, entries, bindings = null) {
     for (const [entryKey, record] of Object.entries(store)) {
         if (!record || typeof record !== 'object') continue;
         if (entryKey === key) continue; // the exact name is already in
-        if (castKey(recordFirst(record)) === key) candidates.push(record);
+        const answers = recordAnswersTo(record).some(name => castKey(name) === key);
+        if (answers) candidates.push(record);
     }
 
     if (!candidates.length) return null;
@@ -299,10 +336,38 @@ export function resolveLibraryPortrait(key, chatImages, library) {
 /**
  * What a tag name means in the open chat: the library character it
  * resolves to, everyone who answers to it when several do, and which one
- * is showing. Reads the live stores - the two-Mikes case included.
+ * is showing. Reads the live stores - the two-Mikes case included - and
+ * honors this chat's library-offs (a temporary character matches nothing).
  */
 export function matchLibraryName(name) {
-    return resolveLibraryMatch(name, libraryEntries(), libBindStore());
+    return resolveLibraryMatch(name, libraryEntries(), libBindStore(), libOffStore());
+}
+
+/**
+ * The cast strip's poster groups: names the story lists that answer to
+ * one library character become ONE poster (`present="Eli, Elijah"` shows
+ * a single Eli), labelled by the name the scene used first. Names that
+ * resolve to nothing each stand alone - and a library-off name never
+ * merges with anyone.
+ */
+export function groupCastNames(names, entries, bindings = null, off = null) {
+    const groups = [];
+    const byKey = new Map();
+
+    for (const name of names || []) {
+        const match = resolveLibraryMatch(name, entries, bindings, off);
+        const key = match ? `rec:${castKey(match.record.name)}` : `tag:${castKey(name)}`;
+        const found = byKey.get(key);
+        if (found) {
+            found.names.push(name);
+            continue;
+        }
+        const group = { name, names: [name] };
+        byKey.set(key, group);
+        groups.push(group);
+    }
+
+    return groups;
 }
 
 /**
