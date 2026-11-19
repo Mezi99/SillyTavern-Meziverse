@@ -1030,7 +1030,7 @@ function createPressed() {
     if (!record) return;
 
     notify(`${record.name} saved to the library.`, 'success');
-    view = { kind: 'detail', name: record.name };
+    view = detailView(record.name);
     resetDetail();
     renderWin();
 }

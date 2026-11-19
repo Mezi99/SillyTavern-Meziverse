@@ -628,8 +628,10 @@
     height: 100%;
     object-fit: cover;
     object-position: 50% 0;
-    transform: scale(var(--zoom, 1.85));
-    transform-origin: 50% 13%;
+    /* head and shoulders, tuned against real full-body sprites: the top
+       edge is the anchor so the hair never crops out of the cell */
+    transform: scale(var(--zoom, 1.42));
+    transform-origin: 50% 0;
 }
 .mz-lib-board[data-fit="full"] .mz-lib-slot img {
     object-fit: contain;
@@ -735,7 +737,7 @@
     border: 1px solid var(--mz-line-strong);
     background: hsl(var(--h, 210) 18% 16%);
 }
-.mz-lib-tray-item .thumb img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 0; transform: scale(1.8); transform-origin: 50% 13%; }
+.mz-lib-tray-item .thumb img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 0; transform: scale(1.42); transform-origin: 50% 0; }
 .mz-lib-tray-item small { display: block; max-width: 110px; overflow: hidden; margin-bottom: 4px; font-size: var(--mz-text-2xs); color: var(--mz-text-muted); text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---- nothing uploaded yet: the board leads with one big drop panel ---- */
@@ -820,6 +822,7 @@
     box-shadow: var(--mz-shadow);
 }
 .mz-lib-sheet .mz-lib-face { border: 1.5px dashed var(--mz-line-strong); cursor: pointer; }
+.mz-lib-sheet .mz-lib-initial { font-size: calc(19px * var(--mz-ui-scale)); white-space: nowrap; }
 .mz-lib-sheet-photo { padding: 0; border: 0; background: none; cursor: pointer; }
 .mz-lib-sheet h3 { margin: 0 0 4px; font-size: var(--mz-text-lg); font-weight: 600; }
 .mz-lib-sheet p { margin: 0 0 12px; font-size: var(--mz-text-xs); line-height: 1.5; color: var(--mz-text-muted); }
