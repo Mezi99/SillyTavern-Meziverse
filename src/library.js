@@ -374,6 +374,7 @@ let presentNames = () => [];
 // The detail's sprite rows and the staged removal, reset per character.
 let detailRows = [];
 let detailLoaded = false;
+let detailLoading = false;
 let removeStage = 'idle';
 // Files the names could not place: {id, file, name, url} each.
 let trayItems = [];
@@ -560,6 +561,7 @@ function detailView(name) {
 function resetDetail() {
     detailRows = [];
     detailLoaded = false;
+    detailLoading = false;
     removeStage = 'idle';
     for (const timer of armTimers.values()) clearTimeout(timer);
     armTimers.clear();
@@ -1076,9 +1078,40 @@ function selectedRow() {
 }
 
 function renderDetail(record) {
+    // The cache's rows render at once; the listing lands in their own time.
+    if (!detailLoaded) {
+        const cached = peekSprites(record.name);
+        if (cached !== null) {
+            detailRows = cached;
+            detailLoaded = true;
+        }
+    }
+
     els.detail.style.setProperty('--h', `${hueOf(record.name)}deg`);
     els.detail.replaceChildren(buildStage(record), buildBoard(record));
-    loadDetailRows(record);
+
+    // One fetch per page; when it lands it repaints and stops there.
+    if (!detailLoaded && !detailLoading) loadDetailRows(record);
+}
+
+/**
+ * The page's rows arrive from the listing; when they land, the board
+ * repaints. The window may have moved on while the listing was in flight.
+ */
+function loadDetailRows(record) {
+    detailLoading = true;
+
+    fetchSprites(record.name).then(rows => {
+        detailLoading = false;
+        if (!win || win.hidden || view.kind !== 'detail' || view.name !== record.name) return;
+        detailRows = rows;
+        detailLoaded = true;
+
+        // A selection can outlive its file.
+        if (view.sel && !rows.some(row => row.spriteName === view.sel.spriteName)) view.sel = null;
+
+        renderDetail(record);
+    });
 }
 
 /** The page's left: the big preview, the name, the tools - the stage. */
@@ -1427,26 +1460,6 @@ function customTile() {
     name.textContent = 'custom\u2026';
     button.append(name);
     return button;
-}
-
-/**
- * The page's rows arrive from the listing; when they land, the board
- * repaints. The window may have moved on while the listing was in flight.
- */
-function loadDetailRows(record) {
-    detailLoaded = peekSprites(record.name) !== null;
-    detailRows = peekSprites(record.name) || [];
-
-    fetchSprites(record.name).then(rows => {
-        if (!win || win.hidden || view.kind !== 'detail' || view.name !== record.name) return;
-        detailRows = rows;
-        detailLoaded = true;
-
-        // A selection can outlive its file.
-        if (view.sel && !rows.some(row => row.spriteName === view.sel.spriteName)) view.sel = null;
-
-        renderDetail(record);
-    });
 }
 
 /** Files the names could not place: a thumb, the name, one label picker each. */
