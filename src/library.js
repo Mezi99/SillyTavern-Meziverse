@@ -426,7 +426,12 @@ export function chooseLibraryFor(tagName, entryKey) {
     if (record) {
         if (wasOff) {
             const chat = castImages()?.[key];
-            if (typeof chat === 'string' && chat.trim()) setPortrait(record.name, chat.trim());
+            if (typeof chat === 'string' && chat.trim()) {
+                setPortrait(record.name, chat.trim());
+                // the replace flow: the poster's new image seeds the
+                // neutral slot the same way an add does
+                seedNeutralSprite(record.name, chat.trim());
+            }
         }
         record.lastUsedAt = new Date().toISOString();
         setLibraryEntry(record.name, { lastUsedAt: record.lastUsedAt });
@@ -540,7 +545,38 @@ export function ensureInLibrary(name, portrait = '') {
 
     const record = setLibraryEntry(trimmed, normalizeLibraryRecord({ name: trimmed, portrait }));
     notifyLibraryChange();
+    // One image, one sprite: the promoted picture fills the `neutral`
+    // slot too - the easy way to save a character with a single image.
+    if (record.portrait) seedNeutralSprite(record.name, record.portrait);
     return record;
+}
+
+/**
+ * Seeds a character's `neutral` slot from their default image - unless
+ * the slot already holds art (real expression sets keep their neutral).
+ * The bytes ride straight from the stored file; sprites are never
+ * re-encoded.
+ */
+function seedNeutralSprite(name, imagePath) {
+    const path = cleanPath(imagePath);
+    if (!path) return;
+
+    fetchSprites(name).then(rows => {
+        if (rows.some(row => row.label === 'neutral')) return null;
+
+        return fetch(imageSource(path))
+            .then(response => (response.ok ? response.blob() : null))
+            .then(blob => {
+                if (!blob) return null;
+                const file = new File([blob], `neutral${fileExt(path)}`, { type: blob.type || 'image/webp' });
+                return spriteUpload({ name, label: 'neutral', spriteName: 'neutral', file });
+            })
+            .then(result => {
+                if (!result?.ok) return;
+                invalidateSprites(name);
+                refreshLibrary();
+            });
+    }).catch(() => { /* the seed is a gift, never a demand */ });
 }
 
 function setPortrait(name, portrait) {
@@ -1870,6 +1906,10 @@ function buildStage(record) {
 
     const preview = document.createElement('div');
     preview.className = 'mz-lib-preview';
+    // The default image fills the plate the way the strip and the cards
+    // wear it (cover); a looked-at sprite is shown whole, as the stage
+    // will draw it (contain, standing on the floor).
+    preview.classList.toggle('is-photo', !row);
     const source = row ? imageSource(row.path) : imageSource(record.portrait || '');
     if (source) {
         const image = document.createElement('img');

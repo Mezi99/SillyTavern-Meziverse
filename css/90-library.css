@@ -477,6 +477,13 @@
     object-fit: contain;
     object-position: 50% 100%;
 }
+
+/* the default image wears the plate the way the posters do - a landscape
+   source floats small under contain, and every other view crops to fill */
+.mz-lib-preview.is-photo img {
+    object-fit: cover;
+    object-position: 50% 50%;
+}
 .mz-lib-preview .mz-lib-initial { font-size: 54px; }
 .mz-lib-preview.is-empty img { display: none; }
 .mz-lib-preview:not(.is-empty) .mz-lib-initial { display: none; }
