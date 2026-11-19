@@ -13,7 +13,7 @@ import { icon } from './icons.js';
 import { notify } from './notify.js';
 import { avatarsOn, entryOn, modeOn } from './settings.js';
 import { closeFloats, placeFloat, registerFloat } from './floats.js';
-import { chooseLibraryFor, disengageLibraryFor, ensureInLibrary, groupCastNames, libraryCandidatesFor, matchLibraryName, onLibraryChange, openLibrary, openLibraryNewFor, posterStateFor, resolvePosterPortrait } from './library.js';
+import { chooseLibraryFor, disengageLibraryFor, ensureInLibrary, groupCastLive, libraryCandidatesFor, matchLibraryName, onLibraryChange, openLibrary, openLibraryNewFor, posterStateFor, resolvePosterPortrait } from './library.js';
 import { imageFileName, prepareImage } from './imageprep.js';
 
 const FALLBACK_FLOOR = 180;
