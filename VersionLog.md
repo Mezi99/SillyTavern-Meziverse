@@ -1,5 +1,30 @@
 # Meziverse — version log
 
+## Avatar Module · Part 1 — 2026-11-19 (unreleased)
+
+The characters get a library of their own — who a name is, what they look like, and one face that wins everywhere.
+
+### The Character Library opens
+- A new window — the top-bar library pill, or a poster's own door — with shelves reading **In the scene → Seen · not saved → Library**, a coverage card per face (CORE n/8 — what the stage falls back on — said inline), and a character page: the stage on one side, the expression board on the other, behind two tabs — **Expressions | Aliases**. Drag it by its header, pull the corner to resize, press outside to close — and it remembers where you left it.
+- Saving is always explicit: a name seen in the story never saves itself. Drop a picture on a slot, use a poster's **Add to library**, or type a name and a photo into the new-character sheet — one step either way.
+
+### One name, one character
+- A record's name is its ID — the full name that keeps two Mikes two records — while scene tags keep saying the one-word name ("Mike", never "Mike Chan"). **Aliases** are "other names the AI might use for this character (a revealed full name "Sarah Greenfield" for "Sarah", a nickname, or a title)" — pills on the Aliases tab; names print as written while faces resolve to the character.
+- Ambiguity is a door, never a guess: when two records answer to one name the poster asks which — the current pick checked, with **Don't use the library**, **Add as new character…** and **Open page** beside it — and remembers the answer for this chat. Names resolving to one character share one poster on the strip.
+
+### Engaged faces win
+- A character the library owns wears library images everywhere; the chat-file avatar is theirs again the second you disengage (the current face is copied over), and re-engaging promotes the poster's picture back to the default and fills the `neutral` slot. An engaged portrait cannot be replaced from the poster — the camera hides until you disengage.
+
+### The wardrobe work
+- **Rename** carries the sprites to the new name — a clean break, aliases are separate — and a taken name stops with a shortcut to rename the existing one first. **Duplicate** copies the sprites and shares the portrait. **Delete** keeps its two-step nerve and asks "Delete sprites too?".
+- Hover any expression for **Replace / Delete** (touch keeps them visible; delete needs arming); the buttons lost their bold, and shelves, stage and board all read the one house style.
+
+### One image, one sprite
+- The picture promoted into the library fills the `neutral` expression slot too — the easy way to save a character with a single image — and never clobbers a real expression set's neutral. The default-image preview fills its plate like the posters and cards now (a landscape source no longer floats small), while a looked-at sprite still shows whole.
+
+### Notes
+- Landed on the `Avatar_Module` branch; `manifest.json` still reads 2.10.0 — the version bump and the merge land at the module's wrap-up. The synthetic suite stands at 343 tests.
+
 ## 2.10.0 - 2026-11-18
 
 The map becomes a place: the story's land painted under the chart - and one grammar that tells a land place from a car on the road.
