@@ -146,10 +146,10 @@ export function recordFirst(record) {
 /**
  * What a scene tag's name resolves to in the library. The chain: the
  * chat's own binding first (this story's Mike is THAT Mike), then a record
- * named exactly so (explicit setup beats any first-name claim), then the
- * records answering to the name through `first` - the two-Mikes case.
- * One match binds itself; several bring the most recently used one while
- * `candidates` offers the swap.
+ * named exactly so (explicit setup is the default), then the most recently
+ * used of the records answering to the name through `first` - the two-Mikes
+ * case. Whenever more than one record answers to a name the match is
+ * 'ambiguous': the pick shows at once and `candidates` offers the swap.
  *
  * @param {string} tagName a name as a scene tag carries it
  * @param {object} entries library entries keyed by fold
@@ -162,35 +162,38 @@ export function resolveLibraryMatch(tagName, entries, bindings = null) {
 
     const store = entries && typeof entries === 'object' ? entries : {};
 
-    const bound = bindings?.[key];
-    const boundRecord = bound ? store[bound] : null;
-    if (boundRecord && typeof boundRecord === 'object') {
-        return { kind: 'one', record: boundRecord, candidates: [boundRecord] };
-    }
-
-    // A record named exactly like the tag is explicit user setup: it wins
-    // outright and alone - no first-name claim can cloud it.
-    const exact = store[key];
-    if (exact && typeof exact === 'object') {
-        return { kind: 'one', record: exact, candidates: [exact] };
-    }
-
     const candidates = [];
-    for (const record of Object.values(store)) {
+    const exact = store[key];
+    if (exact && typeof exact === 'object') candidates.push(exact);
+
+    for (const [entryKey, record] of Object.entries(store)) {
         if (!record || typeof record !== 'object') continue;
+        if (entryKey === key) continue; // the exact name is already in
         if (castKey(recordFirst(record)) === key) candidates.push(record);
     }
 
     if (!candidates.length) return null;
-    if (candidates.length === 1) return { kind: 'one', record: candidates[0], candidates };
 
-    // Most recently used first, then most recently added - the pick the
-    // poster shows while the user has not chosen for this chat.
     const usedAt = record => Date.parse(String(record?.lastUsedAt ?? '')) || 0;
     const addedAt = record => Date.parse(String(record?.addedAt ?? '')) || 0;
-    candidates.sort((a, b) => (usedAt(b) - usedAt(a)) || (addedAt(b) - addedAt(a)));
 
-    return { kind: 'ambiguous', record: candidates[0], candidates };
+    // The swap's order: the exact name first, then most recently used,
+    // then most recently added.
+    candidates.sort((a, b) => {
+        if (a === exact) return -1;
+        if (b === exact) return 1;
+        return (usedAt(b) - usedAt(a)) || (addedAt(b) - addedAt(a));
+    });
+
+    // What shows: the chat's own choice, else the exact name, else the
+    // most recent claim.
+    const bound = bindings?.[key];
+    const boundRecord = bound ? store[bound] : null;
+    const record = boundRecord && typeof boundRecord === 'object'
+        ? boundRecord
+        : (exact || candidates[0]);
+
+    return { kind: candidates.length > 1 ? 'ambiguous' : 'one', record, candidates };
 }
 
 /**

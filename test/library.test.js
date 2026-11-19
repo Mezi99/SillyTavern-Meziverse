@@ -57,19 +57,20 @@ test('resolveLibraryMatch: the chat\'s binding beats everything', () => {
         'mike reynolds': { name: 'Mike Reynolds', first: 'Mike', addedAt: '2026-02-01' },
     };
     const match = resolveLibraryMatch('Mike', entries, { mike: 'mike smith' });
-    assert.equal(match.kind, 'one');
-    assert.equal(match.record.name, 'Mike Smith');
+    assert.equal(match.kind, 'ambiguous');                 // the swap stays open
+    assert.equal(match.record.name, 'Mike Smith');         // but this chat chose
+    assert.deepEqual(match.candidates.map(record => record.name), ['Mike Reynolds', 'Mike Smith']);
 });
 
-test('resolveLibraryMatch: a record named exactly like the tag wins alone', () => {
+test('resolveLibraryMatch: an exact name shows first - the swap still lists the others', () => {
     const entries = {
         'mike': { name: 'Mike', addedAt: '2026-01-01' },
         'mike smith': { name: 'Mike Smith', first: 'Mike', addedAt: '2026-02-01' },
     };
     const match = resolveLibraryMatch('  MIKE ', entries);
-    assert.equal(match.kind, 'one');
-    assert.equal(match.record.name, 'Mike');
-    assert.deepEqual(match.candidates.map(record => record.name), ['Mike']);
+    assert.equal(match.kind, 'ambiguous');                 // several answer to the name
+    assert.equal(match.record.name, 'Mike');               // explicit setup shows
+    assert.deepEqual(match.candidates.map(record => record.name), ['Mike', 'Mike Smith']);
 });
 
 test('resolveLibraryMatch: one first-name claim binds itself, two are the two-Mikes case', () => {
