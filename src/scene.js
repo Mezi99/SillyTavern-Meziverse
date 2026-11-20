@@ -476,11 +476,17 @@ export function isUsableScene(tag) {
     return !!(text(attrs.date).trim() || text(attrs.location).trim() || text(attrs.present).trim());
 }
 
-/** The first attribute answering one of several spellings, or ''. */
+/** The first attribute answering one of several spellings, or ''. The
+ * spellings win in the order asked - never in the tag's own attribute
+ * order, so `<speech mood tone>` and `<speech tone mood>` resolve alike. */
 function pickAttr(attrs, ...names) {
-    const wanted = new Set(names.map(name => name.toLowerCase()));
+    const byKey = new Map();
     for (const [key, value] of Object.entries(attrs || {})) {
-        if (wanted.has(key.toLowerCase())) return text(value);
+        if (!byKey.has(key.toLowerCase())) byKey.set(key.toLowerCase(), value);
+    }
+    for (const name of names) {
+        const hit = byKey.get(name.toLowerCase());
+        if (hit != null) return text(hit);
     }
     return '';
 }
@@ -560,6 +566,46 @@ export function describeScenes(message, { persona = '' } = {}) {
 
 /* ---------- speech ---------- */
 
+/**
+ * The labels SillyTavern's own expression system suggests - its
+ * `DEFAULT_EXPRESSIONS`, the GoEmotions set. The shared vocabulary of
+ * expression sprites and the speech tag's `expression` field. Suggested on
+ * upload, never enforced: the true label set of a character is their
+ * folder's file names.
+ */
+export const SUGGESTED_LABELS = [
+    'admiration', 'amusement', 'anger', 'annoyance', 'approval', 'caring',
+    'confusion', 'curiosity', 'desire', 'disappointment', 'disapproval',
+    'disgust', 'embarrassment', 'excitement', 'fear', 'gratitude', 'grief',
+    'joy', 'love', 'nervousness', 'optimism', 'pride', 'realization',
+    'relief', 'remorse', 'sadness', 'surprise', 'neutral',
+];
+
+const SUGGESTED_SET = new Set(SUGGESTED_LABELS);
+
+/** Whether a value reads as one of the 28 sprite labels (case-folded). */
+export function isExpressionLabel(value) {
+    const clean = String(value ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+    return !!clean && SUGGESTED_SET.has(clean);
+}
+
+/**
+ * Which immersive band side each speaker of one reply stands on: the first
+ * speaker left, the second right, a third back left - and a character keeps
+ * their side for the whole reply. Keys are folded names.
+ */
+export function assignBandSides(names) {
+    const sides = new Map();
+    let at = 0;
+    for (const name of names || []) {
+        const key = String(name ?? '').trim().toLowerCase();
+        if (!key || sides.has(key)) continue;
+        sides.set(key, at % 2 ? 'is-r' : '');
+        at += 1;
+    }
+    return sides;
+}
+
 /* One matched outer quote pair, whatever the keyboard: straight, curly,
    single or double. */
 const QUOTE_PAIRS = [['"', '"'], ["'", "'"], ['\u201c', '\u201d'], ['\u2018', '\u2019']];
@@ -578,16 +624,24 @@ function unquote(line) {
 }
 
 /**
- * The display fields of one speech tag: who speaks, how, and what.
+ * The display fields of one speech tag: who speaks, how, in what
+ * expression, and what.
  *
  * `body` is the line as authored - quote marks included, because plain prose
  * (the bubbles off, or the log) must show it exactly as the format asks the
  * model to write it. `words` lifts one matched outer quote pair: the bubble
- * itself is the quoting. `mood` is accepted beside `tone` - the field may
- * grow from delivery to expression one day.
+ * itself is the quoting.
+ *
+ * `tone` is free-text delivery ("low, certain") - display only, it never
+ * picks a sprite. `expression` is the sprite vocabulary, one of the 28
+ * labels, and what the narration's faces follow. The two fields are
+ * separate: `emotion` is an accepted spelling of `expression`, and `mood`
+ * is the legacy bridge - a label there reads as the expression (tags
+ * written before the rename keep their data), anything else stays a tone
+ * fallback (very old tags used `mood` as delivery). `expression` wins.
  *
  * @param {object} tag
- * @returns {{character:string, tone:string, body:string, words:string}|null}
+ * @returns {{character:string, tone:string, expression:string, body:string, words:string}|null}
  */
 export function describeSpeech(tag) {
     if (!tag || tag.name !== 'speech' || !tag.closed) return null;
@@ -595,9 +649,22 @@ export function describeSpeech(tag) {
     const attrs = tag.attrs || {};
     const body = text(tag.body).trim();
 
+    let expression = pickAttr(attrs, 'expression', 'emotion').trim();
+    let tone = pickAttr(attrs, 'tone').trim();
+    const mood = pickAttr(attrs, 'mood').trim();
+
+    if (mood) {
+        if (isExpressionLabel(mood)) {
+            if (!expression) expression = mood;
+        } else if (!tone) {
+            tone = mood;
+        }
+    }
+
     return {
         character: pickAttr(attrs, 'character', 'speaker', 'name').trim(),
-        tone: pickAttr(attrs, 'tone', 'mood').trim(),
+        tone,
+        expression,
         body,
         words: unquote(body),
     };
@@ -608,7 +675,7 @@ export function describeSpeech(tag) {
  * fields. Cached on identity + `mes`, like the scenes.
  *
  * @param {object} message
- * @returns {Array<{character:string, tone:string, body:string, words:string}>}
+ * @returns {Array<{character:string, tone:string, expression:string, body:string, words:string}>}
  */
 export function describeSpeeches(message) {
     if (!message || typeof message !== 'object') return [];

@@ -20,23 +20,14 @@ import { icon } from './icons.js';
 import { castImages, castKey, chatMessages, imageSource, libBindStore, libOffStore, personaName, setCastImage, setLibBind, setLibOff, spriteDelete, spriteList, spriteUpload, spriteUploadZip, uploadImage } from './st.js';
 import { libraryEntries, libraryEntry, removeLibraryEntry, saveSettings, setLibraryEntry, settings } from './settings.js';
 import { notify } from './notify.js';
-import { hueOf, initials, seenNameCounts } from './scene.js';
+import { hueOf, initials, seenNameCounts, SUGGESTED_LABELS } from './scene.js';
 import { imageFileName, prepareImage } from './imageprep.js';
 
 /* ---------- the pure core ---------- */
 
-/**
- * The labels SillyTavern's own expression system suggests - its
- * `DEFAULT_EXPRESSIONS`, the GoEmotions set. Suggested on upload, never
- * enforced: the true label set of a character is their folder's file names.
- */
-export const SUGGESTED_LABELS = [
-    'admiration', 'amusement', 'anger', 'annoyance', 'approval', 'caring',
-    'confusion', 'curiosity', 'desire', 'disappointment', 'disapproval',
-    'disgust', 'embarrassment', 'excitement', 'fear', 'gratitude', 'grief',
-    'joy', 'love', 'nervousness', 'optimism', 'pride', 'realization',
-    'relief', 'remorse', 'sadness', 'surprise', 'neutral',
-];
+// The 28-label vocabulary lives in scene.js (the speech fields read it too);
+// re-exported here so the library's importers keep one home for it.
+export { SUGGESTED_LABELS };
 
 /**
  * The same 28 labels, regrouped into families so a board of slots is
