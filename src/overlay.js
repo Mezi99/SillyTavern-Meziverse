@@ -35,7 +35,7 @@ import { closeLibrary, isLibraryOpen, libraryUiClosed, mountLibrary, openLibrary
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr, notify } from './notify.js';
 
-const VERSION = '2.9.7';
+const VERSION = '2.11.0';
 const PANE_DEFAULT = 300;
 const LOG_W_DEFAULT = 720;
 const LOG_H_SHARE = 0.7;
