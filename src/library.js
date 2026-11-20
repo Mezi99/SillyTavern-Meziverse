@@ -21,7 +21,7 @@ import { castImages, castKey, chatMessages, imageSource, libBindStore, libOffSto
 import { libraryEntries, libraryEntry, removeLibraryEntry, saveSettings, setLibraryEntry, settings } from './settings.js';
 import { notify } from './notify.js';
 import { hueOf, initials, seenNameCounts, SUGGESTED_LABELS } from './scene.js';
-import { imageFileName, prepareImage } from './imageprep.js';
+import { imageFileName, prepareImage, prepareSprite, guessFaceFrame, FACE_DEFAULT } from './imageprep.js';
 
 /* ---------- the pure core ---------- */
 
@@ -117,6 +117,20 @@ export function normalizeLibraryRecord(raw = {}) {
         first: String(raw?.first ?? '').trim() || firstWord(name),
         aliases: aliasList(raw?.aliases),
         addedAt: String(raw?.addedAt ?? '').trim() || new Date().toISOString(),
+        face: normalizeFace(raw?.face),
+    };
+}
+
+/** The face frame in its right shape: fractions and a zoom, all positive. */
+function normalizeFace(raw) {
+    const num = (value, fallback) => {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+    };
+    return {
+        fx: num(raw?.fx, FACE_DEFAULT.fx),
+        fy: num(raw?.fy, FACE_DEFAULT.fy),
+        fs: num(raw?.fs, FACE_DEFAULT.fs),
     };
 }
 
@@ -287,6 +301,76 @@ export function spriteLabelMap(rows) {
         if (row?.label && !map.has(row.label)) map.set(row.label, row);
     }
     return map;
+}
+
+/**
+ * Where a label's expression walk goes when a character has no sprite for
+ * it: a short path of nearer labels ending at the Core fallback. Pure
+ * code - the render never asks anyone, there is no call to make. The core
+ * eight walk nowhere (they ARE the fallback); a label outside the 28 walks
+ * its own name only - a custom sprite may still exist for it.
+ */
+export const EXPRESSION_PATHS = {
+    annoyance: ['anger'],
+    disgust: ['anger'],
+    disapproval: ['annoyance', 'anger'],
+    disappointment: ['sadness'],
+    grief: ['sadness'],
+    remorse: ['sadness'],
+    nervousness: ['fear'],
+    embarrassment: ['nervousness', 'fear'],
+    confusion: ['surprise'],
+    curiosity: ['surprise'],
+    realization: ['surprise'],
+    admiration: ['joy'],
+    amusement: ['joy'],
+    approval: ['joy'],
+    excitement: ['joy'],
+    gratitude: ['joy'],
+    optimism: ['joy'],
+    pride: ['joy'],
+    relief: ['joy'],
+    love: ['joy'],
+    caring: ['love', 'joy'],
+    desire: ['love', 'joy'],
+};
+
+/**
+ * The sprite a spoken expression wears - pure and synchronous. The chain:
+ * the exact label, its near-path (the nearest core family), `neutral`,
+ * then the default image. `level` says which step won: 'exact', 'near',
+ * 'neutral', 'portrait' or 'none' (a faceless character - the caller
+ * offers the chat avatar and the monogram). Several files on one label:
+ * the first, as `spriteLabelMap` reads them.
+ *
+ * @param {{portrait?: string}|null} record
+ * @param {Array<{label: string, path: string}>} rows
+ * @param {string} label the speech's expression (any spelling; folded here)
+ * @returns {{src: string, label: string, level: 'exact'|'near'|'neutral'|'portrait'|'none'}}
+ */
+export function expressionImage(record, rows, label) {
+    const wanted = cleanSpriteLabel(label);
+    const map = spriteLabelMap(rows || []);
+    const chain = [wanted, ...(EXPRESSION_PATHS[wanted] || [])];
+
+    for (const candidate of chain) {
+        const row = candidate ? map.get(candidate) : null;
+        if (row?.path) {
+            return {
+                src: row.path,
+                label: candidate,
+                level: candidate === wanted ? 'exact' : 'near',
+            };
+        }
+    }
+
+    const neutral = map.get('neutral');
+    if (neutral?.path) return { src: neutral.path, label: 'neutral', level: 'neutral' };
+
+    const portrait = String(record?.portrait ?? '').trim();
+    if (portrait) return { src: portrait, label: 'neutral', level: 'portrait' };
+
+    return { src: '', label: '', level: 'none' };
 }
 
 /**
@@ -605,6 +689,48 @@ function invalidateSprites(name) {
     // says so, and the next render reads the listing again.
     detailLoaded = false;
     detailLoading = false;
+}
+
+/**
+ * Warms the sprite cache for a scene's cast before the pane renders, so
+ * `expressionImage` is a synchronous lookup at render time. Answers true
+ * when anything arrived to look at - the caller re-renders once.
+ */
+export async function primeSprites(names) {
+    const wanted = new Set();
+    for (const name of names || []) {
+        const match = matchLibraryName(name);
+        if (match?.record) wanted.add(match.record.name);
+    }
+
+    const jobs = [];
+    for (const recordName of wanted) {
+        const cached = spriteCache.get(recordName);
+        if (cached && Date.now() - cached.fetchedAt < SPRITE_TTL) continue;
+        jobs.push(fetchSprites(recordName).then(() => true, () => false));
+    }
+
+    return (await Promise.all(jobs)).some(Boolean);
+}
+
+/**
+ * The face a spoken line wears right now - the synchronous read the pane
+ * renders with (`primeSprites` keeps the rows warm). An engaged character
+ * wears their library chain (sprites and default image); an unsaved or
+ * disengaged one wears the chat-file avatar for every expression - a
+ * character outside the library never has sprites - and nobody shows a
+ * face they do not have.
+ */
+export function speechFaceFor(name, expression) {
+    const match = matchLibraryName(name);
+    if (match?.record) {
+        return expressionImage(match.record, peekSprites(match.record.name) || [], expression);
+    }
+
+    const chat = castImages()?.[castKey(name)];
+    return typeof chat === 'string' && chat.trim()
+        ? { src: chat.trim(), label: '', level: 'chat' }
+        : { src: '', label: '', level: 'none' };
 }
 
 function fileExt(path) {
@@ -1656,7 +1782,13 @@ async function renameRecord(oldName, newName, first) {
         : { done: 0, failed: [] };
     busy = false;
 
-    const renamed = normalizeLibraryRecord({ name: newName, first, portrait: record.portrait, addedAt: record.addedAt });
+    const renamed = normalizeLibraryRecord({
+        name: newName,
+        first,
+        portrait: record.portrait,
+        addedAt: record.addedAt,
+        face: record.face,
+    });
     if (record.lastUsedAt) renamed.lastUsedAt = record.lastUsedAt;
     setLibraryEntry(newName, renamed);
     if (!sameKey) removeLibraryEntry(oldName);
@@ -2805,7 +2937,16 @@ async function uploadSpriteFiles(record, files, forcedLabel = '', forcedSpriteNa
         }
         batch.add(spriteName);
 
-        const result = await spriteUpload({ name: record.name, label: match.label, spriteName, file });
+        // The sprite pass: art shrinks to the cap and keeps its
+        // transparency - light files, never a crop.
+        let uploading = file;
+        try {
+            uploading = await prepareSprite(file);
+        } catch (error) {
+            console.warn('[Meziverse] could not prep a sprite', error);
+        }
+
+        const result = await spriteUpload({ name: record.name, label: match.label, spriteName, file: uploading });
         if (result.ok) placed += 1;
         else notify(`Could not save ${file.name}.`, 'error');
     }

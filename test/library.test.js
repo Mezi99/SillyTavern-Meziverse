@@ -8,8 +8,10 @@ import assert from 'node:assert/strict';
 import {
     CORE_LABELS,
     EXPRESSION_FAMILIES,
+    EXPRESSION_PATHS,
     SUGGESTED_LABELS,
     cleanSpriteLabel,
+    expressionImage,
     groupCastNames,
     labelFamily,
     matchLabel,
@@ -227,6 +229,74 @@ test('SUGGESTED_LABELS is SillyTavern\'s own 28', () => {
     assert.equal(SUGGESTED_LABELS.length, 28);
     assert.equal(new Set(SUGGESTED_LABELS).size, 28);
     assert.ok(SUGGESTED_LABELS.includes('neutral'));
+});
+
+test('expressionImage walks the chain: exact, near, neutral, portrait, none', () => {
+    const record = { portrait: 'user/images/mara.webp' };
+    const rows = [
+        { label: 'anger', spriteName: 'anger', path: 'anger.png' },
+        { label: 'annoyance', spriteName: 'annoyance', path: 'annoyance.png' },
+        { label: 'neutral', spriteName: 'neutral', path: 'neutral.png' },
+    ];
+
+    assert.deepEqual(expressionImage(record, rows, 'annoyance'), { src: 'annoyance.png', label: 'annoyance', level: 'exact' });
+    assert.deepEqual(expressionImage(record, rows, 'disapproval'), { src: 'annoyance.png', label: 'annoyance', level: 'near' }, 'disapproval walks to annoyance first');
+    assert.deepEqual(expressionImage(record, rows, 'disgust'), { src: 'anger.png', label: 'anger', level: 'near' }, 'then on to anger');
+    assert.deepEqual(expressionImage(record, rows, 'joy'), { src: 'neutral.png', label: 'neutral', level: 'neutral' }, 'no joy sprite: the neutral slot');
+
+    const bare = [{ label: 'joy', spriteName: 'joy', path: 'joy.png' }];
+    assert.deepEqual(expressionImage(record, bare, 'grief'), { src: 'user/images/mara.webp', label: 'neutral', level: 'portrait' }, 'no neutral either: the default image');
+
+    assert.deepEqual(expressionImage({ portrait: '' }, [], 'grief'), { src: '', label: '', level: 'none' }, 'a faceless character');
+    assert.deepEqual(expressionImage(record, rows, ''), { src: 'neutral.png', label: 'neutral', level: 'neutral' }, 'a missing expression starts at neutral');
+});
+
+test('expressionImage keeps custom labels and folds their spelling', () => {
+    const rows = [{ label: 'smug', spriteName: 'smug', path: 'smug.png' }];
+    const record = { portrait: 'p.webp' };
+
+    assert.deepEqual(expressionImage(record, rows, 'smug'), { src: 'smug.png', label: 'smug', level: 'exact' });
+    assert.deepEqual(expressionImage(record, rows, ' Smug '), { src: 'smug.png', label: 'smug', level: 'exact' }, 'folded before lookup');
+    assert.deepEqual(expressionImage(record, rows, 'unheard'), { src: 'p.webp', label: 'neutral', level: 'portrait' });
+});
+
+test('every one of the 28 reaches a sprite, the neutral or the portrait', () => {
+    const full = SUGGESTED_LABELS.map(label => ({ label, spriteName: label, path: `${label}.png` }));
+    for (const label of SUGGESTED_LABELS) {
+        const found = expressionImage({ portrait: 'p.webp' }, full, label);
+        assert.equal(found.level, 'exact', `${label} finds its own sprite`);
+    }
+
+    const coreOnly = CORE_LABELS.map(label => ({ label, spriteName: label, path: `${label}.png` }));
+    for (const label of SUGGESTED_LABELS) {
+        const found = expressionImage({ portrait: 'p.webp' }, coreOnly, label);
+        assert.ok(['exact', 'near', 'neutral'].includes(found.level), `${label} lands on ${found.level}`);
+    }
+
+    for (const label of SUGGESTED_LABELS) {
+        const found = expressionImage({ portrait: 'p.webp' }, [], label);
+        assert.equal(found.level, 'portrait', `${label} falls to the portrait`);
+    }
+});
+
+test('the near-paths end at the core, never in a loop', () => {
+    for (const [label, path] of Object.entries(EXPRESSION_PATHS)) {
+        assert.ok(path.length >= 1 && path.length <= 2, `${label} keeps a short path`);
+        const end = path[path.length - 1];
+        assert.ok(CORE_LABELS.includes(end), `${label} walks to ${end} at the core`);
+        assert.ok(!path.includes(label), `${label} never walks to itself`);
+        for (const hop of path) assert.ok(SUGGESTED_LABELS.includes(hop), `${hop} is one of the 28`);
+    }
+
+    // The core eight walk nowhere - except the two the designer's table
+    // deliberately sends on (disgust -> anger, love -> joy).
+    const designerHops = new Set(['love', 'disgust']);
+    for (const label of CORE_LABELS) {
+        if (designerHops.has(label)) continue;
+        assert.ok(!(label in EXPRESSION_PATHS), `${label} walks nowhere`);
+    }
+    assert.deepEqual(EXPRESSION_PATHS.disgust, ['anger']);
+    assert.deepEqual(EXPRESSION_PATHS.love, ['joy']);
 });
 
 test('visibleLibrary: the filters narrow saved records, the query narrows by name', () => {
