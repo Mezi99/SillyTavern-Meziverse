@@ -321,8 +321,8 @@ function speechHtml(tag, { message, index, sides }) {
         const empty = !src;
         return {
             kind: 'band',
-            // The portrait rides the plate directly - the plate is the
-            // frame; a round-face wrapper here would collapse and clip it.
+            // The sprite stands free on the band's floor - the crop
+            // window is square and invisible, so only the art shows.
             html: `<span class="mz-band ${side}${empty ? ' is-empty' : ''}">`
                 + (empty ? '' : `<span class="mz-band-port"><img src="${escapeHtml(src)}" alt="" style="${faceVars(face.frame)}"></span>`)
                 + '<span class="mz-band-txt">'

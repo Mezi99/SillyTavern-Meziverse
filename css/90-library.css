@@ -1370,35 +1370,31 @@
     background: color-mix(in srgb, var(--mz-accent) 8%, var(--mz-surface-2));
 }
 
-.mz-lib-frame-crop.is-46,
+.mz-lib-frame-crop.is-50,
 .mz-lib-frame-crop.is-32 {
     border-radius: 50%;
 }
 
-.mz-lib-frame-crop.is-46 { width: 46px; height: 46px; }
+.mz-lib-frame-crop.is-50 { width: 50px; height: 50px; }
 .mz-lib-frame-crop.is-32 { width: 32px; height: 32px; }
 
-.mz-lib-frame-crop.is-plate {
-    width: 88px;
-    height: 110px;
-    border-radius: 6px;
+/* The board preview is the immersive avatar's own window - the same
+   square, at the same 152px - so what the tool shows is what the story
+   shows. No plate behind it: only the sprite stands. */
+.mz-lib-frame-crop.is-board {
+    width: 152px;
+    height: 152px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
 }
 
-.mz-lib-frame-crop.is-46 img,
-.mz-lib-frame-crop.is-32 img {
+.mz-lib-frame-crop img {
     position: absolute;
     max-width: none;
     width: calc(var(--fs, 2.9) * 100%);
     left: calc(50% - var(--fx, .5) * var(--fs, 2.9) * 100%);
     top: calc(50% - var(--fy, .27) * var(--fs, 2.9) * var(--ar, 1.3333) * 100%);
-}
-
-.mz-lib-frame-crop.is-plate img {
-    position: absolute;
-    max-width: none;
-    width: calc(var(--fs, 2.9) * 0.6 * 100%);
-    left: calc(50% - var(--fx, .5) * var(--fs, 2.9) * 0.6 * 100%);
-    top: calc(50% - var(--fy, .27) * var(--fs, 2.9) * 0.6 * var(--ar, 1.3333) * 80%);
 }
 
 .mz-lib-frame-sprites {

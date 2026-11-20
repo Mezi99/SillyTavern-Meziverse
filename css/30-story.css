@@ -586,17 +586,20 @@
     color: var(--mz-prose-q, var(--mz-accent));
 }
 
-/* Simple: the face in the bubble's own gutter. */
+/* Simple: the face in the bubble's own gutter. The circle starts at the
+   name label and ends where a one-line dialogue ends - 50px is the name
+   row plus exactly one line of the bubble, so the face and the first
+   line of words stand on the same floor. */
 .mz-speech.is-face {
     display: grid;
-    grid-template-columns: 46px minmax(0, 1fr);
+    grid-template-columns: 50px minmax(0, 1fr);
     column-gap: 11px;
     margin: 9px 0;
 }
 
 .mz-speech.is-face > .mz-face {
-    width: 46px;
-    height: 46px;
+    width: 50px;
+    height: 50px;
     grid-row: 1 / span 2;
 }
 
@@ -604,23 +607,24 @@
     margin: 1px 0 3px;
 }
 
-/* Immersive: a full-width band per line, the bust bleeding above its
-   top hairline, speakers alternating sides within the reply. */
+/* Immersive: a full-width band per line, speakers alternating sides
+   within the reply. The band is the old card's dialogue box: a gradual
+   wash of the theme's accent rising from its floor, so it ties into the
+   background instead of boxing it, and a single hairline under it. */
 .mz-band {
     position: relative;
     display: flex;
-    align-items: flex-end;
-    gap: 18px;
-    min-height: 112px;
-    margin: 16px 0 10px;
-    border-block: 1px solid var(--mz-accent-line);
-    background: linear-gradient(90deg, color-mix(in srgb, var(--mz-accent) 13%, var(--mz-surface-2)), transparent 88%);
+    flex-direction: column;
+    justify-content: center;
+    min-height: 100px;
+    margin: 56px 0 24px;
+    padding: 24px 0 16px;
+    border-bottom: 1px solid var(--mz-accent-line);
+    background: linear-gradient(to top, color-mix(in srgb, var(--mz-accent) 12%, transparent) 0%, transparent 75%);
 }
 
 .mz-band.is-r {
-    flex-direction: row-reverse;
     text-align: right;
-    background: linear-gradient(270deg, color-mix(in srgb, var(--mz-accent) 13%, var(--mz-surface-2)), transparent 88%);
 }
 
 /* A speaker with no picture at all: a text-only band with a thin accent
@@ -635,43 +639,54 @@
     border-inline-end: 2px solid var(--mz-accent);
 }
 
+/* The sprite stands free on the band's floor: no plate, no borders
+   around it - just the framed square, bottom-anchored. 152px against a
+   100px box makes it taller than the dialogue at minimum lines and hug
+   its bottom once the words grow, the way the old cards stood their
+   avatars. */
 .mz-band-port {
-    position: relative;
-    flex: none;
-    width: 118px;
-    height: 130px;
-    margin-top: -22px;
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 152px;
+    height: 152px;
     overflow: hidden;
-    background: linear-gradient(color-mix(in srgb, var(--mz-accent) 16%, var(--mz-surface-2)), color-mix(in srgb, var(--mz-accent) 5%, var(--mz-surface-2)));
-    border-inline: 1px solid var(--mz-accent-line);
+    pointer-events: none;
 }
 
-/* The bust crop: the same frame at fs / 2.1, its face at 45% of the
-   plate (the 118x130 box turns width fractions into height ones). */
+.mz-band.is-r .mz-band-port {
+    left: auto;
+    right: 0;
+}
+
+/* The crop is the face frame itself - the very square the user drew -
+   filling the window edge to edge, so what they framed is what stands. */
 .mz-band-port img {
     position: absolute;
     max-width: none;
-    width: calc(var(--fs, 2.9) / 2.1 * 100%);
-    left: calc(50% - var(--fx, .5) * var(--fs, 2.9) / 2.1 * 100%);
-    top: calc(45% - var(--fy, .27) * var(--fs, 2.9) / 2.1 * var(--ar, 1.3333) * 90.77%);
+    width: calc(var(--fs, 2.9) * 100%);
+    left: calc(50% - var(--fx, .5) * var(--fs, 2.9) * 100%);
+    top: calc(50% - var(--fy, .27) * var(--fs, 2.9) * var(--ar, 1.3333) * 100%);
     filter: drop-shadow(0 6px 10px #0008);
-}
-
-.mz-band-port::after {
-    content: "";
-    position: absolute;
-    inset: auto 0 0 0;
-    height: 24px;
-    background: linear-gradient(transparent, color-mix(in srgb, var(--mz-accent) 6%, var(--mz-bg)));
 }
 
 .mz-band-txt {
     display: grid;
     gap: 3px;
     align-content: center;
-    padding: 12px 6px 14px;
+    padding: 0 8px;
     min-width: 0;
-    flex: 1;
+}
+
+/* Words start past the sprite on its side; a text-only band speaks
+   edge to edge. */
+.mz-band-port + .mz-band-txt {
+    padding-inline-start: 168px;
+}
+
+.mz-band.is-r .mz-band-port + .mz-band-txt {
+    padding-inline-start: 8px;
+    padding-inline-end: 168px;
 }
 
 .mz-band-nm {
@@ -686,8 +701,6 @@
 
 .mz-band-words {
     font-family: var(--mz-font-prose);
-    font-size: 16.5px;
-    line-height: 1.55;
     color: var(--mz-prose-q, var(--mz-accent));
     max-width: 62ch;
 }

@@ -2873,9 +2873,9 @@ function buildFrameTool(record) {
     const prevs = document.createElement('div');
     prevs.className = 'mz-lib-frame-prevs';
     prevs.append(
-        framePreview('Speech bubble', 'is-46'),
+        framePreview('Speech bubble', 'is-50'),
         framePreview('Small', 'is-32'),
-        framePreview('Expression board', 'is-plate'),
+        framePreview('Expression board', 'is-board'),
     );
 
     const sprites = document.createElement('div');
@@ -2890,7 +2890,7 @@ function buildFrameTool(record) {
     fetchSprites(record.name).then(rows => {
         if (!frameDraft || !chips.isConnected) return;
         for (const row of rows.slice(0, 6)) {
-            chips.append(framePreview(row.label, 'is-46', imageSource(row.path)));
+            chips.append(framePreview(row.label, 'is-50', imageSource(row.path)));
         }
     }).catch(() => { });
 
@@ -3018,7 +3018,10 @@ function updateFrameUi() {
     }
 
     for (const face of tool.querySelectorAll('[data-mz-frame-face]')) {
-        face.setAttribute('style', faceVars(frameDraft));
+        // Rebuild the frame vars but keep --ar: the crop's shape comes
+        // from the image and must survive every drag repaint.
+        const ar = face.style.getPropertyValue('--ar');
+        face.setAttribute('style', faceVars(frameDraft) + (ar ? `;--ar:${ar}` : ''));
     }
 }
 
