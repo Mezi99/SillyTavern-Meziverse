@@ -53,6 +53,12 @@ const DEFAULTS = {
     // Speech bubbles in the reading pane: the speaker's label, the words in
     // a quiet bubble, the tone said in after. Off leaves the prose plain.
     speechFx: true,
+    // How a spoken line wears faces - behind the Avatars master switch and
+    // the speech bubbles' own gate. 'off' is today's bubble with no face,
+    // 'simple' a round face in the bubble's gutter (the default),
+    // 'immersive' a full portrait band per line. A later 'cinematic' fits
+    // the same key.
+    dialogueFaces: 'simple',
     // The reasoning block in the reading pane: the model's thinking as an
     // expandable block above the turn's prose. Off leaves the pane exactly
     // as it was - and the log drawer never shows reasoning either way.
@@ -256,6 +262,19 @@ export function indoorFxOn() {
 /** Whether the speech bubbles play in the reading pane. */
 export function speechFxOn() {
     return settings().speechFx !== false;
+}
+
+const DIALOGUE_FACE_MODES = ['off', 'simple', 'immersive'];
+
+/**
+ * How a spoken line wears faces: 'off', 'simple' or 'immersive'. The
+ * Avatars switch is the master - off reads as 'off' whatever this says -
+ * so "no images" is one flip away in both places.
+ */
+export function dialogueFaceMode() {
+    if (!avatarsOn()) return 'off';
+    const value = settings().dialogueFaces;
+    return DIALOGUE_FACE_MODES.includes(value) ? value : 'simple';
 }
 
 /** Whether the reasoning block shows above the reading pane's prose. */

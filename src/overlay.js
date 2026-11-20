@@ -7,7 +7,7 @@
  */
 
 import { chatMessages, currentChatId, errorText, imageGenerationStatus, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer, stDefaultBackground } from './st.js';
-import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, bgImagesOn, weatherFxOn, indoorFxOn, sceneHeaderStyle, speechFxOn, musicOn, musicAutoOn, musicDjOn, musicKey, musicPickMode, mapOn, mapMiniOn, DEV_EXTRAS } from './settings.js';
+import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, bgImagesOn, weatherFxOn, indoorFxOn, sceneHeaderStyle, speechFxOn, dialogueFaceMode, musicOn, musicAutoOn, musicDjOn, musicKey, musicPickMode, mapOn, mapMiniOn, DEV_EXTRAS } from './settings.js';
 import { DEFAULT_DJ_PROMPT, getLastDjRequest } from './musicdj.js';
 import {
     forceBackground,
@@ -24,14 +24,14 @@ import { createTranscript } from './transcript.js';
 import { mountCast, refreshCastSizing, renderCast, renderThoughts, renderTells, clearCascade, redrawCast } from './cast.js';
 import { resolveLedger } from './ledger.js';
 import { parseMessage } from './tags.js';
-import { weatherPlan, indoorPlan } from './scene.js';
+import { weatherPlan, indoorPlan, describeSpeeches } from './scene.js';
 import { placeHtml } from './prose.js';
 import { mountCues, closeMemory } from './cues.js';
 import { closeFloats } from './floats.js';
 import { mountMusic, musicUiClosed, musicUiOpened, refreshMusic } from './music.js';
 import { mountConnections } from './connections.js';
 import { mountMap, mapUiClosed, mapUiOpened, refreshMap, isMapWinOpen, openMapWin, closeMapWin, terrainRecordView, writeTerrainRecord, reseedTerrainRecord, rederiveTerrainRecord } from './map.js';
-import { closeLibrary, isLibraryOpen, libraryUiClosed, mountLibrary, openLibrary, refreshLibrary } from './library.js';
+import { closeLibrary, isLibraryOpen, libraryUiClosed, mountLibrary, openLibrary, primeSprites, refreshLibrary } from './library.js';
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr, notify } from './notify.js';
 
@@ -319,6 +319,14 @@ const FRAME_HTML = `
                 <div class="mz-set-row">
                     <span class="mz-set-label"><b>Avatars</b></span>
                     <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Avatars" data-mz-action="avatars"><i></i></button>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Dialogue faces</b><button type="button" class="mz-hint" data-tip="How spoken lines wear faces: none, a round face by the bubble, or a full portrait band. Avatars off turns every face off." aria-label="How spoken lines wear faces: none, a round face by the bubble, or a full portrait band. Avatars off turns every face off.">i</button></span>
+                    <div class="mz-seg" role="group" aria-label="Dialogue faces">
+                        <button type="button" data-mz-pick-faces="off">Off</button>
+                        <button type="button" data-mz-pick-faces="simple">Simple</button>
+                        <button type="button" data-mz-pick-faces="immersive">Immersive</button>
+                    </div>
                 </div>
                 <div class="mz-set-row">
                     <span class="mz-set-label"><b>Speech bubbles</b></span>
@@ -750,6 +758,7 @@ export function mount() {
     applyWeatherFx();
     applyIndoorFx();
     applySpeechFx();
+    applyDialogueFaces();
     applySceneHeader();
     applyMusic();
     applyMap();
@@ -1182,6 +1191,17 @@ function applySpeechFx() {
         button.classList.toggle('is-on', on);
         button.setAttribute('aria-checked', String(on));
     }
+}
+
+/** Marks the dialogue faces segment's pressed button. */
+function applyDialogueFaces() {
+    const mode = dialogueFaceMode();
+
+    root.querySelectorAll('[data-mz-pick-faces]').forEach(button => {
+        const isOn = button.dataset.mzPickFaces === mode;
+        button.classList.toggle('is-on', isOn);
+        button.setAttribute('aria-pressed', String(isOn));
+    });
 }
 
 /**
@@ -1771,6 +1791,14 @@ function applyScene(record) {
     refreshLibrary();
     queueBackgroundSwap();
     applyWeather(record);
+
+    // Faces read sprites synchronously; warm the rows for everyone the
+    // shown turn names and redraw once when they land.
+    const message = record?.index != null ? chatMessages()[record.index] : null;
+    const speakers = message ? describeSpeeches(message).map(speech => speech.character) : [];
+    primeSprites([...(scene?.present || []), ...speakers]).then(changed => {
+        if (changed && transcript) transcript.refresh({ stick: true });
+    });
 }
 
 /**
@@ -2324,6 +2352,15 @@ function wireActions() {
             return;
         }
 
+        const facePick = event.target.closest('[data-mz-pick-faces]');
+        if (facePick) {
+            settings().dialogueFaces = facePick.dataset.mzPickFaces;
+            saveSettings();
+            applyDialogueFaces();
+            transcript?.refresh();
+            return;
+        }
+
         const landPick = event.target.closest('[data-mz-pick-mapland]');
         if (landPick) {
             settings().mapTerrain = landPick.dataset.mzPickMapland;
@@ -2507,6 +2544,8 @@ function wireActions() {
                 applyAvatars();
                 redrawCast();
                 saveSettings();
+                // Faces ride the same gate: the pane re-draws without them.
+                transcript.refresh({ stick: true });
                 break;
             case 'mode':
                 settings().mode = !settings().mode;

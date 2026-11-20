@@ -724,13 +724,15 @@ export async function primeSprites(names) {
 export function speechFaceFor(name, expression) {
     const match = matchLibraryName(name);
     if (match?.record) {
-        return expressionImage(match.record, peekSprites(match.record.name) || [], expression);
+        const found = expressionImage(match.record, peekSprites(match.record.name) || [], expression);
+        // One frame per character: it covers the portrait and every sprite.
+        return { ...found, frame: match.record.face || FACE_DEFAULT };
     }
 
     const chat = castImages()?.[castKey(name)];
     return typeof chat === 'string' && chat.trim()
-        ? { src: chat.trim(), label: '', level: 'chat' }
-        : { src: '', label: '', level: 'none' };
+        ? { src: chat.trim(), label: '', level: 'chat', frame: { ...FACE_DEFAULT } }
+        : { src: '', label: '', level: 'none', frame: { ...FACE_DEFAULT } };
 }
 
 function fileExt(path) {
