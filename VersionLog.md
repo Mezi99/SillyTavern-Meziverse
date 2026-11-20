@@ -1,10 +1,10 @@
 # Meziverse — version log
 
-## Avatar Module · Part 1 — 2026-11-19 (unreleased)
+## 2.11.0 - 2026-11-20
 
-The characters get a library of their own — who a name is, what they look like, and one face that wins everywhere.
+The avatar module: the characters get a library of their own — who a name is, what they look like — and then the sprites come downstairs, into the narration itself.
 
-### The Character Library opens
+### Part 1 · The Character Library opens
 - A new window — the top-bar library pill, or a poster's own door — with shelves reading **In the scene → Seen · not saved → Library**, a coverage card per face (CORE n/8 — what the stage falls back on — said inline), and a character page: the stage on one side, the expression board on the other, behind two tabs — **Expressions | Aliases**. Drag it by its header, pull the corner to resize, press outside to close — and it remembers where you left it.
 - Saving is always explicit: a name seen in the story never saves itself. Drop a picture on a slot, use a poster's **Add to library**, or type a name and a photo into the new-character sheet — one step either way.
 

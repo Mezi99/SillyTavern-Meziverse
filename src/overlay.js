@@ -21,7 +21,7 @@ import {
 import { DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_OFF, DEFAULT_BG_TRANSPORT_PROMPT, sceneUrl, isNoPicture } from './backgrounds.js';
 import { faHtml, injectSprite } from './icons.js';
 import { createTranscript } from './transcript.js';
-import { mountCast, refreshCastSizing, renderCast, renderThoughts, renderTells, clearCascade, redrawCast } from './cast.js';
+import { mountCast, refreshCastSizing, renderCast, renderThoughts, renderTells, clearCascade, redrawCast, setCastExpressions } from './cast.js';
 import { resolveLedger } from './ledger.js';
 import { parseMessage } from './tags.js';
 import { weatherPlan, indoorPlan, describeSpeeches } from './scene.js';
@@ -1787,17 +1787,23 @@ function applyScene(record) {
     }
 
     measureChatbar();
+
+    // The posters wear the shown reply's latest expressions; faces read
+    // sprites synchronously, so warm the rows for everyone the turn names
+    // and redraw once when they land.
+    const message = record?.index != null ? chatMessages()[record.index] : null;
+    const speeches = message ? describeSpeeches(message) : [];
+    setCastExpressions(speeches);
+
     renderCast(scene);
     refreshLibrary();
     queueBackgroundSwap();
     applyWeather(record);
 
-    // Faces read sprites synchronously; warm the rows for everyone the
-    // shown turn names and redraw once when they land.
-    const message = record?.index != null ? chatMessages()[record.index] : null;
-    const speakers = message ? describeSpeeches(message).map(speech => speech.character) : [];
-    primeSprites([...(scene?.present || []), ...speakers]).then(changed => {
-        if (changed && transcript) transcript.refresh({ stick: true });
+    primeSprites([...(scene?.present || []), ...speeches.map(speech => speech.character)]).then(changed => {
+        if (!changed) return;
+        redrawCast();
+        if (transcript) transcript.refresh({ stick: true });
     });
 }
 

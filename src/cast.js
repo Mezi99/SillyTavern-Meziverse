@@ -13,7 +13,7 @@ import { icon } from './icons.js';
 import { notify } from './notify.js';
 import { avatarsOn, entryOn, modeOn } from './settings.js';
 import { closeFloats, placeFloat, registerFloat } from './floats.js';
-import { chooseLibraryFor, disengageLibraryFor, ensureInLibrary, groupCastLive, libraryCandidatesFor, matchLibraryName, onLibraryChange, openLibrary, openLibraryNewFor, posterStateFor, resolvePosterPortrait } from './library.js';
+import { chooseLibraryFor, disengageLibraryFor, ensureInLibrary, groupCastLive, libraryCandidatesFor, matchLibraryName, onLibraryChange, openLibrary, openLibraryNewFor, posterStateFor, resolvePosterPortrait, speechFaceFor } from './library.js';
 import { imageFileName, prepareImage } from './imageprep.js';
 
 const FALLBACK_FLOOR = 180;
@@ -151,13 +151,13 @@ export function renderCast(scene) {
         return;
     }
 
-    const images = castImages();
     const fragment = document.createDocumentFragment();
 
     // One character, one poster: names answering to the same library
-    // record merge, labelled by the name the scene used first.
+    // record merge, labelled by the name the scene used first. The poster
+    // wears the character's latest line's expression in the shown reply.
     for (const group of groupCastLive(names)) {
-        fragment.append(poster(group.name, resolvePosterPortrait(group.name, images)));
+        fragment.append(poster(group.name, posterFace(group.name)));
     }
 
     track.replaceChildren(fragment);
@@ -500,6 +500,8 @@ function poster(name, path) {
         image.src = source;
         image.addEventListener('load', () => {
             figure.classList.add('is-loaded');
+            // Cut-out art stands free on the strip; a photo keeps the crop.
+            figure.classList.toggle('is-sprite', isTransparentArt(image));
             refreshCastSizing();
         });
         image.addEventListener('error', () => {
@@ -889,10 +891,82 @@ function castSignature() {
     const chat = currentChatId() || '';
     const busy = busyName && busyChat === chat ? busyName : '';
     const cast = names
-        .map(name => `${name}\u0002${resolvePosterPortrait(name, images)}\u0002${posterStateFor(name)}`)
+        .map(name => `${name}\u0002${resolvePosterPortrait(name, images)}\u0002${posterStateFor(name)}\u0002${expressionFor(name)}`)
         .join('\u0001');
 
     return `${chat}\u0003${busy}\u0003${cast}`;
+}
+
+/* ---------- the posters' expressions ---------- */
+
+// The shown reply's latest expression per speaker - what the posters wear.
+let lastExpressions = new Map();
+
+/**
+ * Hands the strip the shown reply's speech expressions: each character
+ * wears their latest line's (neutral when they have not spoken). Keys are
+ * every name a speaker answers to, so an aliased voice finds its poster.
+ */
+export function setCastExpressions(speeches) {
+    const map = new Map();
+    for (const speech of speeches || []) {
+        const key = castKey(speech.character || '');
+        if (!key) continue;
+
+        const expression = String(speech.expression || '').trim();
+        map.set(key, expression);
+        const match = matchLibraryName(speech.character);
+        if (match?.record) map.set(castKey(match.record.name), expression);
+    }
+    lastExpressions = map;
+}
+
+/** The expression a poster wears right now, or '' for a silent one. */
+function expressionFor(name) {
+    if (!lastExpressions.size) return '';
+
+    const match = matchLibraryName(name);
+    const keys = [castKey(name)];
+    if (match?.record) keys.push(castKey(match.record.name));
+
+    for (const key of keys) {
+        const hit = lastExpressions.get(key);
+        if (hit) return hit;
+    }
+    return '';
+}
+
+/**
+ * The image a poster shows: the speaker's latest expression through the
+ * library chain, the chat face for a character the library does not own,
+ * and the plain portrait when nothing resolves.
+ */
+function posterFace(name) {
+    const face = speechFaceFor(name, expressionFor(name));
+    return face.src ? face.src : resolvePosterPortrait(name, castImages());
+}
+
+/**
+ * Art or photo? Sprite sets are cut-outs with transparency and stand
+ * free on the strip; photos keep the cover crop. One tiny canvas read
+ * settles it - never a guess from the file's name.
+ */
+function isTransparentArt(image) {
+    try {
+        const canvas = document.createElement('canvas');
+        canvas.width = 24;
+        canvas.height = 24;
+        const context = canvas.getContext('2d', { willReadFrequently: true });
+        if (!context) return false;
+        context.drawImage(image, 0, 0, 24, 24);
+        const data = context.getImageData(0, 0, 24, 24).data;
+        for (let i = 3; i < data.length; i += 4) {
+            if (data[i] < 250) return true;
+        }
+    } catch {
+        return false;
+    }
+    return false;
 }
 
 function number(value) {
