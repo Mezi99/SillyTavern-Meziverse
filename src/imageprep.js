@@ -16,6 +16,11 @@ const QUALITY = 0.85;
  * width). One frame per character covers the portrait and every sprite. */
 export const FACE_DEFAULT = { fx: 0.5, fy: 0.27, fs: 2.9 };
 
+/** The frame as the face crop's CSS variables (default frame, default vars). */
+export function faceVars(frame = {}) {
+    return `--fx:${frame.fx ?? 0.5};--fy:${frame.fy ?? 0.27};--fs:${frame.fs ?? 2.9}`;
+}
+
 /**
  * Scales the image down to the cap and encodes it small (WebP where the
  * canvas can). The result is base64 WITHOUT the data-url prefix, the way

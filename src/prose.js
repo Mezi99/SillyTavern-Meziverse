@@ -13,6 +13,7 @@ import { formatMessage, imageSource, say } from './st.js';
 import { readInlineThink, splitCues, stripTags } from './tags.js';
 import { assignBandSides, describeScene, describeSpeech, initials, isUsableScene } from './scene.js';
 import { speechFaceFor } from './library.js';
+import { faceVars } from './imageprep.js';
 import { faHtml, iconHtml } from './icons.js';
 import { dialogueFaceMode, modeOn, sceneHeaderStyle, speechFxOn } from './settings.js';
 
@@ -342,11 +343,6 @@ function speechHtml(tag, { message, index, sides }) {
             + `<span class="mz-speech-bub">${words}</span>`
             + '</span>',
     };
-}
-
-/** The frame as the face crop's CSS variables (default frame, default vars). */
-export function faceVars(frame = {}) {
-    return `--fx:${frame.fx ?? 0.5};--fy:${frame.fy ?? 0.27};--fs:${frame.fs ?? 2.9}`;
 }
 
 /** The round face crop - one CSS rule; the frame's fractions steer it. */

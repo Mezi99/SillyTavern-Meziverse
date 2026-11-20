@@ -21,7 +21,7 @@ import { castImages, castKey, chatMessages, imageSource, libBindStore, libOffSto
 import { libraryEntries, libraryEntry, removeLibraryEntry, saveSettings, setLibraryEntry, settings } from './settings.js';
 import { notify } from './notify.js';
 import { hueOf, initials, seenNameCounts, SUGGESTED_LABELS } from './scene.js';
-import { imageFileName, prepareImage, prepareSprite, guessFaceFrame, FACE_DEFAULT } from './imageprep.js';
+import { imageFileName, prepareImage, prepareSprite, guessFaceFrame, faceVars, FACE_DEFAULT } from './imageprep.js';
 
 /* ---------- the pure core ---------- */
 
@@ -832,6 +832,8 @@ let portraitTarget = '';
 // The label a picker press already knows, and the file it replaces.
 let pendingLabel = '';
 let pendingSpriteName = '';
+// The face frame being dragged in the Frame-the-face tool, or null.
+let frameDraft = null;
 // The scene's present names, handed in by the scene that mounts us.
 let presentNames = () => [];
 // The detail's sprite rows and the staged removal, reset per character.
@@ -911,6 +913,13 @@ export function mountLibrary({ frame, presentNames: getPresent = null } = {}) {
     // when nothing inside the window wants it.
     win.addEventListener('keydown', event => {
         if (event.key !== 'Escape') return;
+        if (view.kind === 'detail' && view.frame) {
+            event.stopPropagation();
+            view.frame = false;
+            frameDraft = null;
+            renderWin();
+            return;
+        }
         if (view.kind === 'detail' && view.menu) {
             event.stopPropagation();
             view.menu = false;
@@ -1180,7 +1189,7 @@ function wireWinDrag() {
 }
 
 function detailView(name) {
-    return { kind: 'detail', name, sel: null, boardFilter: 'all', fit: 'face', menu: false, tab: 'expressions' };
+    return { kind: 'detail', name, sel: null, boardFilter: 'all', fit: 'face', menu: false, tab: 'expressions', frame: false };
 }
 
 function resetDetail() {
@@ -1188,6 +1197,7 @@ function resetDetail() {
     detailLoaded = false;
     detailLoading = false;
     removeStage = 'idle';
+    frameDraft = null;
     removeRows = null;
     for (const timer of armTimers.values()) clearTimeout(timer);
     armTimers.clear();
@@ -1885,6 +1895,7 @@ function renderDetail(record) {
 
     els.detail.style.setProperty('--h', `${hueOf(record.name)}deg`);
     els.detail.replaceChildren(buildStage(record), buildPane(record));
+    if (view.frame) els.detail.append(buildFrameTool(record));
 
     // One fetch per page; when it lands it repaints and stops there.
     if (!detailLoaded && !detailLoading) loadDetailRows(record);
@@ -2096,8 +2107,11 @@ function buildStage(record) {
 
     const tools = document.createElement('div');
     tools.className = 'mz-lib-stage-tools';
-    // Only the sprite-selected page carries a tool now: the default image
-    // is the poster's to set and the chooser's to disengage - the old
+    // The frame is the character's own: it steers every round face the
+    // story draws - portrait and sprites alike.
+    tools.append(toolButton('frame-face', 'mz-i-face', 'Frame the face'));
+    // Only the sprite-selected page carries a tool beyond it: the default
+    // image is the poster's to set and the chooser's to disengage - the old
     // Change/Remove portrait buttons are gone by design.
     if (row) {
         tools.append(toolButton('sprite-portrait', 'mz-i-face', 'Use as portrait'));
@@ -2666,6 +2680,12 @@ function onClick(event) {
         return;
     }
 
+    const frameAct = event.target.closest('[data-mz-frame]');
+    if (frameAct) {
+        frameAction(frameAct.dataset.mzFrame);
+        return;
+    }
+
     const tool = event.target.closest('[data-mz-lib-tool]');
     if (tool) {
         toolPressed(tool.dataset.mzLibTool);
@@ -2770,6 +2790,271 @@ function cleanPath(path) {
     return String(path ?? '').split(/[?#]/)[0];
 }
 
+/* ---------- the Frame-the-face tool ---------- */
+
+/**
+ * The frame tool: a draggable square over the default image with live
+ * previews - one frame saved for the portrait and every sprite, because
+ * a set shares its framing. The drag moves the draft only; Save writes
+ * it, Cancel (or Esc, or the backdrop) drops it.
+ */
+function buildFrameTool(record) {
+    const draft = frameDraft || (frameDraft = { ...(record.face || FACE_DEFAULT) });
+
+    const wrap = document.createElement('div');
+    wrap.className = 'mz-lib-frame';
+    wrap.addEventListener('pointerdown', event => {
+        if (event.target !== wrap) return;
+        view.frame = false;
+        frameDraft = null;
+        renderWin();
+    });
+
+    const card = document.createElement('div');
+    card.className = 'mz-lib-frame-card';
+
+    // Left: the image under the square - dimmed whole, crisp inside.
+    const left = document.createElement('div');
+    left.className = 'mz-lib-frame-left';
+
+    const box = document.createElement('div');
+    box.className = 'mz-lib-frame-img';
+
+    const src = imageSource(record.portrait || '');
+    if (src) {
+        const bg = document.createElement('img');
+        bg.className = 'mz-lib-frame-bg';
+        bg.alt = '';
+        bg.src = src;
+
+        const clip = document.createElement('img');
+        clip.className = 'mz-lib-frame-clip';
+        clip.alt = '';
+        clip.src = src;
+
+        const settle = () => {
+            box.style.aspectRatio = `${bg.naturalWidth || 1} / ${bg.naturalHeight || 1}`;
+            updateFrameUi();
+        };
+        if (bg.complete) settle();
+        else bg.addEventListener('load', settle, { once: true });
+
+        box.append(bg, clip);
+    }
+
+    const sq = document.createElement('div');
+    sq.className = 'mz-lib-frame-sq';
+    for (const corner of ['nw', 'ne', 'sw', 'se']) {
+        const grip = document.createElement('i');
+        grip.dataset.mzFrameGrip = corner;
+        sq.append(grip);
+    }
+    wireFrameDrag(sq, box);
+    box.append(sq);
+    left.append(box);
+
+    // Right: the pitch, the live previews, the sprites, the actions.
+    const right = document.createElement('div');
+    right.className = 'mz-lib-frame-right';
+
+    const title = document.createElement('h3');
+    title.textContent = 'Frame the face';
+
+    const pitch = document.createElement('p');
+    pitch.textContent = `Drag the square over ${record.name}'s face. One frame fits the portrait and every sprite, because a set shares its framing.`;
+
+    const prevs = document.createElement('div');
+    prevs.className = 'mz-lib-frame-prevs';
+    prevs.append(
+        framePreview('Speech bubble', 'is-46'),
+        framePreview('Small', 'is-32'),
+        framePreview('Expression board', 'is-plate'),
+    );
+
+    const sprites = document.createElement('div');
+    sprites.className = 'mz-lib-frame-sprites';
+    const spritesCap = document.createElement('div');
+    spritesCap.className = 'mz-lib-frame-cap';
+    spritesCap.textContent = 'Same frame on their sprites';
+    const chips = document.createElement('div');
+    chips.className = 'mz-lib-frame-chips';
+    sprites.append(spritesCap, chips);
+
+    fetchSprites(record.name).then(rows => {
+        if (!frameDraft || !chips.isConnected) return;
+        for (const row of rows.slice(0, 6)) {
+            chips.append(framePreview(row.label, 'is-46', imageSource(row.path)));
+        }
+    }).catch(() => { });
+
+    const acts = document.createElement('div');
+    acts.className = 'mz-lib-frame-act';
+    for (const [action, label] of [['auto', 'Find automatically'], ['reset', 'Reset']]) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'mz-btn-ghost';
+        button.dataset.mzFrame = action;
+        button.textContent = label;
+        acts.append(button);
+    }
+    acts.append(Object.assign(document.createElement('span'), { className: 'mz-lib-frame-fill' }));
+    for (const [action, label] of [['cancel', 'Cancel'], ['save', 'Save']]) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = action === 'save' ? 'mz-lib-frame-save' : 'mz-btn-ghost';
+        button.dataset.mzFrame = action;
+        button.textContent = label;
+        acts.append(button);
+    }
+
+    right.append(title, pitch, prevs, sprites, acts);
+    card.append(left, right);
+    wrap.append(card);
+    return wrap;
+}
+
+/** One live preview of the draft frame: the crop, and what it is for. */
+function framePreview(label, variant, srcOverride = '') {
+    const cell = document.createElement('div');
+    cell.className = 'mz-lib-frame-prev';
+
+    const src = srcOverride || imageSource(libraryEntry(view.name)?.portrait || '');
+    const crop = document.createElement('span');
+    crop.className = 'mz-lib-frame-crop ' + variant;
+    crop.dataset.mzFrameFace = '';
+    crop.setAttribute('style', faceVars(frameDraft));
+    if (src) {
+        const image = document.createElement('img');
+        image.alt = '';
+        image.src = src;
+        const settle = () => {
+            const ratio = image.naturalWidth ? image.naturalHeight / image.naturalWidth : 0;
+            if (ratio > 0) crop.style.setProperty('--ar', String(Math.round(ratio * 10000) / 10000));
+        };
+        if (image.complete) settle();
+        else image.addEventListener('load', settle, { once: true });
+        crop.append(image);
+    }
+
+    const cap = document.createElement('small');
+    cap.textContent = label;
+
+    cell.append(crop, cap);
+    return cell;
+}
+
+/** The square's drag: its body moves the frame, its corners resize it. */
+function wireFrameDrag(sq, box) {
+    sq.addEventListener('pointerdown', event => {
+        event.preventDefault();
+        if (!frameDraft) return;
+
+        const rect = box.getBoundingClientRect();
+        const start = { ...frameDraft };
+        const startX = event.clientX;
+        const startY = event.clientY;
+        const grip = event.target.closest('[data-mz-frame-grip]');
+
+        const move = moveEvent => {
+            if (!frameDraft) return;
+            if (grip) {
+                // A corner resizes: the square follows the pointer's
+                // distance from where the face sits.
+                const px = moveEvent.clientX - rect.left - start.fx * rect.width;
+                const py = moveEvent.clientY - rect.top - start.fy * rect.height;
+                const side = Math.max(28, Math.max(Math.abs(px), Math.abs(py)) * 2);
+                frameDraft.fs = Math.min(6, Math.max(1.1, rect.width / side));
+            } else {
+                frameDraft.fx = Math.min(0.98, Math.max(0.02, start.fx + (moveEvent.clientX - startX) / rect.width));
+                frameDraft.fy = Math.min(0.98, Math.max(0.02, start.fy + (moveEvent.clientY - startY) / rect.height));
+            }
+            updateFrameUi();
+        };
+        const up = () => {
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', up);
+        };
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', up);
+    });
+}
+
+/** Repaints the square, the crisp crop and every preview from the draft. */
+function updateFrameUi() {
+    const tool = els.detail.querySelector('.mz-lib-frame');
+    if (!tool || !frameDraft) return;
+
+    const box = tool.querySelector('.mz-lib-frame-img');
+    const rect = box.getBoundingClientRect();
+    const w = rect.width;
+    const h = rect.height;
+    if (!w || !h) return;
+
+    const side = w / frameDraft.fs;
+    const left = frameDraft.fx * w - side / 2;
+    const top = frameDraft.fy * h - side / 2;
+
+    const sq = tool.querySelector('.mz-lib-frame-sq');
+    if (sq) {
+        sq.style.left = `${left}px`;
+        sq.style.top = `${top}px`;
+        sq.style.width = `${side}px`;
+        sq.style.height = `${side}px`;
+    }
+
+    const clip = tool.querySelector('.mz-lib-frame-clip');
+    if (clip) {
+        clip.style.clipPath = `inset(${top}px ${Math.max(0, w - left - side)}px ${Math.max(0, h - top - side)}px ${left}px)`;
+    }
+
+    for (const face of tool.querySelectorAll('[data-mz-frame-face]')) {
+        face.setAttribute('style', faceVars(frameDraft));
+    }
+}
+
+/** The frame tool's buttons: save the draft, reset it, or let it go. */
+function frameAction(action) {
+    const record = view.kind === 'detail' ? libraryEntry(view.name) : null;
+    if (!record) return;
+
+    if (action === 'auto') {
+        autoFrame(record);
+        return;
+    }
+
+    if (action === 'reset') {
+        frameDraft = { ...FACE_DEFAULT };
+    } else if (action === 'save' && frameDraft) {
+        setLibraryEntry(record.name, { face: { ...frameDraft } });
+        notify(`${record.name}'s frame is saved.`, 'success');
+    }
+
+    if (action === 'cancel' || action === 'save') {
+        view.frame = false;
+        frameDraft = null;
+    }
+    renderWin();
+}
+
+/** "Find automatically": the transparency guesses where the face is. */
+function autoFrame(record) {
+    const path = record.portrait ? imageSource(record.portrait) : '';
+    if (!path) {
+        notify(`${record.name} has no default image to read.`, 'warning');
+        return;
+    }
+
+    fetch(path)
+        .then(response => (response.ok ? response.blob() : null))
+        .then(blob => (blob ? guessFaceFrame(blob) : null))
+        .then(guessed => {
+            if (!guessed || !frameDraft || !view.frame) return;
+            frameDraft = guessed;
+            updateFrameUi();
+        })
+        .catch(() => notify('Could not read the image to guess.', 'warning'));
+}
+
 function toolPressed(action) {
     if (view.kind !== 'detail') return;
     const record = libraryEntry(view.name);
@@ -2777,6 +3062,10 @@ function toolPressed(action) {
 
     if (action === 'rename') {
         openSheetFor('rename', record);
+    } else if (action === 'frame-face') {
+        frameDraft = { ...(record.face || FACE_DEFAULT) };
+        view.frame = true;
+        renderWin();
     } else if (action === 'sprite-portrait') {
         const row = selectedRow();
         if (!row) return;

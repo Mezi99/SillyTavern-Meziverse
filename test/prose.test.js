@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { faceVars, reasoningOf, thoughtLabel, weatherGlyph } from '../src/prose.js';
+import { reasoningOf, thoughtLabel, weatherGlyph } from '../src/prose.js';
+import { faceVars } from '../src/imageprep.js';
 
 test('faceVars wears the frame - default and custom', () => {
     assert.equal(faceVars(), '--fx:0.5;--fy:0.27;--fs:2.9');
