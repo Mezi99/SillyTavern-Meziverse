@@ -951,8 +951,13 @@ export function mountLibrary({ frame, presentNames: getPresent = null } = {}) {
     });
 
     win.addEventListener('drop', event => {
-        if (view.kind !== 'detail' || !hasFiles(event)) return;
+        // The window's own space: a drop here is never a character-card
+        // import - SillyTavern's body-level importer stays out of it (an
+        // in-page image drag is ours to place, not to warn about).
+        event.stopPropagation();
+        if (!hasFiles(event)) return;
         event.preventDefault();
+        if (view.kind !== 'detail') return;
         showDropVeil(false);
         for (const slot of win.querySelectorAll('.mz-lib-slot.is-over')) slot.classList.remove('is-over');
         dropPressed(event);
@@ -2020,7 +2025,9 @@ function dropAlias(name, alias) {
 function loadDetailRows(record) {
     detailLoading = true;
 
-    fetchSprites(record.name).then(rows => {
+    // Always fresh on a page open: sprites changed elsewhere (a re-upload,
+    // ST's own folders) must not wait out the cache's TTL to show.
+    fetchSprites(record.name, true).then(rows => {
         detailLoading = false;
         if (!win || win.hidden || view.kind !== 'detail' || view.name !== record.name) return;
         detailRows = rows;

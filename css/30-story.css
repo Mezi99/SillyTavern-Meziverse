@@ -923,13 +923,6 @@
 
 .mz-port--cast.is-loaded .mz-port-img { opacity: 1; }
 
-/* Cut-out sprite art stands free on the strip - shown whole, standing on
-   the poster's floor - while a photo keeps the cover crop. */
-.mz-port--cast.is-sprite .mz-port-img {
-    object-fit: contain;
-    object-position: 50% 100%;
-}
-
 .mz-port-scrim {
     position: absolute;
     inset: auto 0 0;

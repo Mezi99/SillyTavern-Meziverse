@@ -500,8 +500,6 @@ function poster(name, path) {
         image.src = source;
         image.addEventListener('load', () => {
             figure.classList.add('is-loaded');
-            // Cut-out art stands free on the strip; a photo keeps the crop.
-            figure.classList.toggle('is-sprite', isTransparentArt(image));
             refreshCastSizing();
         });
         image.addEventListener('error', () => {
@@ -939,34 +937,13 @@ function expressionFor(name) {
 /**
  * The image a poster shows: the speaker's latest expression through the
  * library chain, the chat face for a character the library does not own,
- * and the plain portrait when nothing resolves.
+ * and the plain portrait when nothing resolves. The strip wears every
+ * image the way main always did - cover, filling the frame - so the
+ * poster's buttons always sit over the image.
  */
 function posterFace(name) {
     const face = speechFaceFor(name, expressionFor(name));
     return face.src ? face.src : resolvePosterPortrait(name, castImages());
-}
-
-/**
- * Art or photo? Sprite sets are cut-outs with transparency and stand
- * free on the strip; photos keep the cover crop. One tiny canvas read
- * settles it - never a guess from the file's name.
- */
-function isTransparentArt(image) {
-    try {
-        const canvas = document.createElement('canvas');
-        canvas.width = 24;
-        canvas.height = 24;
-        const context = canvas.getContext('2d', { willReadFrequently: true });
-        if (!context) return false;
-        context.drawImage(image, 0, 0, 24, 24);
-        const data = context.getImageData(0, 0, 24, 24).data;
-        for (let i = 3; i < data.length; i += 4) {
-            if (data[i] < 250) return true;
-        }
-    } catch {
-        return false;
-    }
-    return false;
 }
 
 function number(value) {

@@ -7,11 +7,14 @@
 
 /* ---------- the strip's door ---------- */
 
+/* Over the character avatars - contained within the poster strip, never
+   floating above it - anchored just above the pane line where the
+   posters stand. */
 .mz-cast-lib {
     position: absolute;
     z-index: 3;
-    top: 10px;
     right: 12px;
+    bottom: calc(var(--mz-pane-h) + var(--mz-gutter) + 12px);
     display: grid;
     place-items: center;
     width: 26px;

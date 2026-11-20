@@ -321,8 +321,10 @@ function speechHtml(tag, { message, index, sides }) {
         const empty = !src;
         return {
             kind: 'band',
+            // The portrait rides the plate directly - the plate is the
+            // frame; a round-face wrapper here would collapse and clip it.
             html: `<span class="mz-band ${side}${empty ? ' is-empty' : ''}">`
-                + (empty ? '' : `<span class="mz-band-port">${faceImg(src, face.frame)}</span>`)
+                + (empty ? '' : `<span class="mz-band-port"><img src="${escapeHtml(src)}" alt="" style="${faceVars(face.frame)}"></span>`)
                 + '<span class="mz-band-txt">'
                 + `<span class="mz-band-nm">${name}${mood}</span>`
                 + `<span class="mz-band-words">${words}</span>`
