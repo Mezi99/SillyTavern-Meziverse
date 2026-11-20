@@ -607,24 +607,37 @@
     margin: 1px 0 3px;
 }
 
-/* Immersive: a full-width band per line, speakers alternating sides
-   within the reply. The band is the old card's dialogue box: a gradual
-   wash of the theme's accent rising from its floor, so it ties into the
-   background instead of boxing it, and a single hairline under it. */
+/* Immersive: the old murder-mystery dialogue box. The box is a wash of
+   the theme's accent, strongest at the speaker's side and fading across
+   the line, closed by hairlines top and bottom. The sprite stands IN
+   FRONT of it - a square window, bottom-anchored - so its head rises
+   --pop above the box at minimum dialogue and the box grows around it
+   as the words grow. Two knobs: --av is the avatar square, --pop is how
+   far its head rises. */
 .mz-band {
+    --av: 96px;
+    --pop: 18px;
     position: relative;
     display: flex;
     flex-direction: column;
     justify-content: center;
-    min-height: 100px;
-    margin: 56px 0 24px;
-    padding: 24px 0 16px;
-    border-bottom: 1px solid var(--mz-accent-line);
-    background: linear-gradient(to top, color-mix(in srgb, var(--mz-accent) 12%, transparent) 0%, transparent 75%);
+    min-height: calc(var(--av) - var(--pop));
+    margin: calc(var(--pop) + 14px) 0 18px;
+    padding: 0;
+    overflow: visible;
+    border-block: 1px solid var(--mz-accent-line);
+    background: linear-gradient(90deg,
+        color-mix(in srgb, var(--mz-accent) 20%, transparent),
+        color-mix(in srgb, var(--mz-accent) 5%, transparent) 62%,
+        transparent);
 }
 
 .mz-band.is-r {
     text-align: right;
+    background: linear-gradient(270deg,
+        color-mix(in srgb, var(--mz-accent) 20%, transparent),
+        color-mix(in srgb, var(--mz-accent) 5%, transparent) 62%,
+        transparent);
 }
 
 /* A speaker with no picture at all: a text-only band with a thin accent
@@ -639,24 +652,24 @@
     border-inline-end: 2px solid var(--mz-accent);
 }
 
-/* The sprite stands free on the band's floor: no plate, no borders
-   around it - just the framed square, bottom-anchored. 152px against a
-   100px box makes it taller than the dialogue at minimum lines and hug
-   its bottom once the words grow, the way the old cards stood their
-   avatars. */
+/* The sprite stands in front of the box: no plate, no borders around it
+   - just the framed square, bottom-anchored and inset a breath from the
+   band's edge. The window stays SQUARE: the crop maths below turns the
+   frame's width fractions into the window's and needs the shape. */
 .mz-band-port {
     position: absolute;
     bottom: 0;
-    left: 0;
-    width: 152px;
-    height: 152px;
+    left: 14px;
+    z-index: 1;
+    width: var(--av);
+    height: var(--av);
     overflow: hidden;
     pointer-events: none;
 }
 
 .mz-band.is-r .mz-band-port {
     left: auto;
-    right: 0;
+    right: 14px;
 }
 
 /* The crop is the face frame itself - the very square the user drew -
@@ -674,19 +687,20 @@
     display: grid;
     gap: 3px;
     align-content: center;
-    padding: 0 8px;
+    padding: 12px 8px;
     min-width: 0;
+    z-index: 0;
 }
 
 /* Words start past the sprite on its side; a text-only band speaks
    edge to edge. */
 .mz-band-port + .mz-band-txt {
-    padding-inline-start: 168px;
+    padding-inline-start: calc(var(--av) + 30px);
 }
 
 .mz-band.is-r .mz-band-port + .mz-band-txt {
     padding-inline-start: 8px;
-    padding-inline-end: 168px;
+    padding-inline-end: calc(var(--av) + 30px);
 }
 
 .mz-band-nm {
@@ -707,6 +721,17 @@
 
 .mz-band.is-r .mz-band-words {
     margin-left: auto;
+}
+
+/* ---------- small screens ---------- */
+
+/* The band keeps its proportions on a phone: a smaller avatar, a smaller
+   pop. The sprite-side inset follows --av, so the words stay clear. */
+@media (max-width: 600px) {
+    .mz-band {
+        --av: 88px;
+        --pop: 16px;
+    }
 }
 
 .mz-speech-name {
