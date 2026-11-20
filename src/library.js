@@ -2910,6 +2910,9 @@ function buildFrameTool(record) {
     right.append(title, pitch, prevs, sprites, acts);
     card.append(left, right);
     wrap.append(card);
+    // A cached image settles before the tool lands in the DOM - paint the
+    // square once the browser has laid the card out.
+    requestAnimationFrame(() => updateFrameUi());
     return wrap;
 }
 
