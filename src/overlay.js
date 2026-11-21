@@ -7,7 +7,7 @@
  */
 
 import { chatMessages, currentChatId, errorText, imageGenerationStatus, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer, stDefaultBackground } from './st.js';
-import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, bgImagesOn, weatherFxOn, indoorFxOn, sceneHeaderStyle, speechFxOn, musicOn, musicAutoOn, musicDjOn, musicKey, musicPickMode, mapOn, mapMiniOn, DEV_EXTRAS } from './settings.js';
+import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, bgImagesOn, weatherFxOn, indoorFxOn, sceneHeaderStyle, speechFxOn, dialogueFaceMode, musicOn, musicAutoOn, musicDjOn, musicKey, musicPickMode, mapOn, mapMiniOn, DEV_EXTRAS } from './settings.js';
 import { DEFAULT_DJ_PROMPT, getLastDjRequest } from './musicdj.js';
 import {
     forceBackground,
@@ -21,20 +21,21 @@ import {
 import { DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_OFF, DEFAULT_BG_TRANSPORT_PROMPT, sceneUrl, isNoPicture } from './backgrounds.js';
 import { faHtml, injectSprite } from './icons.js';
 import { createTranscript } from './transcript.js';
-import { mountCast, refreshCastSizing, renderCast, renderThoughts, renderTells, clearCascade, redrawCast } from './cast.js';
+import { mountCast, refreshCastSizing, renderCast, renderThoughts, renderTells, clearCascade, redrawCast, setCastExpressions } from './cast.js';
 import { resolveLedger } from './ledger.js';
 import { parseMessage } from './tags.js';
-import { weatherPlan, indoorPlan } from './scene.js';
+import { weatherPlan, indoorPlan, describeSpeeches } from './scene.js';
 import { placeHtml } from './prose.js';
 import { mountCues, closeMemory } from './cues.js';
 import { closeFloats } from './floats.js';
 import { mountMusic, musicUiClosed, musicUiOpened, refreshMusic } from './music.js';
 import { mountConnections } from './connections.js';
 import { mountMap, mapUiClosed, mapUiOpened, refreshMap, isMapWinOpen, openMapWin, closeMapWin, terrainRecordView, writeTerrainRecord, reseedTerrainRecord, rederiveTerrainRecord } from './map.js';
+import { closeLibrary, isLibraryOpen, libraryUiClosed, mountLibrary, openLibrary, primeSprites, refreshLibrary } from './library.js';
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr, notify } from './notify.js';
 
-const VERSION = '2.9.7';
+const VERSION = '2.11.0';
 const PANE_DEFAULT = 300;
 const LOG_W_DEFAULT = 720;
 const LOG_H_SHARE = 0.7;
@@ -72,7 +73,7 @@ const FRAME_HTML = `
     <div class="mz-scrim" aria-hidden="true"></div>
 
     <header class="mz-header">
-        <div class="mz-brand"><b>Meziverse</b><small class="mz-version">v${VERSION}</small><span class="mz-hair mz-quick-hair" aria-hidden="true"></span><div class="mz-autoquick" role="group" aria-label="Quick toggles"><button class="mz-qpill mz-bgauto" type="button" role="switch" aria-checked="false" title="Backgrounds follow the story" aria-label="Backgrounds follow the story" data-mz-action="bg-auto">${svg('image')}</button><button class="mz-qpill mz-musicauto" type="button" role="switch" aria-checked="true" title="Music from story requests" aria-label="Music from story requests" data-mz-action="music-auto">${svg('music')}</button><button class="mz-qpill" type="button" role="switch" aria-checked="true" title="Map on or off" aria-label="Map" data-mz-action="map">${svg('map')}</button></div></div>
+        <div class="mz-brand"><b>Meziverse</b><small class="mz-version">v${VERSION}</small><span class="mz-hair mz-quick-hair" aria-hidden="true"></span><div class="mz-autoquick" role="group" aria-label="Quick toggles"><button class="mz-qpill mz-bgauto" type="button" role="switch" aria-checked="false" title="Backgrounds follow the story" aria-label="Backgrounds follow the story" data-mz-action="bg-auto">${svg('image')}</button><button class="mz-qpill mz-musicauto" type="button" role="switch" aria-checked="true" title="Music from story requests" aria-label="Music from story requests" data-mz-action="music-auto">${svg('music')}</button><button class="mz-qpill" type="button" role="switch" aria-checked="true" title="Map on or off" aria-label="Map" data-mz-action="map">${svg('map')}</button><button class="mz-qpill" type="button" title="Character Library" aria-label="Character Library" data-mz-action="library-open">${svg('library')}</button></div></div>
         <div class="mz-chatname" data-mz="chatname"><b class="is-empty">No chat open</b></div>
         <div class="mz-header-tools">
             <div class="mz-music-slot" data-mz="music-slot"></div>
@@ -318,6 +319,14 @@ const FRAME_HTML = `
                 <div class="mz-set-row">
                     <span class="mz-set-label"><b>Avatars</b></span>
                     <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Avatars" data-mz-action="avatars"><i></i></button>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Dialogue faces</b><button type="button" class="mz-hint" data-tip="How spoken lines wear faces: none, a round face by the bubble, or a full portrait band. Avatars off turns every face off." aria-label="How spoken lines wear faces: none, a round face by the bubble, or a full portrait band. Avatars off turns every face off.">i</button></span>
+                    <div class="mz-seg" role="group" aria-label="Dialogue faces">
+                        <button type="button" data-mz-pick-faces="off">Off</button>
+                        <button type="button" data-mz-pick-faces="simple">Simple</button>
+                        <button type="button" data-mz-pick-faces="immersive">Immersive</button>
+                    </div>
                 </div>
                 <div class="mz-set-row">
                     <span class="mz-set-label"><b>Speech bubbles</b></span>
@@ -697,6 +706,7 @@ export function mount() {
     mountDock(root);
     mountMusic({ slot: root.querySelector('[data-mz="music-slot"]'), frame });
     mountMap({ frame, goto: index => transcript?.show(index) });
+    mountLibrary({ frame, presentNames: () => lastShown?.scene?.present || [] });
 
     transcript = createTranscript({
         frame,
@@ -748,6 +758,7 @@ export function mount() {
     applyWeatherFx();
     applyIndoorFx();
     applySpeechFx();
+    applyDialogueFaces();
     applySceneHeader();
     applyMusic();
     applyMap();
@@ -850,6 +861,7 @@ export function close() {
     musicUiClosed();
     // The map window goes away with the scene as well.
     mapUiClosed();
+    libraryUiClosed();
 
     if (frame.contains(document.activeElement)) document.activeElement.blur();
 
@@ -1179,6 +1191,17 @@ function applySpeechFx() {
         button.classList.toggle('is-on', on);
         button.setAttribute('aria-checked', String(on));
     }
+}
+
+/** Marks the dialogue faces segment's pressed button. */
+function applyDialogueFaces() {
+    const mode = dialogueFaceMode();
+
+    root.querySelectorAll('[data-mz-pick-faces]').forEach(button => {
+        const isOn = button.dataset.mzPickFaces === mode;
+        button.classList.toggle('is-on', isOn);
+        button.setAttribute('aria-pressed', String(isOn));
+    });
 }
 
 /**
@@ -1764,9 +1787,24 @@ function applyScene(record) {
     }
 
     measureChatbar();
+
+    // The posters wear the shown reply's latest expressions; faces read
+    // sprites synchronously, so warm the rows for everyone the turn names
+    // and redraw once when they land.
+    const message = record?.index != null ? chatMessages()[record.index] : null;
+    const speeches = message ? describeSpeeches(message) : [];
+    setCastExpressions(speeches);
+
     renderCast(scene);
+    refreshLibrary();
     queueBackgroundSwap();
     applyWeather(record);
+
+    primeSprites([...(scene?.present || []), ...speeches.map(speech => speech.character)]).then(changed => {
+        if (!changed) return;
+        redrawCast();
+        if (transcript) transcript.refresh({ stick: true });
+    });
 }
 
 /**
@@ -2320,6 +2358,15 @@ function wireActions() {
             return;
         }
 
+        const facePick = event.target.closest('[data-mz-pick-faces]');
+        if (facePick) {
+            settings().dialogueFaces = facePick.dataset.mzPickFaces;
+            saveSettings();
+            applyDialogueFaces();
+            transcript?.refresh();
+            return;
+        }
+
         const landPick = event.target.closest('[data-mz-pick-mapland]');
         if (landPick) {
             settings().mapTerrain = landPick.dataset.mzPickMapland;
@@ -2487,6 +2534,7 @@ function wireActions() {
                 break;
             case 'dismiss':
                 if (isMapWinOpen()) closeMapWin();
+                else if (isLibraryOpen()) closeLibrary();
                 else if (isCardOpen()) closeCard();
                 else if (isDockOpen()) closeDock();
                 else if (transcript.isLogOpen()) transcript.closeLog();
@@ -2502,6 +2550,8 @@ function wireActions() {
                 applyAvatars();
                 redrawCast();
                 saveSettings();
+                // Faces ride the same gate: the pane re-draws without them.
+                transcript.refresh({ stick: true });
                 break;
             case 'mode':
                 settings().mode = !settings().mode;
@@ -2583,6 +2633,12 @@ function wireActions() {
                 settings().mapMini = !settings().mapMini;
                 applyMap();
                 saveSettings();
+                break;
+            case 'library-open':
+                // The pill is a toggle: the window's own press-outside
+                // close leaves the pill to open and shut it.
+                if (isLibraryOpen()) closeLibrary();
+                else openLibrary();
                 break;
             case 'map-open':
                 openMapWin();
@@ -2764,6 +2820,7 @@ function wireKeys() {
             if (closeFloats()) return;
             if (closeMemory()) return;
             if (isMapWinOpen()) closeMapWin();
+            else if (isLibraryOpen()) closeLibrary();
             else if (isCardOpen()) closeCard();
             else if (isDockOpen()) closeDock();
             else if (transcript?.isLogOpen()) transcript.closeLog();

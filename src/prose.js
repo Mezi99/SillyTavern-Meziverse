@@ -9,11 +9,13 @@
  * `meanwhile`.
  */
 
-import { castImages, castKey, formatMessage, imageSource, say } from './st.js';
+import { formatMessage, imageSource, say } from './st.js';
 import { readInlineThink, splitCues, stripTags } from './tags.js';
-import { describeScene, describeSpeech, isUsableScene } from './scene.js';
+import { assignBandSides, describeScene, describeSpeech, initials, isUsableScene } from './scene.js';
+import { speechFaceFor } from './library.js';
+import { faceVars } from './imageprep.js';
 import { faHtml, iconHtml } from './icons.js';
-import { avatarsOn, modeOn, sceneHeaderStyle, speechFxOn } from './settings.js';
+import { dialogueFaceMode, modeOn, sceneHeaderStyle, speechFxOn } from './settings.js';
 
 const OPENING_BREAKS = /^(?:\s|<br\s*\/?>)+/i;
 const CLOSING_BREAKS = /(?:\s|<br\s*\/?>)+$/i;
@@ -289,27 +291,71 @@ function inlineFormat(message, index, source) {
 }
 
 /**
- * One spoken line as the pane draws it: the speaker's label - the name, the
- * tone said in as a tiny italic beside it, and the cast's thumbnail when
- * avatars hold a picture for the name (the interlace proof; the real display
- * modes are designed later) - above the words in a quiet bubble. A name with
- * no picture falls back to the label alone.
+ * One spoken line as the pane draws it, in the wardrobe the Dialogue
+ * faces setting picks: `off` is the quiet bubble with no face, `simple` a
+ * round face in the bubble's gutter (the default), `immersive` a full
+ * portrait band per line. The face follows the speech's `expression`
+ * through the library chain (exact -> near -> neutral -> the default
+ * image), the chat avatar for a character the library does not own, and a
+ * speaker with no picture at all keeps the furniture alone - the monogram
+ * circle, or a text-only band. Bands stand between prose blocks; bubbles
+ * ride a slot so the narration runs around them.
  */
-function bubbleHtml(tag, { message, index }) {
+function speechHtml(tag, { message, index, sides }) {
     const speech = describeSpeech(tag);
-    if (!speech) return '';
+    if (!speech) return null;
 
     const who = say(speech.character || '').trim();
     const tone = say(speech.tone || '').trim();
-    const face = avatarsOn() && who ? imageSource(castImages()[castKey(who)] || '') : '';
+    const words = inlineFormat(message, index, speech.words);
+    const mode = dialogueFaceMode();
 
-    return '<span class="mz-speech">'
-        + '<span class="mz-speech-who">'
-        + (face ? `<img class="mz-speech-face" src="${escapeHtml(face)}" alt="">` : '')
-        + `<b class="mz-speech-name">${escapeHtml(who || 'Someone')}</b>`
-        + (tone ? `<em class="mz-speech-tone">${escapeHtml(tone)}</em>` : '')
-        + '</span>'
-        + `<span class="mz-speech-bub">${inlineFormat(message, index, speech.words)}</span>`
+    const name = `<b class="mz-speech-name">${escapeHtml(who || 'Someone')}</b>`;
+    const mood = tone ? `<em class="mz-speech-tone">${escapeHtml(tone)}</em>` : '';
+
+    const face = speechFaceFor(who, speech.expression);
+    const src = face.src ? imageSource(face.src) : '';
+
+    if (mode === 'immersive') {
+        const side = sides?.get(who.toLowerCase()) || '';
+        const empty = !src;
+        return {
+            kind: 'band',
+            // The sprite stands free on the band's floor - the crop
+            // window is square and invisible, so only the art shows.
+            html: `<span class="mz-band ${side}${empty ? ' is-empty' : ''}">`
+                + (empty ? '' : `<span class="mz-band-port"><img src="${escapeHtml(src)}" alt="" style="${faceVars(face.frame)}"></span>`)
+                + '<span class="mz-band-txt">'
+                + `<span class="mz-band-nm">${name}${mood}</span>`
+                + `<span class="mz-band-words">${words}</span>`
+                + '</span>'
+                + '</span>',
+        };
+    }
+
+    const facePart = mode === 'simple'
+        ? (src ? faceImg(src, face.frame) : monogram(who))
+        : '';
+
+    return {
+        kind: 'bubble',
+        html: `<span class="mz-speech${facePart ? ' is-face' : ''}">`
+            + facePart
+            + `<span class="mz-speech-who">${name}${mood}</span>`
+            + `<span class="mz-speech-bub">${words}</span>`
+            + '</span>',
+    };
+}
+
+/** The round face crop - one CSS rule; the frame's fractions steer it. */
+function faceImg(src, frame) {
+    return `<span class="mz-face" style="${faceVars(frame)}"><img src="${escapeHtml(src)}" alt=""></span>`;
+}
+
+/** A speaker with no picture keeps the circle - with their initials. */
+function monogram(who) {
+    return '<span class="mz-face is-mono" aria-hidden="true">'
+        + `<span class="mz-face-mono">${escapeHtml(initials(who) || '?')}</span>`
         + '</span>';
 }
 
@@ -430,6 +476,13 @@ export function toHtml(message, index, { compact = false, persona = '' } = {}) {
     const cues = splitCues(raw);
     const total = cues.reduce((n, cue) => n + (cue.type === 'box' ? 1 : 0), 0);
 
+    // Which band side each speaker of THIS reply stands on: first speaker
+    // left, second right, a third back left - fixed before the first line
+    // draws, so streaming frames never flip a side.
+    const sides = assignBandSides(
+        cues.filter(cue => cue.type === 'speech').map(cue => describeSpeech(cue.tag)?.character || ''),
+    );
+
     const parts = [];
     let run = '';
     let slots = [];
@@ -497,14 +550,23 @@ export function toHtml(message, index, { compact = false, persona = '' } = {}) {
                 continue;
             }
 
-            const bubble = bubbleHtml(cue.tag, { message, index });
-            if (!bubble) {
+            const speech = speechHtml(cue.tag, { message, index, sides });
+            if (!speech) {
                 run += cue.tag.body ?? '';
                 continue;
             }
 
+            // A band is furniture of its own: it stands between the prose
+            // blocks and never shares a paragraph with them. A bubble rides
+            // a slot, so the narration runs around it.
+            if (speech.kind === 'band') {
+                flushRun();
+                parts.push(speech.html);
+                continue;
+            }
+
             run += slot(slots.length);
-            slots.push(bubble);
+            slots.push(speech.html);
             continue;
         }
 
@@ -515,9 +577,19 @@ export function toHtml(message, index, { compact = false, persona = '' } = {}) {
     return parts.join('');
 }
 
-/** Puts formatted prose into an element. */
+/** Puts formatted prose into an element. Faces learn their image's aspect
+ * on load, so the crop maths knows the shape before the pixels arrive. */
 export function renderInto(element, html) {
     element.innerHTML = html;
+
+    for (const image of element.querySelectorAll('.mz-face img, .mz-band-port img')) {
+        const settle = () => {
+            const ratio = image.naturalWidth ? image.naturalHeight / image.naturalWidth : 0;
+            if (ratio > 0) image.parentElement.style.setProperty('--ar', String(Math.round(ratio * 10000) / 10000));
+        };
+        if (image.complete) settle();
+        else image.addEventListener('load', settle, { once: true });
+    }
 }
 
 /** The message's text with no markup at all, for labels and titles. */

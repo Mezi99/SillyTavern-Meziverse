@@ -5,7 +5,7 @@
  * own to write and nothing to lose when the browser cache is cleared.
  */
 
-import { ctx } from './st.js';
+import { castKey, ctx } from './st.js';
 import { DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_OFF, DEFAULT_BG_TRANSPORT_PROMPT, LEGACY_DEFAULT_BG_PROMPT_ON, LEGACY_DEFAULT_BG_PROMPT_OFF, PRIOR_DEFAULT_BG_PROMPT_ON, PRIOR_DEFAULT_BG_PROMPT_OFF, PRIOR_DEFAULT_BG_TRANSPORT_PROMPT } from './backgrounds.js';
 import { DEFAULT_DJ_PROMPT, LEGACY_DEFAULT_DJ_PROMPT } from './musicdj.js';
 
@@ -53,6 +53,12 @@ const DEFAULTS = {
     // Speech bubbles in the reading pane: the speaker's label, the words in
     // a quiet bubble, the tone said in after. Off leaves the prose plain.
     speechFx: true,
+    // How a spoken line wears faces - behind the Avatars master switch and
+    // the speech bubbles' own gate. 'off' is today's bubble with no face,
+    // 'simple' a round face in the bubble's gutter (the default),
+    // 'immersive' a full portrait band per line. A later 'cinematic' fits
+    // the same key.
+    dialogueFaces: 'simple',
     // The reasoning block in the reading pane: the model's thinking as an
     // expandable block above the turn's prose. Off leaves the pane exactly
     // as it was - and the log drawer never shows reasoning either way.
@@ -83,6 +89,10 @@ const DEFAULTS = {
     // The full map window's remembered spot and size. Null = centred default.
     mapWinPos: null,
     mapWinSize: null,
+    // The Character Library window's remembered spot and size, the same way.
+    // Null = centred default.
+    libWinPos: null,
+    libWinSize: null,
     // The map's land: 'ink' paints the story's terrain under the chart,
     // 'flat' is the plain chart. The map window's Land chips edit this.
     mapTerrain: 'ink',
@@ -158,6 +168,11 @@ const DEFAULTS = {
     paneBlur: 16,
     logWidth: 720,
     logHeight: null,
+    // The Character Library: the characters the user has SAVED by name,
+    // with a portrait and (through SillyTavern's own sprite folders)
+    // expression sprites - one record per person, available in every chat.
+    // Explicitly created, never auto-added; keyed by `castKey`.
+    library: {},
 };
 
 /**
@@ -247,6 +262,19 @@ export function indoorFxOn() {
 /** Whether the speech bubbles play in the reading pane. */
 export function speechFxOn() {
     return settings().speechFx !== false;
+}
+
+const DIALOGUE_FACE_MODES = ['off', 'simple', 'immersive'];
+
+/**
+ * How a spoken line wears faces: 'off', 'simple' or 'immersive'. The
+ * Avatars switch is the master - off reads as 'off' whatever this says -
+ * so "no images" is one flip away in both places.
+ */
+export function dialogueFaceMode() {
+    if (!avatarsOn()) return 'off';
+    const value = settings().dialogueFaces;
+    return DIALOGUE_FACE_MODES.includes(value) ? value : 'simple';
 }
 
 /** Whether the reasoning block shows above the reading pane's prose. */
@@ -341,4 +369,48 @@ export function setConnection(id, patch) {
     if (!store.connections || typeof store.connections !== 'object') store.connections = {};
     store.connections[id] = { ...normalizeConnection(store.connections[id]), ...patch };
     saveSettings();
+}
+
+/* ---------- the character library ---------- */
+
+/**
+ * The library record for a name (matched on the `castKey` fold), or null.
+ * The record itself - patches go back through `setLibraryEntry`.
+ */
+export function libraryEntry(name) {
+    const key = castKey(name);
+    const record = key ? settings().library?.[key] : null;
+    return record && typeof record === 'object' ? record : null;
+}
+
+/** Whether a name is saved in the Character Library. */
+export function libraryHas(name) {
+    return !!libraryEntry(name);
+}
+
+/** Every library record, keyed by `castKey`. The live object - readers only. */
+export function libraryEntries() {
+    const store = settings().library;
+    return store && typeof store === 'object' ? store : {};
+}
+
+/** Applies a patch to one library record (creating it when missing). */
+export function setLibraryEntry(name, patch = {}) {
+    const key = castKey(name);
+    if (!key) return null;
+
+    const store = settings();
+    if (!store.library || typeof store.library !== 'object') store.library = {};
+    store.library[key] = { ...(store.library[key] || {}), ...patch };
+    saveSettings();
+    return store.library[key];
+}
+
+/** Removes one library record. True when there was one. */
+export function removeLibraryEntry(name) {
+    const key = castKey(name);
+    if (!key || !settings().library?.[key]) return false;
+    delete settings().library[key];
+    saveSettings();
+    return true;
 }

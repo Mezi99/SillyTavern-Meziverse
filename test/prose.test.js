@@ -2,6 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { reasoningOf, thoughtLabel, weatherGlyph } from '../src/prose.js';
+import { faceVars } from '../src/imageprep.js';
+
+test('faceVars wears the frame - default and custom', () => {
+    assert.equal(faceVars(), '--fx:0.5;--fy:0.27;--fs:2.9');
+    assert.equal(faceVars({ fx: 0.42, fy: 0.31, fs: 2.2 }), '--fx:0.42;--fy:0.31;--fs:2.2');
+    assert.equal(faceVars({}), '--fx:0.5;--fy:0.27;--fs:2.9');
+});
 
 test('reasoningOf reads the reasoning where SillyTavern keeps it', () => {
     assert.equal(reasoningOf({ extra: { reasoning: ' from the field ' } }), 'from the field');

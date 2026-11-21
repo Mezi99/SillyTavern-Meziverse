@@ -382,6 +382,66 @@ export function splitPresent(value, persona = '') {
     return present;
 }
 
+/**
+ * Every name any scene tag of these messages ever carried - the chat's
+ * whole cast history, first-seen order, persona excluded. The Character
+ * Library's "This chat" filter reads this.
+ *
+ * @param {object[]} messages
+ * @param {string} [persona]
+ * @returns {string[]}
+ */
+export function seenNames(messages, persona = '') {
+    const seen = new Set();
+    const names = [];
+
+    for (const message of messages || []) {
+        for (const { scene } of describeScenes(message, { persona })) {
+            for (const name of scene.present || []) {
+                const key = nameKey(name);
+                if (!key || seen.has(key)) continue;
+                seen.add(key);
+                names.push(name);
+            }
+        }
+    }
+
+    return names;
+}
+
+/**
+ * Every name any scene tag ever carried, with how many turns named it -
+ * the "named in 14 turns" line under the library's seen rows. Most-seen
+ * first; ties keep first-seen order (the sort is stable). A name counts
+ * once per turn however many tags of that turn carried it.
+ *
+ * @param {object[]} messages
+ * @param {string} [persona]
+ * @returns {{name: string, count: number}[]}
+ */
+export function seenNameCounts(messages, persona = '') {
+    const order = [];
+    const counts = new Map();
+
+    for (const message of messages || []) {
+        const seenHere = new Set();
+        for (const { scene } of describeScenes(message, { persona })) {
+            for (const name of scene.present || []) {
+                const key = nameKey(name);
+                if (!key || seenHere.has(key)) continue;
+                seenHere.add(key);
+                if (!counts.has(key)) {
+                    counts.set(key, { name, count: 0 });
+                    order.push(key);
+                }
+                counts.get(key).count += 1;
+            }
+        }
+    }
+
+    return order.map(key => counts.get(key)).sort((a, b) => b.count - a.count);
+}
+
 /** Up to two letters for a portrait plate: 'Mara Voss' becomes 'MV'. */
 export function initials(name) {
     const words = text(name).trim().split(/\s+/).filter(Boolean);
@@ -394,6 +454,21 @@ export function initials(name) {
     return letters.join('').toUpperCase();
 }
 
+/**
+ * One stable hue per name (0-359) - the colour a placeholder plate wears,
+ * so the same person keeps the same ink wherever their name shows up.
+ */
+export function hueOf(name) {
+    let hash = 2166136261;
+
+    for (const char of String(name)) {
+        hash ^= char.codePointAt(0);
+        hash = Math.imul(hash, 16777619);
+    }
+
+    return Math.abs(hash) % 360;
+}
+
 /** A scene worth showing: complete, and at least one of date, place or cast. */
 export function isUsableScene(tag) {
     if (!tag || tag.name !== 'scene' || !tag.closed) return false;
@@ -401,11 +476,17 @@ export function isUsableScene(tag) {
     return !!(text(attrs.date).trim() || text(attrs.location).trim() || text(attrs.present).trim());
 }
 
-/** The first attribute answering one of several spellings, or ''. */
+/** The first attribute answering one of several spellings, or ''. The
+ * spellings win in the order asked - never in the tag's own attribute
+ * order, so `<speech mood tone>` and `<speech tone mood>` resolve alike. */
 function pickAttr(attrs, ...names) {
-    const wanted = new Set(names.map(name => name.toLowerCase()));
+    const byKey = new Map();
     for (const [key, value] of Object.entries(attrs || {})) {
-        if (wanted.has(key.toLowerCase())) return text(value);
+        if (!byKey.has(key.toLowerCase())) byKey.set(key.toLowerCase(), value);
+    }
+    for (const name of names) {
+        const hit = byKey.get(name.toLowerCase());
+        if (hit != null) return text(hit);
     }
     return '';
 }
@@ -485,6 +566,46 @@ export function describeScenes(message, { persona = '' } = {}) {
 
 /* ---------- speech ---------- */
 
+/**
+ * The labels SillyTavern's own expression system suggests - its
+ * `DEFAULT_EXPRESSIONS`, the GoEmotions set. The shared vocabulary of
+ * expression sprites and the speech tag's `expression` field. Suggested on
+ * upload, never enforced: the true label set of a character is their
+ * folder's file names.
+ */
+export const SUGGESTED_LABELS = [
+    'admiration', 'amusement', 'anger', 'annoyance', 'approval', 'caring',
+    'confusion', 'curiosity', 'desire', 'disappointment', 'disapproval',
+    'disgust', 'embarrassment', 'excitement', 'fear', 'gratitude', 'grief',
+    'joy', 'love', 'nervousness', 'optimism', 'pride', 'realization',
+    'relief', 'remorse', 'sadness', 'surprise', 'neutral',
+];
+
+const SUGGESTED_SET = new Set(SUGGESTED_LABELS);
+
+/** Whether a value reads as one of the 28 sprite labels (case-folded). */
+export function isExpressionLabel(value) {
+    const clean = String(value ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+    return !!clean && SUGGESTED_SET.has(clean);
+}
+
+/**
+ * Which immersive band side each speaker of one reply stands on: the first
+ * speaker left, the second right, a third back left - and a character keeps
+ * their side for the whole reply. Keys are folded names.
+ */
+export function assignBandSides(names) {
+    const sides = new Map();
+    let at = 0;
+    for (const name of names || []) {
+        const key = String(name ?? '').trim().toLowerCase();
+        if (!key || sides.has(key)) continue;
+        sides.set(key, at % 2 ? 'is-r' : '');
+        at += 1;
+    }
+    return sides;
+}
+
 /* One matched outer quote pair, whatever the keyboard: straight, curly,
    single or double. */
 const QUOTE_PAIRS = [['"', '"'], ["'", "'"], ['\u201c', '\u201d'], ['\u2018', '\u2019']];
@@ -503,16 +624,24 @@ function unquote(line) {
 }
 
 /**
- * The display fields of one speech tag: who speaks, how, and what.
+ * The display fields of one speech tag: who speaks, how, in what
+ * expression, and what.
  *
  * `body` is the line as authored - quote marks included, because plain prose
  * (the bubbles off, or the log) must show it exactly as the format asks the
  * model to write it. `words` lifts one matched outer quote pair: the bubble
- * itself is the quoting. `mood` is accepted beside `tone` - the field may
- * grow from delivery to expression one day.
+ * itself is the quoting.
+ *
+ * `tone` is free-text delivery ("low, certain") - display only, it never
+ * picks a sprite. `expression` is the sprite vocabulary, one of the 28
+ * labels, and what the narration's faces follow. The two fields are
+ * separate: `emotion` is an accepted spelling of `expression`, and `mood`
+ * is the legacy bridge - a label there reads as the expression (tags
+ * written before the rename keep their data), anything else stays a tone
+ * fallback (very old tags used `mood` as delivery). `expression` wins.
  *
  * @param {object} tag
- * @returns {{character:string, tone:string, body:string, words:string}|null}
+ * @returns {{character:string, tone:string, expression:string, body:string, words:string}|null}
  */
 export function describeSpeech(tag) {
     if (!tag || tag.name !== 'speech' || !tag.closed) return null;
@@ -520,9 +649,22 @@ export function describeSpeech(tag) {
     const attrs = tag.attrs || {};
     const body = text(tag.body).trim();
 
+    let expression = pickAttr(attrs, 'expression', 'emotion').trim();
+    let tone = pickAttr(attrs, 'tone').trim();
+    const mood = pickAttr(attrs, 'mood').trim();
+
+    if (mood) {
+        if (isExpressionLabel(mood)) {
+            if (!expression) expression = mood;
+        } else if (!tone) {
+            tone = mood;
+        }
+    }
+
     return {
         character: pickAttr(attrs, 'character', 'speaker', 'name').trim(),
-        tone: pickAttr(attrs, 'tone', 'mood').trim(),
+        tone,
+        expression,
         body,
         words: unquote(body),
     };
@@ -533,7 +675,7 @@ export function describeSpeech(tag) {
  * fields. Cached on identity + `mes`, like the scenes.
  *
  * @param {object} message
- * @returns {Array<{character:string, tone:string, body:string, words:string}>}
+ * @returns {Array<{character:string, tone:string, expression:string, body:string, words:string}>}
  */
 export function describeSpeeches(message) {
     if (!message || typeof message !== 'object') return [];

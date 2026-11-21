@@ -8,14 +8,14 @@
  */
 
 import { castImages, castKey, currentChatId, imageSource, removeCastImage, say, setCastImage, uploadImage } from './st.js';
-import { initials } from './scene.js';
+import { hueOf, initials } from './scene.js';
 import { icon } from './icons.js';
 import { notify } from './notify.js';
 import { avatarsOn, entryOn, modeOn } from './settings.js';
 import { closeFloats, placeFloat, registerFloat } from './floats.js';
+import { chooseLibraryFor, disengageLibraryFor, ensureInLibrary, groupCastLive, libraryCandidatesFor, matchLibraryName, onLibraryChange, openLibrary, openLibraryNewFor, posterStateFor, resolvePosterPortrait, speechFaceFor } from './library.js';
+import { imageFileName, prepareImage } from './imageprep.js';
 
-const MAX_EDGE = 1024;
-const QUALITY = 0.85;
 const FALLBACK_FLOOR = 180;
 const FALLBACK_CEILING = 500;
 
@@ -62,7 +62,17 @@ export function mountCast(element) {
     picker.hidden = true;
     picker.setAttribute('aria-hidden', 'true');
 
-    host.append(track, picker);
+    // The quiet door into the Character Library, pinned at the strip's
+    // edge - outside the scrolling track, so it never rides along.
+    const glyph = document.createElement('button');
+    glyph.type = 'button';
+    glyph.className = 'mz-cast-lib';
+    glyph.dataset.mzCastLibrary = '';
+    glyph.title = 'Character Library';
+    glyph.setAttribute('aria-label', 'Character Library');
+    glyph.append(icon('mz-i-library'));
+
+    host.append(track, glyph, picker);
     host.hidden = true;
 
     host.addEventListener('click', onClick);
@@ -90,6 +100,13 @@ export function mountCast(element) {
     registerFloat(closeThought);
 
     track.addEventListener('scroll', () => closeThought(), { passive: true });
+
+    // The library window owns the stage elsewhere; a library change just
+    // redraws the strip, so posters pick up their portraits and buttons.
+    onLibraryChange(() => {
+        lastSignature = '';
+        renderCast(lastScene);
+    });
 }
 
 /**
@@ -134,11 +151,13 @@ export function renderCast(scene) {
         return;
     }
 
-    const images = castImages();
     const fragment = document.createDocumentFragment();
 
-    for (const name of names) {
-        fragment.append(poster(name, images[castKey(name)] || ''));
+    // One character, one poster: names answering to the same library
+    // record merge, labelled by the name the scene used first. The poster
+    // wears the character's latest line's expression in the shown reply.
+    for (const group of groupCastLive(names)) {
+        fragment.append(poster(group.name, posterFace(group.name)));
     }
 
     track.replaceChildren(fragment);
@@ -157,14 +176,15 @@ export function redrawCast() {
 
 /**
  * One person's avatar as the rails draw it: the chat's own portrait image
- * when the chat has one, and just the initial letters when it has not.
+ * when the chat has one, then the library's, and just the initial letters
+ * when neither has.
  *
  * @param {string} name
  * @returns {{src:string, initial:string}}
  */
 export function castAvatar(name) {
     return {
-        src: imageSource(castImages()[castKey(name)] || ''),
+        src: imageSource(resolvePosterPortrait(name, castImages())),
         initial: initials(name),
     };
 }
@@ -522,18 +542,43 @@ function poster(name, path) {
     if (image) figure.append(image);
     figure.append(scrim, caption, attach);
 
-    if (source) {
-        const tools = document.createElement('div');
-        tools.className = 'mz-port-tools';
+    // The poster's button cluster: portrait in, portrait out, and the
+    // Character Library door. Plain buttons for now - the arrangement
+    // comes later with the visual designer. An engaged character wears
+    // their library images and cannot be re-portrait here - the door
+    // hides until the library is disengaged for them.
+    const tools = document.createElement('div');
+    tools.className = 'mz-port-tools';
 
+    const state = posterStateFor(name);
+    const engaged = !!state && state !== 'off';
+
+    const library = document.createElement('button');
+    library.type = 'button';
+    library.className = 'mz-port-tool is-lib' + (engaged ? ' is-on' : '') + (state === 'off' ? ' is-off' : '');
+    library.dataset.mzCastLibAdd = name;
+    library.title = state === 'off'
+        ? `${name} is not using the library in this chat`
+        : engaged
+            ? `${state} is in the Character Library \u2014 choose which shows`
+            : `Add ${name} to the Character Library`;
+    library.setAttribute('aria-label', library.title);
+    library.append(icon('mz-i-library'));
+
+    if (!engaged) {
         const change = document.createElement('button');
         change.type = 'button';
         change.className = 'mz-port-tool';
         change.dataset.mzCastAttach = name;
-        change.title = `Change ${name}'s portrait`;
-        change.setAttribute('aria-label', `Change portrait for ${name}`);
+        change.title = source ? `Change ${name}'s portrait` : `Add ${name}'s portrait`;
+        change.setAttribute('aria-label', change.title);
         change.append(icon('mz-i-camera'));
+        tools.append(change);
+    }
 
+    tools.append(library);
+
+    if (source && !engaged) {
         const remove = document.createElement('button');
         remove.type = 'button';
         remove.className = 'mz-port-tool is-danger';
@@ -541,10 +586,10 @@ function poster(name, path) {
         remove.title = `Remove ${name}'s portrait`;
         remove.setAttribute('aria-label', `Remove portrait for ${name}`);
         remove.append(icon('mz-i-trash'));
-
-        tools.append(change, remove);
-        figure.append(tools);
+        tools.append(remove);
     }
+
+    figure.append(tools);
 
     if (busyName === name && busyChat === currentChatId()) {
         figure.classList.add('is-busy');
@@ -559,12 +604,173 @@ function poster(name, path) {
 
 /* ---------- attaching a portrait ---------- */
 
+/* The two-Mikes chooser: which library character a one-word tag shows on
+   this story's poster. One pick per chat, changeable any time. */
+
+let chooser = null;
+
+function closeChooser() {
+    chooser?.remove();
+    chooser = null;
+    document.removeEventListener('pointerdown', chooserOutside, true);
+    document.removeEventListener('keydown', chooserKeys);
+}
+
+function chooserOutside(event) {
+    if (chooser?.contains(event.target)) return;
+    closeChooser();
+}
+
+function chooserKeys(event) {
+    if (event.key === 'Escape') closeChooser();
+}
+
+/** The menu's own actions: swap the showing character, or walk away. */
+function onChooserClick(event) {
+    const name = chooser?.dataset?.mzChooserName || '';
+    const fallback = chooser?.dataset?.mzChooserDefault || '';
+
+    const engage = event.target.closest('[data-mz-lib-engage]');
+    if (engage) {
+        event.preventDefault();
+        const on = engage.dataset.mzLibEngage === 'on';
+        closeChooser();
+        if (!name) return;
+        if (on) chooseLibraryFor(name, fallback || null);
+        else disengageLibraryFor(name);
+        redrawCast();
+        return;
+    }
+
+    const pick = event.target.closest('[data-mz-chooser-pick]');
+    if (pick) {
+        event.preventDefault();
+        const entry = pick.dataset.mzChooserPick || null;
+        closeChooser();
+        if (name) {
+            chooseLibraryFor(name, entry);
+            redrawCast();
+        }
+        return;
+    }
+
+    if (event.target.closest('[data-mz-chooser-add]')) {
+        event.preventDefault();
+        closeChooser();
+        openLibraryNewFor(name);
+        return;
+    }
+
+    const open = event.target.closest('[data-mz-chooser-open]');
+    if (open) {
+        event.preventDefault();
+        const target = open.dataset.mzChooserOpen;
+        closeChooser();
+        if (target) openLibrary(target);
+    }
+}
+
+function openChooser(button, name, match, candidates) {
+    closeChooser();
+
+    const off = posterStateFor(name) === 'off';
+    const shown = match?.record || candidates[0] || null;
+
+    const menu = document.createElement('div');
+    menu.className = 'mz-chooser';
+    menu.dataset.mzChooserName = name;
+    menu.dataset.mzChooserDefault = shown?.name || '';
+
+    const head = document.createElement('p');
+    head.className = 'mz-chooser-head';
+    head.textContent = off ? `"${name}" is not using the library:` : `"${name}" shows:`;
+    menu.append(head);
+
+    for (const record of candidates) {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'mz-chooser-row' + (!off && record === match?.record ? ' is-on' : '');
+        row.dataset.mzChooserPick = record.name;
+        row.textContent = record.name;
+        if (!off && record === match?.record) row.append(icon('mz-i-check'));
+        menu.append(row);
+    }
+
+    // The library on/off for this one name, this one chat.
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'mz-chooser-row is-quiet';
+    toggle.dataset.mzLibEngage = off ? 'on' : 'off';
+    toggle.append(icon(off ? 'mz-i-check' : 'mz-i-eye-off'), document.createTextNode(
+        off ? 'Use the library for this one again' : 'Don\u2019t use the library for this one'));
+    menu.append(toggle);
+
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'mz-chooser-row';
+    add.dataset.mzChooserAdd = '';
+    add.append(icon('mz-i-plus'), document.createTextNode('Add as new character\u2026'));
+    menu.append(add);
+
+    if (match?.record) {
+        const page = document.createElement('button');
+        page.type = 'button';
+        page.className = 'mz-chooser-row';
+        page.dataset.mzChooserOpen = match.record.name;
+        page.append(icon('mz-i-library'), document.createTextNode('Open page'));
+        menu.append(page);
+    }
+
+    // Inside the scene's frame, so the menu sits above the stage - the
+    // scene root is its own high stack and would swallow a body-level one.
+    (button.closest('.mz-frame') || document.body).append(menu);
+    menu.addEventListener('click', onChooserClick);
+
+    const rect = button.getBoundingClientRect();
+    const left = Math.max(8, Math.min(rect.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - 8));
+    const top = Math.min(rect.bottom + 6, window.innerHeight - menu.offsetHeight - 8);
+    menu.style.left = `${left}px`;
+    menu.style.top = `${Math.max(8, top)}px`;
+
+    chooser = menu;
+    document.addEventListener('pointerdown', chooserOutside, true);
+    document.addEventListener('keydown', chooserKeys);
+}
+
 function onClick(event) {
     const toggle = event.target.closest('[data-mz-thought]');
     if (toggle) {
         const key = toggle.dataset.mzThought;
         if (thoughtKey === key) closeThought();
         else openThought(key);
+        return;
+    }
+
+    const glyph = event.target.closest('[data-mz-cast-library]');
+    if (glyph) {
+        event.preventDefault();
+        openLibrary();
+        return;
+    }
+
+    const library = event.target.closest('[data-mz-cast-lib-add]');
+    if (library) {
+        event.preventDefault();
+        const name = library.dataset.mzCastLibAdd;
+        const match = matchLibraryName(name);
+        const candidates = libraryCandidatesFor(name)?.candidates || [];
+
+        // Someone answers to this name (seen or disengaged): the chooser
+        // decides - swap, on/off, add another, or walk into the page.
+        if (candidates.length) {
+            openChooser(library, name, match, candidates);
+            return;
+        }
+
+        // Saving promotes whatever portrait this chat carries, so the
+        // library shows the face the user already picked.
+        const record = ensureInLibrary(name, castImages()[castKey(name)] || '');
+        if (record) notify(`Saved ${name} to the Character Library.`, 'success');
         return;
     }
 
@@ -623,7 +829,7 @@ async function onFileChosen() {
         const path = await uploadImage({
             image: prepared.image,
             format: prepared.format,
-            filename: fileName(request.name, prepared.format),
+            filename: imageFileName(request.name, prepared.format),
         });
 
         if (!path) throw new Error('no path returned');
@@ -657,67 +863,6 @@ function forget(name) {
     renderCast(lastScene);
 }
 
-/* ---------- image preparation ---------- */
-
-async function prepareImage(file) {
-    const source = await loadImage(file);
-    const width = source.width || source.naturalWidth || 0;
-    const height = source.height || source.naturalHeight || 0;
-    if (!width || !height) throw new Error('the image has no size');
-
-    const scale = Math.min(1, MAX_EDGE / Math.max(width, height));
-    const outWidth = Math.max(1, Math.round(width * scale));
-    const outHeight = Math.max(1, Math.round(height * scale));
-
-    const canvas = document.createElement('canvas');
-    canvas.width = outWidth;
-    canvas.height = outHeight;
-
-    const context = canvas.getContext('2d');
-    if (!context) throw new Error('the canvas is unavailable');
-
-    context.imageSmoothingEnabled = true;
-    context.imageSmoothingQuality = 'high';
-    context.drawImage(source, 0, 0, outWidth, outHeight);
-    source.close?.();
-
-    const data = canvas.toDataURL('image/webp', QUALITY);
-    const match = /^data:image\/([a-z0-9.+-]+);base64,(.+)$/i.exec(data);
-    if (!match) throw new Error('the image could not be encoded');
-
-    return {
-        image: match[2],
-        format: match[1].toLowerCase() === 'jpeg' ? 'jpg' : match[1].toLowerCase(),
-    };
-}
-
-function loadImage(file) {
-    if (typeof createImageBitmap === 'function') {
-        return createImageBitmap(file).catch(() => loadFromElement(file));
-    }
-
-    return loadFromElement(file);
-}
-
-function loadFromElement(file) {
-    return new Promise((resolve, reject) => {
-        const image = new Image();
-        const url = URL.createObjectURL(file);
-
-        image.addEventListener('load', () => {
-            URL.revokeObjectURL(url);
-            resolve(image);
-        }, { once: true });
-
-        image.addEventListener('error', () => {
-            URL.revokeObjectURL(url);
-            reject(new Error('the image could not be read'));
-        }, { once: true });
-
-        image.src = url;
-    });
-}
-
 /* ---------- small helpers ---------- */
 
 /**
@@ -744,31 +889,61 @@ function castSignature() {
     const chat = currentChatId() || '';
     const busy = busyName && busyChat === chat ? busyName : '';
     const cast = names
-        .map(name => `${name}\u0002${images[castKey(name)] || ''}`)
+        .map(name => `${name}\u0002${resolvePosterPortrait(name, images)}\u0002${posterStateFor(name)}\u0002${expressionFor(name)}`)
         .join('\u0001');
 
     return `${chat}\u0003${busy}\u0003${cast}`;
 }
 
-function fileName(name, format) {
-    const base = String(name)
-        .normalize('NFKD')
-        .replace(/[^\w-]+/g, '-')
-        .replace(/^-+|-+$/g, '')
-        .slice(0, 40) || 'portrait';
+/* ---------- the posters' expressions ---------- */
 
-    return `${base}-${Date.now().toString(36)}.${format}`;
+// The shown reply's latest expression per speaker - what the posters wear.
+let lastExpressions = new Map();
+
+/**
+ * Hands the strip the shown reply's speech expressions: each character
+ * wears their latest line's (neutral when they have not spoken). Keys are
+ * every name a speaker answers to, so an aliased voice finds its poster.
+ */
+export function setCastExpressions(speeches) {
+    const map = new Map();
+    for (const speech of speeches || []) {
+        const key = castKey(speech.character || '');
+        if (!key) continue;
+
+        const expression = String(speech.expression || '').trim();
+        map.set(key, expression);
+        const match = matchLibraryName(speech.character);
+        if (match?.record) map.set(castKey(match.record.name), expression);
+    }
+    lastExpressions = map;
 }
 
-function hueOf(name) {
-    let hash = 2166136261;
+/** The expression a poster wears right now, or '' for a silent one. */
+function expressionFor(name) {
+    if (!lastExpressions.size) return '';
 
-    for (const char of String(name)) {
-        hash ^= char.codePointAt(0);
-        hash = Math.imul(hash, 16777619);
+    const match = matchLibraryName(name);
+    const keys = [castKey(name)];
+    if (match?.record) keys.push(castKey(match.record.name));
+
+    for (const key of keys) {
+        const hit = lastExpressions.get(key);
+        if (hit) return hit;
     }
+    return '';
+}
 
-    return Math.abs(hash) % 360;
+/**
+ * The image a poster shows: the speaker's latest expression through the
+ * library chain, the chat face for a character the library does not own,
+ * and the plain portrait when nothing resolves. The strip wears every
+ * image the way main always did - cover, filling the frame - so the
+ * poster's buttons always sit over the image.
+ */
+function posterFace(name) {
+    const face = speechFaceFor(name, expressionFor(name));
+    return face.src ? face.src : resolvePosterPortrait(name, castImages());
 }
 
 function number(value) {
