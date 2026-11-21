@@ -1140,6 +1140,44 @@
 
 .mz-lib-pill-add .mz-select { flex: 1; height: 30px; }
 
+/* the alias trip: the banner over the window, and its one press on the page */
+
+.mz-lib-aliasbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 12px 20px 0;
+    padding: 8px 10px 8px 12px;
+    border: 1px solid color-mix(in srgb, var(--mz-accent) 38%, transparent);
+    border-radius: var(--mz-r-sm);
+    background: color-mix(in srgb, var(--mz-accent) 8%, transparent);
+    font-size: var(--mz-text-sm);
+    color: var(--mz-text);
+}
+.mz-lib-aliasbar[hidden] { display: none; }
+.mz-lib-aliasbar .ico { flex: none; color: var(--mz-accent); }
+.mz-lib-aliasbar span { flex: 1; min-width: 0; }
+.mz-lib-aliasbar .mz-ibtn { flex: none; }
+
+.mz-lib-alias-give-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 30px;
+    padding: 0 14px;
+    border: 1px solid var(--mz-accent-line);
+    border-radius: var(--mz-r-sm);
+    background: color-mix(in srgb, var(--mz-accent) 10%, transparent);
+    color: var(--mz-accent);
+    font-family: var(--mz-font-ui);
+    font-size: var(--mz-text-sm);
+    font-weight: 600;
+    cursor: pointer;
+    transition: background var(--mz-dur-fast);
+}
+.mz-lib-alias-give-btn:hover { background: color-mix(in srgb, var(--mz-accent) 18%, transparent); }
+.mz-lib-alias-give-btn .ico { width: 14px; height: 14px; }
+
 /* the stage's quiet list, where the portrait tools used to be */
 .mz-lib-alias-chips {
     display: flex;

@@ -740,6 +740,38 @@
     }
 }
 
+/* Immersive A and B - the two layouts the band's modifier class picks.
+   The base .mz-band look (wash box, hairlines, avatar in front, --av /
+   --pop) is unchanged; prose.js puts ONE of these classes on every band,
+   depending on the setting. */
+
+/* Immersive A - "hug": each box is as wide as its words, on its speaker's side */
+.mz-band--hug {
+    width: fit-content;
+    min-width: min(100%, 430px);
+    max-width: min(100%, 880px);
+}
+.mz-band--hug.is-r { margin-left: auto; }
+.mz-band--hug .mz-band-words { max-width: none; }
+
+/* Immersive B - "centred": one measure for every box, centred; only the avatar swaps sides */
+.mz-band--centred {
+    width: min(100%, 820px);
+    margin-inline: auto;
+}
+.mz-band--centred .mz-band-words { max-width: none; }
+
+/* Phones: both modes use the full width, exactly like today's narrow layout */
+@media (max-width: 600px) {
+    .mz-band--hug,
+    .mz-band--centred {
+        width: auto;
+        min-width: 0;
+        max-width: none;
+        margin-inline: 0;
+    }
+}
+
 .mz-speech-name {
     font-family: var(--mz-font-ui);
     font-size: var(--mz-text-2xs);

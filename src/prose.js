@@ -293,15 +293,18 @@ function inlineFormat(message, index, source) {
 /**
  * One spoken line as the pane draws it, in the wardrobe the Dialogue
  * faces setting picks: `off` is the quiet bubble with no face, `simple` a
- * round face in the bubble's gutter (the default), `immersive` a full
- * portrait band per line. The face follows the speech's `expression`
- * through the library chain (exact -> near -> neutral -> the default
- * image), the chat avatar for a character the library does not own, and a
- * speaker with no picture at all keeps the furniture alone - the monogram
- * circle, or a text-only band. Bands stand between prose blocks; bubbles
- * ride a slot so the narration runs around them.
+ * round face in the bubble's gutter (the default), `immersiveA` a
+ * dialogue band hugging its words on the speaker's side, `immersiveB`
+ * one centred measure per band - each wearing `mz-band--hug` or
+ * `mz-band--centred` so the CSS knows the layout. The face follows the
+ * speech's `expression` through the library chain (exact -> near ->
+ * neutral -> the default image), the chat avatar for a character the
+ * library does not own, and a speaker with no picture at all keeps the
+ * furniture alone - the monogram circle, or a text-only band. Bands stand
+ * between prose blocks; bubbles ride a slot so the narration runs around
+ * them.
  */
-function speechHtml(tag, { message, index, sides }) {
+export function speechHtml(tag, { message, index, sides }) {
     const speech = describeSpeech(tag);
     if (!speech) return null;
 
@@ -316,14 +319,15 @@ function speechHtml(tag, { message, index, sides }) {
     const face = speechFaceFor(who, speech.expression);
     const src = face.src ? imageSource(face.src) : '';
 
-    if (mode === 'immersive') {
+    if (mode === 'immersiveA' || mode === 'immersiveB') {
         const side = sides?.get(who.toLowerCase()) || '';
         const empty = !src;
+        const shape = mode === 'immersiveB' ? 'mz-band--centred' : 'mz-band--hug';
         return {
             kind: 'band',
             // The sprite stands free on the band's floor - the crop
             // window is square and invisible, so only the art shows.
-            html: `<span class="mz-band ${side}${empty ? ' is-empty' : ''}">`
+            html: `<span class="mz-band ${shape} ${side}${empty ? ' is-empty' : ''}">`
                 + (empty ? '' : `<span class="mz-band-port"><img src="${escapeHtml(src)}" alt="" style="${faceVars(face.frame)}"></span>`)
                 + '<span class="mz-band-txt">'
                 + `<span class="mz-band-nm">${name}${mood}</span>`

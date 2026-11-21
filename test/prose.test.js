@@ -1,8 +1,62 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { reasoningOf, thoughtLabel, weatherGlyph } from '../src/prose.js';
+import { reasoningOf, speechHtml, thoughtLabel, weatherGlyph } from '../src/prose.js';
 import { faceVars } from '../src/imageprep.js';
+import { parseTags } from '../src/tags.js';
+
+const tag = mes => parseTags(mes)[0];
+
+/** Runs `fn` with a SillyTavern stub wearing the given dialogue-face setting. */
+function withFaces(dialogueFaces, fn) {
+    const store = { extensionSettings: { meziverse: { avatars: true, dialogueFaces } } };
+    globalThis.SillyTavern = { getContext: () => store };
+    try {
+        return fn();
+    } finally {
+        delete globalThis.SillyTavern;
+    }
+}
+
+test('speechHtml wears the band layout the setting picks', () => {
+    const line = '<speech character="Mara" tone="dry">"Anchor\'s out"</speech>';
+    const sides = new Map([['mara', 'is-r']]);
+
+    withFaces('immersiveA', () => {
+        const out = speechHtml(tag(line), { message: { mes: line }, index: 0, sides });
+        assert.equal(out.kind, 'band');
+        assert.ok(out.html.includes('mz-band--hug'), 'A hugs its words');
+        assert.ok(!out.html.includes('mz-band--centred'), 'and wears the other shape never');
+        assert.ok(out.html.includes('is-r'), 'the speaker\'s side still rides');
+    });
+
+    withFaces('immersiveB', () => {
+        const out = speechHtml(tag(line), { message: { mes: line }, index: 0, sides });
+        assert.equal(out.kind, 'band');
+        assert.ok(out.html.includes('mz-band--centred'), 'B is the one centred measure');
+        assert.ok(!out.html.includes('mz-band--hug'));
+    });
+
+    for (const mode of ['simple', 'off']) {
+        withFaces(mode, () => {
+            const out = speechHtml(tag(line), { message: { mes: line }, index: 0, sides });
+            assert.equal(out.kind, 'bubble', `${mode} keeps the bubble`);
+            assert.ok(!out.html.includes('mz-band'), `${mode} never grows a band`);
+        });
+    }
+});
+
+test('a band with no picture keeps its furniture in both layouts', () => {
+    const line = '<speech character="Nobody">"hi"</speech>';
+    for (const [mode, shape] of [['immersiveA', 'mz-band--hug'], ['immersiveB', 'mz-band--centred']]) {
+        withFaces(mode, () => {
+            const out = speechHtml(tag(line), { message: { mes: line }, index: 0, sides: new Map() });
+            assert.equal(out.kind, 'band');
+            assert.ok(out.html.includes('is-empty'), 'a text-only band');
+            assert.ok(out.html.includes(shape), `the ${mode} shape applies without art too`);
+        });
+    }
+});
 
 test('faceVars wears the frame - default and custom', () => {
     assert.equal(faceVars(), '--fx:0.5;--fy:0.27;--fs:2.9');

@@ -35,7 +35,7 @@ import { closeLibrary, isLibraryOpen, libraryUiClosed, mountLibrary, openLibrary
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr, notify } from './notify.js';
 
-const VERSION = '2.11.0';
+const VERSION = '2.11.1';
 const PANE_DEFAULT = 300;
 const LOG_W_DEFAULT = 720;
 const LOG_H_SHARE = 0.7;
@@ -321,11 +321,12 @@ const FRAME_HTML = `
                     <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Avatars" data-mz-action="avatars"><i></i></button>
                 </div>
                 <div class="mz-set-row">
-                    <span class="mz-set-label"><b>Dialogue faces</b><button type="button" class="mz-hint" data-tip="How spoken lines wear faces: none, a round face by the bubble, or a full portrait band. Avatars off turns every face off." aria-label="How spoken lines wear faces: none, a round face by the bubble, or a full portrait band. Avatars off turns every face off.">i</button></span>
+                    <span class="mz-set-label"><b>Dialogue faces</b><button type="button" class="mz-hint" data-tip="How spoken lines wear faces: none, a round face by the bubble, or a dialogue band per line - A hugs the words on the speaker's side, B is one centred measure. Avatars off turns every face off." aria-label="How spoken lines wear faces: none, a round face by the bubble, or a dialogue band per line - A hugs the words on the speaker's side, B is one centred measure. Avatars off turns every face off.">i</button></span>
                     <div class="mz-seg" role="group" aria-label="Dialogue faces">
                         <button type="button" data-mz-pick-faces="off">Off</button>
                         <button type="button" data-mz-pick-faces="simple">Simple</button>
-                        <button type="button" data-mz-pick-faces="immersive">Immersive</button>
+                        <button type="button" data-mz-pick-faces="immersiveA">Immersive A</button>
+                        <button type="button" data-mz-pick-faces="immersiveB">Immersive B</button>
                     </div>
                 </div>
                 <div class="mz-set-row">

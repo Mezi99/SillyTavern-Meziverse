@@ -1,5 +1,23 @@
 # Meziverse — version log
 
+## 2.11.1 - 2026-11-21
+
+The designer's polish round: the immersive band splits into its two layouts, and the poster grows a second door - the one that joins a story's new name to a character already saved.
+
+### Immersive A and B
+- **Dialogue faces** wears four wardrobes now - Off · Simple · **Immersive A** · **Immersive B** - switchable live from Settings → Features. A hugs its words: the box is as wide as its line, clamped 430-880px, flush to the speaker's side. B is one centred measure - 820px, every box alike, only the avatar swapping sides. Everything else about the band stands unchanged (the wash box, the hairlines, the sprite in front at 96/18, story-size words), and phones stay full-width at 600px. A stored `immersive` migrates to Immersive A - on the read and on the store.
+
+### Use an existing character - the alias door
+- The poster's library menu grows **"Use an existing character…"** beside "Add as new character…". It opens the library on a trip: a banner names the name ("Give "Silas" to a character - open their page and press Add."), and opening any character's page lands on their **Aliases tab with the name already in the input** and one button to land it. So the story's new Silas answers to the Valentin already saved - same sprites, same face, no new character to draw. The trip ends when the name lands, when the banner's × is pressed, or when the window closes.
+- A brand-new name gets the same menu now instead of the silent one-click save - its two saves deserve a choice - and "Add as new character…" still promotes the chat's portrait into the sheet.
+- **An alias redraws the cast strip the moment it lands** (and the moment one is removed): posters wearing the name flip to the character's face with no other trigger.
+
+### Small polish
+- The Character Library icon is two busts wherever it shows - the old books read as the map icon at small sizes.
+
+### Notes
+- `manifest.json` matches; the synthetic suite stands at 361 tests. Merged to `main` as v2.11.1.
+
 ## 2.11.0 - 2026-11-20
 
 The avatar module: the characters get a library of their own — who a name is, what they look like — and then the sprites come downstairs, into the narration itself.

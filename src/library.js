@@ -533,10 +533,18 @@ export function disengageLibraryFor(name) {
     notify(`"${name}" is not using the library in this chat.`, 'info');
 }
 
-/** Opens the window on a fresh name sheet - the chooser's "Add as new…". */
+/**
+ * Opens the window on a fresh name sheet - the chooser's "Add as new…".
+ * The chat's own portrait seeds the draft, so saving promotes the face
+ * the user already picked, like the one-click save did.
+ */
 export function openLibraryNewFor(tagName) {
     openLibrary();
-    openSheetFor('new', null, { name: String(tagName ?? ''), first: recordFirst({ name: tagName }) });
+    openSheetFor('new', null, {
+        name: String(tagName ?? ''),
+        first: recordFirst({ name: tagName }),
+        portrait: String(castImages()?.[castKey(tagName)] ?? '').trim(),
+    });
 }
 
 /**
@@ -799,6 +807,7 @@ const WIN_HTML = `
         <button class="mz-ibtn mz-libwin-close" type="button" data-mz-lib-close title="Close" aria-label="Close"></button>
     </header>
     <div class="mz-libwin-body">
+        <div class="mz-lib-aliasbar" data-mz-lib-aliasbar hidden></div>
         <div class="mz-lib-toolbar" role="group" aria-label="Filter characters" data-mz-lib-filters>
             <button type="button" class="mz-lib-chip" data-mz-lib-filter="all">All</button>
             <button type="button" class="mz-lib-chip" data-mz-lib-filter="chat">This chat</button>
@@ -827,6 +836,10 @@ let filter = 'all';
 let newDraft = null;
 // The name the sheet's commit was blocked on, or ''.
 let sheetConflict = '';
+// The name a poster's "use an existing character" trip wants to hand to
+// an alias, or '' - it lives until the name lands, gets cancelled, or the
+// window closes.
+let aliasIntent = '';
 // Who the portrait picker is filling: 'sheet' or a record's name.
 let portraitTarget = '';
 // The label a picker press already knows, and the file it replaces.
@@ -1005,9 +1018,11 @@ export function isLibraryOpen() {
 
 /**
  * Opens the library - the whole grid, or one character's page when a name
- * is given (a poster's "In library" door).
+ * is given (a poster's "In library" door). A plain open also ends any
+ * pending alias trip - this door never carries one in.
  */
 export function openLibrary(name = null) {
+    aliasIntent = '';
     if (!win) return;
 
     const record = name ? libraryEntry(name) : null;
@@ -1029,12 +1044,35 @@ export function openLibrary(name = null) {
 
 /** Closes the window and returns focus where it came from. */
 export function closeLibrary() {
+    aliasIntent = '';
     if (!win || win.hidden) return;
     win.hidden = true;
     win.setAttribute('aria-hidden', 'true');
     frameEl?.classList.remove('is-libwin-open');
     if (lastFocus && typeof lastFocus.focus === 'function') lastFocus.focus();
     lastFocus = null;
+}
+
+/**
+ * Opens the library to give `tagName` to an existing character - the
+ * poster chooser's "Use an existing character…". The grid says what the
+ * trip is for; a character's page arrives with the Aliases tab ready and
+ * the name filled in, so landing it is one press.
+ */
+export function openLibraryForAlias(tagName) {
+    openLibrary();
+    aliasIntent = String(tagName ?? '').trim();
+    renderWin();
+}
+
+/** The name an open library is waiting to hand to an alias, or ''. */
+export function aliasIntentName() {
+    return aliasIntent;
+}
+
+/** The alias trip is over - the name landed or the user walked away. */
+export function clearAliasIntent() {
+    aliasIntent = '';
 }
 
 /** The scene closed: the library window goes away whole. */
@@ -1194,7 +1232,8 @@ function wireWinDrag() {
 }
 
 function detailView(name) {
-    return { kind: 'detail', name, sel: null, boardFilter: 'all', fit: 'face', menu: false, tab: 'expressions', frame: false };
+    // An alias trip means the page is here for its Aliases tab.
+    return { kind: 'detail', name, sel: null, boardFilter: 'all', fit: 'face', menu: false, tab: aliasIntent ? 'aliases' : 'expressions', frame: false };
 }
 
 function resetDetail() {
@@ -1227,6 +1266,7 @@ function renderWin() {
     els.body.classList.toggle('is-detail', showingDetail);
 
     renderHead();
+    renderAliasBar();
 
     for (const chip of win.querySelectorAll('[data-mz-lib-filter]')) {
         const on = chip.dataset.mzLibFilter === filter;
@@ -1241,6 +1281,35 @@ function renderWin() {
     } else {
         renderGrid();
     }
+}
+
+/**
+ * The alias trip's banner: which name is looking for a character, and the
+ * door out. It rides above the grid and the page alike, so the trip never
+ * happens silently - and never outstays its welcome.
+ */
+function renderAliasBar() {
+    const bar = win.querySelector('[data-mz-lib-aliasbar]');
+    if (!bar) return;
+
+    bar.replaceChildren();
+    bar.hidden = !aliasIntent;
+    if (!aliasIntent) return;
+
+    bar.append(icon('mz-i-bond'));
+
+    const text = document.createElement('span');
+    text.textContent = `Give "${aliasIntent}" to a character \u2014 open their page and press Add.`;
+    bar.append(text);
+
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'mz-ibtn';
+    cancel.dataset.mzLibAliasCancel = '';
+    cancel.title = 'Forget this name';
+    cancel.setAttribute('aria-label', `Stop adding ${aliasIntent} as an alias`);
+    cancel.append(icon('mz-i-close'));
+    bar.append(cancel);
 }
 
 /**
@@ -1728,7 +1797,7 @@ function openSheetFor(mode, record = null, seed = null) {
         name: record?.name || String(seed?.name ?? ''),
         first: record ? recordFirst(record) : String(seed?.first ?? ''),
         firstTouched: false,
-        portrait: '',
+        portrait: String(seed?.portrait ?? ''),
         sourceName: record?.name || '',
     };
     sheetConflict = '';
@@ -1942,6 +2011,23 @@ function buildAliases(record) {
     note.className = 'mz-lib-aliases-note';
     note.textContent = 'Other names the AI might use for this character (a revealed full name "Sarah Greenfield" for "Sarah", a nickname, or a title.)';
 
+    panel.append(note);
+
+    // An alias trip: the name arrives with the page, and landing it is
+    // the one press the banner promised.
+    if (aliasIntent) {
+        const give = document.createElement('div');
+        give.className = 'mz-lib-alias-give';
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'mz-lib-alias-give-btn';
+        button.dataset.mzLibAliasCommit = '';
+        button.append(icon('mz-i-bond'), document.createTextNode(`Add "${aliasIntent}" as an alias`));
+        button.title = `${record.name} will also answer to "${aliasIntent}"`;
+        give.append(button);
+        panel.append(give);
+    }
+
     const pills = document.createElement('div');
     pills.className = 'mz-lib-pills';
     const aliases = recordAnswersTo(record).slice(1); // extras only - the primary is [0]
@@ -1956,6 +2042,7 @@ function buildAliases(record) {
     input.placeholder = 'Add a name\u2026';
     input.setAttribute('aria-label', 'Add an alias');
     input.spellcheck = false;
+    if (aliasIntent) input.value = aliasIntent;
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'mz-btn-ghost';
@@ -1969,7 +2056,7 @@ function buildAliases(record) {
         addAlias(record.name, input.value);
     });
 
-    panel.append(note, pills, add);
+    panel.append(pills, add);
     return panel;
 }
 
@@ -1989,7 +2076,12 @@ function aliasPill(alias) {
     return pill;
 }
 
-function addAlias(name, value) {
+/**
+ * Gives a record one more name to answer to. The cast strip listens: the
+ * moment the alias lands, posters wearing the new name redraw to this
+ * character's face. A trip's pending name ends here when it lands.
+ */
+export function addAlias(name, value) {
     const record = libraryEntry(name);
     if (!record) return;
 
@@ -2004,17 +2096,21 @@ function addAlias(name, value) {
     }
 
     setLibraryEntry(record.name, { aliases: [...(record.aliases || []), alias] });
+    if (key && key === castKey(aliasIntent)) aliasIntent = '';
     notify(`"${alias}" now answers for ${record.name}.`, 'success');
+    notifyLibraryChange();
     renderWin();
 }
 
-function dropAlias(name, alias) {
+/** Takes one alias back. The strip redraws here too. */
+export function dropAlias(name, alias) {
     const record = libraryEntry(name);
     if (!record) return;
 
     setLibraryEntry(record.name, {
         aliases: (record.aliases || []).filter(other => castKey(other) !== castKey(alias)),
     });
+    notifyLibraryChange();
     renderWin();
 }
 
@@ -2683,6 +2779,8 @@ function onClick(event) {
             view = detailView(record.name);
             resetDetail();
             renderWin();
+            // An alias trip: the page lands on its Aliases tab, ready.
+            if (aliasIntent) win.querySelector('[data-mz-lib-alias-commit]')?.focus({ preventScroll: true });
         }
         return;
     }
@@ -2734,6 +2832,18 @@ function onClick(event) {
     const tab = event.target.closest('[data-mz-lib-tab]');
     if (tab) {
         view.tab = tab.dataset.mzLibTab === 'aliases' ? 'aliases' : 'expressions';
+        renderWin();
+        return;
+    }
+
+    const aliasCommit = event.target.closest('[data-mz-lib-alias-commit]');
+    if (aliasCommit) {
+        if (aliasIntent) addAlias(view.name, aliasIntent);
+        return;
+    }
+
+    if (event.target.closest('[data-mz-lib-alias-cancel]')) {
+        clearAliasIntent();
         renderWin();
         return;
     }

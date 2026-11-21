@@ -10,12 +10,20 @@ import {
     EXPRESSION_FAMILIES,
     EXPRESSION_PATHS,
     SUGGESTED_LABELS,
+    addAlias,
+    aliasIntentName,
     cleanSpriteLabel,
+    clearAliasIntent,
+    closeLibrary,
+    dropAlias,
     expressionImage,
     groupCastNames,
     labelFamily,
     matchLabel,
     normalizeLibraryRecord,
+    onLibraryChange,
+    openLibrary,
+    openLibraryForAlias,
     recordAnswersTo,
     recordFirst,
     resolveLibraryMatch,
@@ -372,4 +380,81 @@ test('spriteCoverage: 28-counts, core counts, and the files beyond', () => {
     const none = spriteCoverage(null);
     assert.equal(none.count, 0);
     assert.equal(none.extra, 0);
+});
+
+/* ---------- the alias trip (a poster's "use an existing character") ---------- */
+
+/** Runs `fn` with a SillyTavern stub carrying the given meziverse settings. */
+function withStore(meziverse, fn) {
+    const store = { extensionSettings: { meziverse: { ...meziverse } } };
+    globalThis.SillyTavern = { getContext: () => store };
+    // notify() finds no toast stack without a document, and says nothing
+    globalThis.document = { querySelector: () => null };
+    try {
+        return fn(store.extensionSettings.meziverse);
+    } finally {
+        delete globalThis.SillyTavern;
+        delete globalThis.document;
+    }
+}
+
+test('the alias trip rides in, reads out, and ends at the door', () => {
+    withStore({}, () => {
+        openLibraryForAlias(' Silas ');
+        assert.equal(aliasIntentName(), 'Silas', 'the name is trimmed and remembered');
+
+        openLibrary();
+        assert.equal(aliasIntentName(), '', 'a plain open never carries a trip in');
+
+        openLibraryForAlias('Silas');
+        closeLibrary();
+        assert.equal(aliasIntentName(), '', 'closing the window drops the trip');
+
+        openLibraryForAlias('Silas');
+        clearAliasIntent();
+        assert.equal(aliasIntentName(), '', 'and the user can walk away by hand');
+    });
+});
+
+test('an alias landing redraws the strip - and dropping it gives it back', () => {
+    withStore({ library: { valentin: { name: 'Valentin', aliases: [] } } }, meziverse => {
+        let heard = 0;
+        const off = onLibraryChange(() => { heard += 1; });
+
+        addAlias('Valentin', ' Silas ');
+        assert.deepEqual(meziverse.library.valentin.aliases, ['Silas']);
+        assert.equal(heard, 1, 'the cast strip hears the landing');
+
+        dropAlias('Valentin', 'Silas');
+        assert.deepEqual(meziverse.library.valentin.aliases, []);
+        assert.equal(heard, 2, 'and the removal too');
+        off();
+    });
+});
+
+test('an alias never claims a name the character already answers to', () => {
+    withStore({ library: { valentin: { name: 'Valentin', aliases: ['Silas'] } } }, meziverse => {
+        let heard = 0;
+        const off = onLibraryChange(() => { heard += 1; });
+
+        addAlias('Valentin', 'silas');
+        addAlias('Valentin', 'Valentin');
+        addAlias('Valentin', '   ');
+        addAlias('Nobody', 'Elijah');
+        assert.deepEqual(meziverse.library.valentin.aliases, ['Silas']);
+        assert.equal(heard, 0, 'nothing landed, so nothing redrew');
+        off();
+    });
+});
+
+test('the trip ends when its name lands - and only then', () => {
+    withStore({ library: { valentin: { name: 'Valentin', aliases: [] } } }, () => {
+        openLibraryForAlias('Silas');
+        addAlias('Valentin', 'Silas');
+        assert.equal(aliasIntentName(), '');
+
+        openLibraryForAlias('Silas');
+        addAlias('Valentin', 'Elijah');
+        assert.equal(aliasIntentName(), 'Silas', 'another name landing keeps the trip alive');
+    });
 });

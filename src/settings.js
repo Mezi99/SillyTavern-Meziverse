@@ -56,8 +56,9 @@ const DEFAULTS = {
     // How a spoken line wears faces - behind the Avatars master switch and
     // the speech bubbles' own gate. 'off' is today's bubble with no face,
     // 'simple' a round face in the bubble's gutter (the default),
-    // 'immersive' a full portrait band per line. A later 'cinematic' fits
-    // the same key.
+    // 'immersiveA' a dialogue band hugging its words on the speaker's side
+    // and 'immersiveB' one centred measure per band. A later 'cinematic'
+    // fits the same key; a stored 'immersive' migrates to 'immersiveA'.
     dialogueFaces: 'simple',
     // The reasoning block in the reading pane: the model's thinking as an
     // expandable block above the turn's prose. Off leaves the pane exactly
@@ -209,6 +210,12 @@ export function settings() {
         if (store.meziverse[key] === legacy) store.meziverse[key] = fresh;
     }
 
+    // The old single immersive band became two layouts; the full-width
+    // look is closest to Immersive A (boxes on their speaker's side).
+    if (store.meziverse.dialogueFaces === 'immersive') {
+        store.meziverse.dialogueFaces = 'immersiveA';
+    }
+
     return store.meziverse;
 }
 
@@ -264,17 +271,21 @@ export function speechFxOn() {
     return settings().speechFx !== false;
 }
 
-const DIALOGUE_FACE_MODES = ['off', 'simple', 'immersive'];
+const DIALOGUE_FACE_MODES = ['off', 'simple', 'immersiveA', 'immersiveB'];
 
 /**
- * How a spoken line wears faces: 'off', 'simple' or 'immersive'. The
- * Avatars switch is the master - off reads as 'off' whatever this says -
- * so "no images" is one flip away in both places.
+ * How a spoken line wears faces: 'off', 'simple', 'immersiveA' (the band
+ * hugs its words on the speaker's side) or 'immersiveB' (one centred
+ * measure). The Avatars switch is the master - off reads as 'off' whatever
+ * this says - so "no images" is one flip away in both places. A stored
+ * 'immersive' from before the split reads as 'immersiveA' (the migration
+ * in `settings()` also rewrites it on the store).
  */
 export function dialogueFaceMode() {
     if (!avatarsOn()) return 'off';
     const value = settings().dialogueFaces;
-    return DIALOGUE_FACE_MODES.includes(value) ? value : 'simple';
+    const mode = value === 'immersive' ? 'immersiveA' : value;
+    return DIALOGUE_FACE_MODES.includes(mode) ? mode : 'simple';
 }
 
 /** Whether the reasoning block shows above the reading pane's prose. */
