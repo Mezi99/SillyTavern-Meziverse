@@ -13,7 +13,7 @@ import { icon } from './icons.js';
 import { notify } from './notify.js';
 import { avatarsOn, entryOn, modeOn } from './settings.js';
 import { closeFloats, placeFloat, registerFloat } from './floats.js';
-import { chooseLibraryFor, disengageLibraryFor, ensureInLibrary, groupCastLive, libraryCandidatesFor, matchLibraryName, onLibraryChange, openLibrary, openLibraryNewFor, posterStateFor, resolvePosterPortrait, speechFaceFor } from './library.js';
+import { chooseLibraryFor, disengageLibraryFor, groupCastLive, libraryCandidatesFor, matchLibraryName, onLibraryChange, openLibrary, openLibraryForAlias, openLibraryNewFor, posterStateFor, resolvePosterPortrait, speechFaceFor } from './library.js';
 import { imageFileName, prepareImage } from './imageprep.js';
 
 const FALLBACK_FLOOR = 180;
@@ -561,7 +561,7 @@ function poster(name, path) {
         ? `${name} is not using the library in this chat`
         : engaged
             ? `${state} is in the Character Library \u2014 choose which shows`
-            : `Add ${name} to the Character Library`;
+            : `Add ${name} to the library, or use an existing character`;
     library.setAttribute('aria-label', library.title);
     library.append(icon('mz-i-library'));
 
@@ -661,6 +661,13 @@ function onChooserClick(event) {
         return;
     }
 
+    if (event.target.closest('[data-mz-chooser-alias]')) {
+        event.preventDefault();
+        closeChooser();
+        openLibraryForAlias(name);
+        return;
+    }
+
     const open = event.target.closest('[data-mz-chooser-open]');
     if (open) {
         event.preventDefault();
@@ -683,7 +690,11 @@ function openChooser(button, name, match, candidates) {
 
     const head = document.createElement('p');
     head.className = 'mz-chooser-head';
-    head.textContent = off ? `"${name}" is not using the library:` : `"${name}" shows:`;
+    head.textContent = off
+        ? `"${name}" is not using the library:`
+        : candidates.length
+            ? `"${name}" shows:`
+            : `"${name}" is not in the library:`;
     menu.append(head);
 
     for (const record of candidates) {
@@ -696,14 +707,17 @@ function openChooser(button, name, match, candidates) {
         menu.append(row);
     }
 
-    // The library on/off for this one name, this one chat.
-    const toggle = document.createElement('button');
-    toggle.type = 'button';
-    toggle.className = 'mz-chooser-row is-quiet';
-    toggle.dataset.mzLibEngage = off ? 'on' : 'off';
-    toggle.append(icon(off ? 'mz-i-check' : 'mz-i-eye-off'), document.createTextNode(
-        off ? 'Use the library for this one again' : 'Don\u2019t use the library for this one'));
-    menu.append(toggle);
+    // The library on/off for this one name, this one chat - only where
+    // there is something to switch off or back on.
+    if (off || candidates.length) {
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'mz-chooser-row is-quiet';
+        toggle.dataset.mzLibEngage = off ? 'on' : 'off';
+        toggle.append(icon(off ? 'mz-i-check' : 'mz-i-eye-off'), document.createTextNode(
+            off ? 'Use the library for this one again' : 'Don\u2019t use the library for this one'));
+        menu.append(toggle);
+    }
 
     const add = document.createElement('button');
     add.type = 'button';
@@ -711,6 +725,14 @@ function openChooser(button, name, match, candidates) {
     add.dataset.mzChooserAdd = '';
     add.append(icon('mz-i-plus'), document.createTextNode('Add as new character\u2026'));
     menu.append(add);
+
+    // The other save: this name answers to someone already saved.
+    const alias = document.createElement('button');
+    alias.type = 'button';
+    alias.className = 'mz-chooser-row';
+    alias.dataset.mzChooserAlias = '';
+    alias.append(icon('mz-i-bond'), document.createTextNode('Use an existing character\u2026'));
+    menu.append(alias);
 
     if (match?.record) {
         const page = document.createElement('button');
@@ -760,17 +782,12 @@ function onClick(event) {
         const match = matchLibraryName(name);
         const candidates = libraryCandidatesFor(name)?.candidates || [];
 
-        // Someone answers to this name (seen or disengaged): the chooser
-        // decides - swap, on/off, add another, or walk into the page.
-        if (candidates.length) {
-            openChooser(library, name, match, candidates);
-            return;
-        }
-
-        // Saving promotes whatever portrait this chat carries, so the
-        // library shows the face the user already picked.
-        const record = ensureInLibrary(name, castImages()[castKey(name)] || '');
-        if (record) notify(`Saved ${name} to the Character Library.`, 'success');
+        // The chooser always decides - swap, on/off, add as new, use an
+        // existing character, or walk into the page. A fresh name gets
+        // the same menu: its two saves deserve a choice. (Adding as new
+        // promotes whatever portrait this chat carries, so the library
+        // shows the face the user already picked.)
+        openChooser(library, name, match, candidates);
         return;
     }
 
