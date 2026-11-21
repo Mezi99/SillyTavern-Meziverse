@@ -653,23 +653,29 @@
 }
 
 /* The sprite stands in front of the box: no plate, no borders around it
-   - just the framed square, bottom-anchored and inset a breath from the
-   band's edge. The window stays SQUARE: the crop maths below turns the
-   frame's width fractions into the window's and needs the shape. */
+   - just the framed square, stuck flush to the band's own side so the
+   crop's cut runs along the box edge, and easing into the wash over the
+   last 14px on its far side so the figure reads as tied in, not sliced.
+   The window stays SQUARE: the crop maths below turns the frame's width
+   fractions into the window's and needs the shape. */
 .mz-band-port {
     position: absolute;
     bottom: 0;
-    left: 14px;
+    left: 0;
     z-index: 1;
     width: var(--av);
     height: var(--av);
     overflow: hidden;
     pointer-events: none;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 14px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 14px), transparent);
 }
 
 .mz-band.is-r .mz-band-port {
     left: auto;
-    right: 14px;
+    right: 0;
+    -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 14px), transparent);
+    mask-image: linear-gradient(to left, #000 calc(100% - 14px), transparent);
 }
 
 /* The crop is the face frame itself - the very square the user drew -
@@ -692,15 +698,15 @@
     z-index: 0;
 }
 
-/* Words start past the sprite on its side; a text-only band speaks
-   edge to edge. */
+/* Words start past the sprite on its side, a 16px breath after the
+   window; a text-only band speaks edge to edge. */
 .mz-band-port + .mz-band-txt {
-    padding-inline-start: calc(var(--av) + 30px);
+    padding-inline-start: calc(var(--av) + 16px);
 }
 
 .mz-band.is-r .mz-band-port + .mz-band-txt {
     padding-inline-start: 8px;
-    padding-inline-end: calc(var(--av) + 30px);
+    padding-inline-end: calc(var(--av) + 16px);
 }
 
 .mz-band-nm {
