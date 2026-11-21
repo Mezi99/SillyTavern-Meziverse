@@ -23,15 +23,20 @@ The avatar module: the characters get a library of their own — who a name is, 
 - The picture promoted into the library fills the `neutral` expression slot too — the easy way to save a character with a single image — and never clobbers a real expression set's neutral. The default-image preview fills its plate like the posters and cards now (a landscape source no longer floats small), while a looked-at sprite still shows whole.
 
 ### Part 2 · Expressions in the narration
-- **Dialogue faces** — three wardrobes for a spoken line, behind one switch: **Off** (today's quiet bubble, no face), **Simple** (a round face in the bubble's gutter — the default) and **Immersive** (a full portrait band per line, speakers alternating sides, the bust bleeding above the band). The **Avatars** switch stays the master: off turns every face off, and the library's top-bar button is never gated. A speaker with no picture at all keeps the furniture — the monogram circle, or a text-only band with a thin accent edge.
+- **Dialogue faces** — three wardrobes for a spoken line, behind one switch: **Off** (today's quiet bubble, no face), **Simple** (a round face in the bubble's gutter — the default) and **Immersive** (a full dialogue band per line, speakers alternating sides, the sprite standing in front of the band). The **Avatars** switch stays the master: off turns every face off, and the library's top-bar button is never gated. A speaker with no picture at all keeps the furniture — the monogram circle, or a text-only band with a thin accent edge.
 - **The face follows the expression.** Every line's `expression` picks its sprite through one pure chain — the exact label, its nearest core family (a static table: annoyance→anger, embarrassment→nervousness→fear, caring→love→joy…), the `neutral` slot, then the default image. No calls, no waiting: sprite folders are prefetched and cached. A character outside the library wears their chat-file face for every expression.
 - **Tone and expression, finally separate.** `tone` stays free text delivery ("low, certain") and `expression` carries the 28-label sprite vocabulary. Old tags keep their meaning: a `mood` that is a label reads as the expression, anything else stays a tone. And attribute order no longer decides any field.
 - **"Frame the face"** — a draggable square over the default image with live previews (speech bubble, small, expression board) and the same frame on the character's sprites. One frame per character covers the portrait and every sprite; "Find automatically" guesses it from the art's own transparency. No face-detection library — they are weak on illustrated art.
 - **Light sprites, intact art.** A sprite upload shrinks to 1024px and re-encodes WebP with its transparency — a set runs to dozens of files — while art already small and WebP stays byte-for-byte as it was made.
 - **Posters wear the line.** Each poster shows that character's latest line's expression in the reply (neutral when they have not spoken), updating as each speech tag completes. Cut-out sprite art stands free on the strip; a photo keeps the cover crop.
 
+
+### The polish round - the faces settle in
+- The simple-mode circle grew to 50px, measured against the type itself: it starts at the name label and ends exactly where a one-line dialogue ends, so the face and the first line of words stand on the same floor.
+- The immersive band became the old murder-mystery dialogue box (the designer's review, tuned with the owner): a wash box with hairlines top and bottom and the accent strongest at the speaker's side, the sprite standing in front of it - a compact 96px square (88px under 600px), stuck flush to the box's side, its head rising 18px above the box at minimum dialogue and the box growing around it as the words grow. The window's far edge eases into the wash over 14px, so a cropped figure reads as tied in, never sliced. Fonts stay story-size in all three modes.
+- "Frame the face" previews tell the truth now: the Expression board shows exactly the square that was dragged (head and chest filling the window, no empty sky), the sprite chips share the one crop rule with the story, and dragging the square no longer skews the previews (the image's aspect survives every repaint).
 ### Notes
-- `manifest.json` matches; the synthetic suite stands at 352 tests. Landed on the `Avatar_Module` branch — the merge to `main` lands at the module's wrap-up.
+- `manifest.json` matches; the synthetic suite stands at 352 tests. Merged to `main` as v2.11.0.
 
 ## 2.10.0 - 2026-11-18
 
