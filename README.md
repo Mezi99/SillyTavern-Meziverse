@@ -6,6 +6,9 @@ Meziverse is an extension, not a fork. SillyTavern stays the engine and the stor
 
  ## What you need to run Meziverse
  Nothing extra, just SillyTavern! Install extension, load you  favorite preset and card, open Meziverse and play!
+ For full features:
+ - ST Image generation enabled
+ - A YouTube API key (free)
  
 <img width="1919" height="1070" alt="Screenshot 2026-11-18 at 16-15-01 SillyTavern" src="https://github.com/user-attachments/assets/13ba4034-97ec-4247-953b-3f0c59917571" />
 <img width="1911" height="1071" alt="Screenshot 2026-11-18 at 16-12-06 SillyTavern" src="https://github.com/user-attachments/assets/e36c9838-fc9a-492e-9122-fc97bda81b8a" />
