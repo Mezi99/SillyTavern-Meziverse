@@ -592,6 +592,7 @@ let dragStart = null;
 let resizeQueued = false;
 let bgStage = null;
 let bgFadeTimer = 0;
+let bgFadeStartHandler = null;
 let bgFadeSeq = 0;
 let bgPending = null;
 let bgShownUrl = '';
@@ -1687,6 +1688,42 @@ function paintBackground(url, useSt) {
 }
 
 /**
+ * Retires the current fade listener/timer and applies whichever picture the
+ * latest swap left pending. `seq` keeps a late event from an older fade from
+ * painting over a newer one.
+ */
+function finishBackgroundSwap(seq) {
+    if (seq !== bgFadeSeq) return;
+
+    if (bgFadeTimer) clearTimeout(bgFadeTimer);
+    bgFadeTimer = 0;
+    if (bgFadeStartHandler) {
+        bgStage?.removeEventListener('transitionstart', bgFadeStartHandler);
+        bgFadeStartHandler = null;
+    }
+
+    const target = bgPending || null;
+    if (target) paintBackground(target.url, target.useSt);
+    bgPending = null;
+
+    // Let the new picture settle for one frame before fading it in.
+    requestAnimationFrame(() => {
+        if (seq === bgFadeSeq) bgStage?.classList.remove('is-fading');
+    });
+}
+
+function scheduleBackgroundSwap(seq, delay = backgroundFadeDelay()) {
+    if (seq !== bgFadeSeq) return;
+    bgFadeTimer = setTimeout(() => finishBackgroundSwap(seq), delay);
+}
+
+function onBackgroundFadeStart(event, seq) {
+    if (seq !== bgFadeSeq) return;
+    if (event.target !== bgStage || event.propertyName !== 'opacity') return;
+    finishBackgroundSwap(seq);
+}
+
+/**
  * Fades the scene out, paints the accepted picture while it is hidden, then
  * fades it back in. Rapid swaps (a turn shuffle walking several backgrounds)
  * retire the pending paint and restart the fade from wherever opacity is now,
@@ -1698,6 +1735,13 @@ function fadeBackgroundTo(url, useSt) {
     if (bgPending && bgPending.url === url && bgPending.useSt === useSt) return;
     if (!bgPending && useSt === bgStPainted && url === bgShownUrl) return;
 
+    if (bgFadeTimer) clearTimeout(bgFadeTimer);
+    bgFadeTimer = 0;
+    if (bgFadeStartHandler) {
+        bgStage?.removeEventListener('transitionstart', bgFadeStartHandler);
+        bgFadeStartHandler = null;
+    }
+
     bgPending = { url, useSt };
     if (!bgStage) {
         paintBackground(url, useSt);
@@ -1705,31 +1749,23 @@ function fadeBackgroundTo(url, useSt) {
         return;
     }
 
-    if (bgFadeTimer) clearTimeout(bgFadeTimer);
-    bgFadeTimer = 0;
     const seq = ++bgFadeSeq;
-    bgStage.classList.add('is-fading');
+    const wasFading = bgStage.classList.contains('is-fading');
 
     // ST's forced-background emit can hold the main thread past the fade's
-    // whole length. Waiting for a frame before starting the timer guarantees
-    // the faded-out state actually gets painted before the swap lands.
-    requestAnimationFrame(() => {
-        if (seq !== bgFadeSeq) return;
+    // whole length. Start the swap clock only when the browser reports that
+    // the opacity fade-out has actually begun, so a blocked emit cannot paint
+    // the new picture while the old one is still on screen. A swap that lands
+    // mid-fade has no new transitionstart to wait for; reduced motion skips it.
+    if (wasFading || backgroundFadeDelay() === 0) {
+        scheduleBackgroundSwap(seq, 0);
+        return;
+    }
 
-        bgFadeTimer = setTimeout(() => {
-            bgFadeTimer = 0;
-            if (seq !== bgFadeSeq) return;
-
-            const target = bgPending || { url, useSt };
-            paintBackground(target.url, target.useSt);
-            bgPending = null;
-
-            // Let the new picture settle for one frame before fading it in.
-            requestAnimationFrame(() => {
-                if (seq === bgFadeSeq) bgStage?.classList.remove('is-fading');
-            });
-        }, backgroundFadeDelay());
-    });
+    const handler = event => onBackgroundFadeStart(event, seq);
+    bgFadeStartHandler = handler;
+    bgStage.addEventListener('transitionstart', handler);
+    bgStage.classList.add('is-fading');
 }
 
 /**
