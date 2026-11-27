@@ -1,6 +1,6 @@
 # Meziverse — how it works
 
-Technical notes for version 2.11.4. Written for whoever picks this up next - including future us.
+Technical notes for version 2.11.4, landed on `main`. Written for whoever picks this up next - including future us.
 
 ## The one rule: Ride SillyTavern
 

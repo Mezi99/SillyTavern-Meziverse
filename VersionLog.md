@@ -11,7 +11,7 @@ Background changes now crossfade smoothly instead of dipping through the frame's
 - Reduced motion (setting or OS) sets `--mz-bg-xfade: 0ms`; JS reads the same token and swaps instantly. A fallback timer covers hidden tabs that skip `transitionend`.
 
 ### Notes
-- `manifest.json` matches; the synthetic suite stands at 366 tests. Landed on `Background_Module`.
+- `manifest.json` matches; the synthetic suite stands at 366 tests. Landed on `main` from `Background_Module`.
 
 ## 2.11.3 - 2026-11-27
 
