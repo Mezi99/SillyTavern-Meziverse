@@ -1823,8 +1823,13 @@ async function fadeBackgroundTo(url, useSt) {
         return;
     }
 
-    back.style.opacity = '1';
+    // The transition lives on .is-in, so commit that class while the incoming
+    // slot is still at opacity 0. Changing opacity in the same style pass as
+    // adding the class swaps instantly in Chromium; a layout read here gives
+    // the fade a before-state that already has the transition.
     back.classList.add('is-in');
+    void back.offsetWidth;
+    back.style.opacity = '1';
 }
 
 /**
