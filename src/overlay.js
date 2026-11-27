@@ -1710,19 +1710,26 @@ function fadeBackgroundTo(url, useSt) {
     const seq = ++bgFadeSeq;
     bgStage.classList.add('is-fading');
 
-    bgFadeTimer = setTimeout(() => {
-        bgFadeTimer = 0;
+    // ST's forced-background emit can hold the main thread past the fade's
+    // whole length. Waiting for a frame before starting the timer guarantees
+    // the faded-out state actually gets painted before the swap lands.
+    requestAnimationFrame(() => {
         if (seq !== bgFadeSeq) return;
 
-        const target = bgPending || { url, useSt };
-        paintBackground(target.url, target.useSt);
-        bgPending = null;
+        bgFadeTimer = setTimeout(() => {
+            bgFadeTimer = 0;
+            if (seq !== bgFadeSeq) return;
 
-        // Let the new picture settle for one frame before fading it in.
-        requestAnimationFrame(() => {
-            if (seq === bgFadeSeq) bgStage?.classList.remove('is-fading');
-        });
-    }, backgroundFadeDelay());
+            const target = bgPending || { url, useSt };
+            paintBackground(target.url, target.useSt);
+            bgPending = null;
+
+            // Let the new picture settle for one frame before fading it in.
+            requestAnimationFrame(() => {
+                if (seq === bgFadeSeq) bgStage?.classList.remove('is-fading');
+            });
+        }, backgroundFadeDelay());
+    });
 }
 
 /**

@@ -5,7 +5,7 @@
 Background changes now arrive on a short fade instead of appearing all at once.
 
 ### Scene fade
-- `FORCE_SET_BACKGROUND` (generated changes and read-only turn shuffles alike) fades the scene wrapper out for 120ms, writes the new `--mz-st-bg` while the scene is hidden, then fades it in for 180ms. The parent layers keep their `background-image: var(--mz-st-bg)`; only the wrapper's opacity moves, leaving memory mode's filter/opacity/transform behavior on the layers alone.
+- `FORCE_SET_BACKGROUND` (generated changes and read-only turn shuffles alike) fades the scene wrapper out for 120ms, writes the new `--mz-st-bg` while the scene is hidden, then fades it in for 180ms. The swap waits for one rendered frame at the faded-out state, so ST's blocking event emit can't skip the fade-out. The parent layers keep their `background-image: var(--mz-st-bg)`; only the wrapper's opacity moves, leaving memory mode's filter/opacity/transform behavior on the layers alone.
 - Rapid swaps retire the pending paint and restart the fade from the current opacity, so shuffling through turns with different backgrounds never lands a stale image. Reduced motion (setting or OS) makes the swap instant.
 - The authored-url guards, inline-only `#bg1` probe and "unusable stranger keeps the last good picture" rule are unchanged. No response-length or watcher plumbing changed.
 
