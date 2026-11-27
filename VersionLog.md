@@ -1,5 +1,18 @@
 # Meziverse — version log
 
+## 2.11.4 - 2026-11-27
+
+Background changes now crossfade smoothly instead of dipping through the frame's own colour.
+
+### Real crossfade
+- Two stacked `.mz-bgstage` slots hold one picture each. The incoming picture is decoded first, then its slot fades in over the still fully opaque outgoing slot (800ms), so the blend never darkens mid-swap and an undecoded image can never pop in. When the fade ends the old slot is cleared and the roles swap, so only one image is held.
+- `--mz-st-bg` and `.is-bg-st` now live on the slot; the `.mz-bg` / `.mz-bgsoft` layers inside still read `background-image: var(--mz-st-bg)`, so memory mode's filter/scale rules apply to both stages during the fade.
+- A swap arriving mid-fade queues only the latest, so a fast turn shuffle never lands a stale picture or pops mid-fade. First paint, chat switches and background-source changes paint the front slot directly with ST's current background (or ST's default) - no fade from nothing, and the new-chat fallback is unchanged.
+- Reduced motion (setting or OS) sets `--mz-bg-xfade: 0ms`; JS reads the same token and swaps instantly. A fallback timer covers hidden tabs that skip `transitionend`.
+
+### Notes
+- `manifest.json` matches; the synthetic suite stands at 366 tests. Landed on `Background_Module`.
+
 ## 2.11.3 - 2026-11-27
 
 Background changes now arrive on a short fade instead of appearing all at once.

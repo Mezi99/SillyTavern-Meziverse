@@ -87,8 +87,7 @@
     --mz-dur-fast: 120ms;
     --mz-dur: 180ms;
     --mz-dur-mark: 300ms;
-    --mz-bg-fade-out: 120ms;
-    --mz-bg-fade-in: 180ms;
+    --mz-bg-xfade: 800ms;
     --mz-ease: cubic-bezier(.22, .68, .28, 1);
 
     /* layers, inside the root only */

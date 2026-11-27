@@ -35,10 +35,7 @@ import { closeLibrary, isLibraryOpen, libraryUiClosed, mountLibrary, openLibrary
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr, notify } from './notify.js';
 
-const VERSION = '2.11.3';
-
-/* Keep in step with --mz-bg-fade-out in css/00-primitives.css. */
-const BG_FADE_OUT_MS = 120;
+const VERSION = '2.11.4';
 
 const PANE_DEFAULT = 300;
 const LOG_W_DEFAULT = 720;
@@ -71,9 +68,9 @@ const svg = name => `<svg class="ico" aria-hidden="true"><use href="#mz-i-${name
 
 const FRAME_HTML = `
 <div class="mz-frame" role="dialog" aria-modal="true" aria-label="Meziverse">
-    <div class="mz-bgstage" aria-hidden="true">
-        <div class="mz-bg" aria-hidden="true"></div>
-        <div class="mz-bgsoft" aria-hidden="true"></div>
+    <div class="mz-bgstack" aria-hidden="true">
+        <div class="mz-bgstage is-top" data-slot="a"><div class="mz-bg"></div><div class="mz-bgsoft"></div></div>
+        <div class="mz-bgstage" data-slot="b"><div class="mz-bg"></div><div class="mz-bgsoft"></div></div>
     </div>
     <div class="mz-weather" aria-hidden="true"></div>
     <div class="mz-scrim" aria-hidden="true"></div>
@@ -590,11 +587,15 @@ let restoreToastr = null;
 let desiredPane = PANE_DEFAULT;
 let dragStart = null;
 let resizeQueued = false;
-let bgStage = null;
-let bgFadeTimer = 0;
-let bgFadeStartHandler = null;
+let bgStages = [];
+let bgFront = 0;
+let bgRunning = false;
+let bgQueued = null;
 let bgFadeSeq = 0;
-let bgPending = null;
+let bgFadeTimer = 0;
+let bgFadeEndHandler = null;
+let bgFadeStage = null;
+let bgFadeTarget = null;
 let bgShownUrl = '';
 let bgStPainted = false;
 
@@ -641,7 +642,8 @@ export function mount() {
     mountConnections(root.querySelector('[data-mz="connections-host"]'));
 
     frame = root.querySelector('.mz-frame');
-    bgStage = root.querySelector('.mz-bgstage');
+    bgStages = [...root.querySelectorAll('.mz-bgstage')];
+    bgFront = 0;
     els = {
         chatName: root.querySelector('[data-mz="chatname"]'),
         chatNameText: root.querySelector('[data-mz="chatname"] b'),
@@ -834,7 +836,7 @@ export function open() {
     els.logButton.setAttribute('aria-expanded', 'false');
 
     refreshChatName();
-    applyBackground();
+    applyBackground(undefined, true);
     applyProseColors();
     applyPaneOpacity();
     applyPaneBlur();
@@ -847,7 +849,7 @@ export function open() {
     // turn's recorded picture re-asserted (swap-only, free). Nothing is
     // asked or drawn on opening: the watcher is for new turns, and an
     // opening that wants a picture presses the brush.
-    uiOpened().finally(() => applyBackground());
+    uiOpened().finally(() => applyBackground(undefined, true));
     musicUiOpened();
     mapUiOpened();
     transcript.refresh({ followLatest: true });
@@ -1661,111 +1663,168 @@ function applyCueMeanwhile() {
     });
 }
 
-/* The fade-out shrinks to an instant swap under either reduced-motion hint,
-   matching the CSS transition-duration override in css/20-shell.css. */
-function backgroundFadeDelay() {
-    if (root?.dataset.mzMotion === 'reduced') return 0;
-    if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) return 0;
-    return BG_FADE_OUT_MS;
+/* The crossfade length lives in CSS so the animation and the JS fallback
+   timer cannot disagree. Reduced motion sets the token to 0 on #mz-root. */
+function bgXfadeMs() {
+    const raw = frame ? getComputedStyle(frame).getPropertyValue('--mz-bg-xfade') : '';
+    const ms = Number.parseFloat(raw);
+    return Number.isFinite(ms) ? ms : 800;
 }
 
-/* The picture stays where it always was: the parent's background-image reads
-   --mz-st-bg. Only the wrapper fades, so memory mode's filter/opacity/transform
-   rules on the layers themselves are untouched. */
-function paintBackground(url, useSt) {
-    if (!frame) return;
+/* Decode before fading: an undecoded image can land after the fade has begun
+   and pop into view. A broken or stalled picture must not hold the swap. */
+function decodeCssUrl(css) {
+    const match = /^url\(\s*(['"]?)(.*?)\1\s*\)$/i.exec(css || '');
+    if (!match) return Promise.resolve();
+    const image = new Image();
+    image.src = match[2];
+    const decoded = typeof image.decode === 'function' ? image.decode() : Promise.resolve();
+    return Promise.race([
+        decoded.catch(() => {}),
+        new Promise(resolve => setTimeout(resolve, 4000)),
+    ]);
+}
+
+/* The picture now lives on the stage, so each slot carries its own variable.
+   The frame keeps only its own gradient as the final base. */
+function paintStage(stage, url, useSt) {
+    if (!stage) return;
     if (useSt && url) {
-        frame.style.setProperty('--mz-st-bg', url);
-        frame.classList.add('is-bg-st');
-        bgShownUrl = url;
-        bgStPainted = true;
+        stage.style.setProperty('--mz-st-bg', url);
+        stage.classList.add('is-bg-st');
     } else {
-        frame.style.removeProperty('--mz-st-bg');
-        frame.classList.remove('is-bg-st');
-        bgShownUrl = '';
-        bgStPainted = false;
+        stage.style.removeProperty('--mz-st-bg');
+        stage.classList.remove('is-bg-st');
     }
+}
+
+/* Retires a running fade (including one still decoding) so an authoritative
+   repaint can paint the front stage directly. */
+function retireBackgroundFade() {
+    bgFadeSeq += 1;
+    if (bgFadeTimer) clearTimeout(bgFadeTimer);
+    bgFadeTimer = 0;
+    if (bgFadeEndHandler && bgFadeStage) bgFadeStage.removeEventListener('transitionend', bgFadeEndHandler);
+    bgFadeEndHandler = null;
+    bgFadeStage = null;
+    bgFadeTarget = null;
+    bgRunning = false;
+    bgQueued = null;
+}
+
+/* First paint, chat switch and setting changes show ST's current background
+   at once - there is no previous picture to crossfade from. */
+function setBackgroundImmediate(url, useSt) {
+    if (!bgStages.length) return;
+
+    const wasRunning = bgRunning;
+    retireBackgroundFade();
+
+    const front = bgStages[bgFront];
+    if (!wasRunning && useSt === bgStPainted && url === bgShownUrl && front.classList.contains('is-top')) return;
+
+    const back = bgStages[1 - bgFront];
+    paintStage(front, url, useSt);
+    front.classList.add('is-top');
+    front.classList.remove('is-in');
+    front.style.opacity = '';
+    back.classList.remove('is-top', 'is-in');
+    back.style.opacity = '0';
+    paintStage(back, '', false);
+
+    bgShownUrl = useSt && url ? url : '';
+    bgStPainted = !!(useSt && url);
 }
 
 /**
- * Retires the current fade listener/timer and applies whichever picture the
- * latest swap left pending. `seq` keeps a late event from an older fade from
- * painting over a newer one.
+ * Crossfades to a new picture: the incoming stage fades in over the still
+ * fully opaque outgoing stage, so the blend never dips through the frame's
+ * own colour. Rapid swaps queue only the latest, and decode before the fade
+ * starts so the picture cannot pop in late.
  */
-function finishBackgroundSwap(seq) {
-    if (seq !== bgFadeSeq) return;
+async function fadeBackgroundTo(url, useSt) {
+    if (!frame || bgStages.length < 2) return;
 
-    if (bgFadeTimer) clearTimeout(bgFadeTimer);
-    bgFadeTimer = 0;
-    if (bgFadeStartHandler) {
-        bgStage?.removeEventListener('transitionstart', bgFadeStartHandler);
-        bgFadeStartHandler = null;
-    }
+    if (!bgQueued && !bgRunning && useSt === bgStPainted && url === bgShownUrl) return;
 
-    const target = bgPending || null;
-    if (target) paintBackground(target.url, target.useSt);
-    bgPending = null;
-
-    // Let the new picture settle for one frame before fading it in.
-    requestAnimationFrame(() => {
-        if (seq === bgFadeSeq) bgStage?.classList.remove('is-fading');
-    });
-}
-
-function scheduleBackgroundSwap(seq, delay = backgroundFadeDelay()) {
-    if (seq !== bgFadeSeq) return;
-    bgFadeTimer = setTimeout(() => finishBackgroundSwap(seq), delay);
-}
-
-function onBackgroundFadeStart(event, seq) {
-    if (seq !== bgFadeSeq) return;
-    if (event.target !== bgStage || event.propertyName !== 'opacity') return;
-    finishBackgroundSwap(seq);
-}
-
-/**
- * Fades the scene out, paints the accepted picture while it is hidden, then
- * fades it back in. Rapid swaps (a turn shuffle walking several backgrounds)
- * retire the pending paint and restart the fade from wherever opacity is now,
- * so no stale image lands and no new picture pops in mid-fade.
- */
-function fadeBackgroundTo(url, useSt) {
-    if (!frame) return;
-
-    if (bgPending && bgPending.url === url && bgPending.useSt === useSt) return;
-    if (!bgPending && useSt === bgStPainted && url === bgShownUrl) return;
-
-    if (bgFadeTimer) clearTimeout(bgFadeTimer);
-    bgFadeTimer = 0;
-    if (bgFadeStartHandler) {
-        bgStage?.removeEventListener('transitionstart', bgFadeStartHandler);
-        bgFadeStartHandler = null;
-    }
-
-    bgPending = { url, useSt };
-    if (!bgStage) {
-        paintBackground(url, useSt);
-        bgPending = null;
+    // A swap during a fade waits its turn; only the newest one is kept, so a
+    // turn shuffle never paints a stale picture or pops mid-fade.
+    if (bgRunning) {
+        // The deferred re-read after a forced event usually resolves to the
+        // same picture this fade already carries; don't queue a second fade.
+        if (bgFadeTarget && bgFadeTarget.url === url && bgFadeTarget.useSt === useSt) return;
+        if (bgQueued && bgQueued.url === url && bgQueued.useSt === useSt) return;
+        bgQueued = { url, useSt };
         return;
     }
 
+    bgRunning = true;
+    bgFadeTarget = { url, useSt };
     const seq = ++bgFadeSeq;
-    const wasFading = bgStage.classList.contains('is-fading');
 
-    // ST's forced-background emit can hold the main thread past the fade's
-    // whole length. Start the swap clock only when the browser reports that
-    // the opacity fade-out has actually begun, so a blocked emit cannot paint
-    // the new picture while the old one is still on screen. A swap that lands
-    // mid-fade has no new transitionstart to wait for; reduced motion skips it.
-    if (wasFading || backgroundFadeDelay() === 0) {
-        scheduleBackgroundSwap(seq, 0);
+    if (useSt && url) await decodeCssUrl(url);
+    if (seq !== bgFadeSeq) return; // an immediate repaint cancelled us
+
+    const front = bgStages[bgFront];
+    const back = bgStages[1 - bgFront];
+
+    paintStage(back, url, useSt);
+
+    // Hide the incoming slot before it takes the top layer. Forcing layout
+    // commits opacity 0 with no transition; clearing the override then lets
+    // the .is-in transition run from 0 to 1 on the next style recalc.
+    back.classList.remove('is-in');
+    back.style.transition = 'none';
+    back.style.opacity = '0';
+    void back.offsetWidth;
+    back.style.transition = '';
+    back.classList.add('is-top');
+    front.classList.remove('is-top');
+
+    const duration = bgXfadeMs();
+    const finish = () => {
+        if (!bgRunning || seq !== bgFadeSeq) return;
+
+        if (bgFadeEndHandler && bgFadeStage) bgFadeStage.removeEventListener('transitionend', bgFadeEndHandler);
+        bgFadeEndHandler = null;
+        bgFadeStage = null;
+        bgFadeTarget = null;
+        if (bgFadeTimer) clearTimeout(bgFadeTimer);
+        bgFadeTimer = 0;
+
+        back.classList.remove('is-in');
+        back.style.transition = '';
+        back.style.opacity = '';
+        front.classList.remove('is-top', 'is-in');
+        front.style.opacity = '0';
+        paintStage(front, '', false);
+
+        bgFront = 1 - bgFront;
+        bgShownUrl = useSt && url ? url : '';
+        bgStPainted = !!(useSt && url);
+        bgRunning = false;
+
+        const next = bgQueued;
+        bgQueued = null;
+        if (next && !(next.useSt === bgStPainted && next.url === bgShownUrl)) {
+            fadeBackgroundTo(next.url, next.useSt);
+        }
+    };
+    const onEnd = event => {
+        if (event.target === back && event.propertyName === 'opacity') finish();
+    };
+    bgFadeEndHandler = onEnd;
+    bgFadeStage = back;
+    back.addEventListener('transitionend', onEnd);
+    bgFadeTimer = setTimeout(finish, duration + 200); // hidden tabs can skip transitionend
+
+    if (duration === 0) {
+        finish();
         return;
     }
 
-    const handler = event => onBackgroundFadeStart(event, seq);
-    bgFadeStartHandler = handler;
-    bgStage.addEventListener('transitionstart', handler);
-    bgStage.classList.add('is-fading');
+    back.style.opacity = '1';
+    back.classList.add('is-in');
 }
 
 /**
@@ -1780,7 +1839,7 @@ function fadeBackgroundTo(url, useSt) {
  * read, poison to put back into CSS, where one bad substitution blanks the
  * whole scene. `sceneUrl` vets every candidate.
  */
-function applyBackground(forcedUrl) {
+function applyBackground(forcedUrl, immediate = false) {
     const useSt = settings().background === 'st';
     root.querySelectorAll('[data-mz-pick-bg]').forEach(button => {
         const isOn = button.dataset.mzPickBg === (useSt ? 'st' : 'none');
@@ -1789,7 +1848,8 @@ function applyBackground(forcedUrl) {
     });
 
     if (!useSt) {
-        fadeBackgroundTo('', false);
+        if (immediate) setBackgroundImmediate('', false);
+        else fadeBackgroundTo('', false);
         return;
     }
 
@@ -1804,7 +1864,8 @@ function applyBackground(forcedUrl) {
     // falls through: SillyTavern's own default first, then the procedural
     // scene. The stage is never a black hole.
     const shown = image || sceneUrl(stDefaultBackground(), document.baseURI);
-    fadeBackgroundTo(shown, true);
+    if (immediate) setBackgroundImmediate(shown, true);
+    else fadeBackgroundTo(shown, true);
 }
 
 /* ---------- full screen ---------- */
@@ -2369,7 +2430,7 @@ function openSettings() {
     transcript.closeLog(false);
     frame.classList.add('is-settings-open');
     els.sheet.setAttribute('aria-hidden', 'false');
-    applyBackground();
+    applyBackground(undefined, true);
     applyMap();
     // The record may never have been derived (the map has not drawn yet):
     // ask for it now so the sheet never shows an empty room.
@@ -2442,7 +2503,7 @@ function wireActions() {
         const background = event.target.closest('[data-mz-pick-bg]');
         if (background) {
             settings().background = background.dataset.mzPickBg;
-            applyBackground();
+            applyBackground(undefined, true);
             saveSettings();
             return;
         }
@@ -2962,9 +3023,9 @@ function wireKeys() {
 /* ---------- SillyTavern events ---------- */
 
 function wireEvents() {
-    const refresh = () => {
+    const refresh = (immediate = false) => {
         refreshChatName();
-        applyBackground();
+        applyBackground(undefined, immediate);
     };
 
     // A resize can wrap the place onto two lines, which moves the cast stage.
@@ -2975,14 +3036,14 @@ function wireEvents() {
 
     on('CHAT_CHANGED', () => {
         if (isOpen()) {
-            refresh();
+            refresh(true);
             refreshMenu();
             closeMenu();
         }
     });
     on('CHAT_CREATED', () => {
         if (isOpen()) {
-            refresh();
+            refresh(true);
             refreshMenu();
             closeMenu();
         }

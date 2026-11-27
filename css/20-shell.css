@@ -120,21 +120,31 @@ body.mz-open .popup { z-index: 9500 !important; }
    glass above it tints and needs no backdrop-filter - Firefox's
    compositor samples those wrong and washes the page's grey over the
    scene), and the soft twin lives in the narration pane's box alone -
-   the pane blur slider's whole domain. The wrapper carries the short
-   fade around a picture swap; the layers themselves keep their own
-   filter/opacity/transform behavior (memory mode especially). */
-.mz-bgstage {
+   the pane blur slider's whole domain. Two stacked stages hold one
+   picture each: the incoming stage fades in over the still opaque old
+   one, so the blend never dips through the frame's own colour. The
+   layers keep their filter/opacity/transform behavior (memory mode). */
+.mz-bgstack {
     position: absolute;
     inset: 0;
     z-index: var(--mz-z-bg);
     pointer-events: none;
-    opacity: 1;
-    transition: opacity var(--mz-bg-fade-in) var(--mz-ease);
+    isolation: isolate;
 }
 
-.mz-bgstage.is-fading {
-    opacity: 0;
-    transition-duration: var(--mz-bg-fade-out);
+.mz-bgstage {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    opacity: 1;
+}
+
+.mz-bgstage.is-top { z-index: 1; }
+
+.mz-bgstage.is-in {
+    opacity: 1;
+    transition: opacity var(--mz-bg-xfade) var(--mz-ease-inout, ease-in-out);
+    will-change: opacity;
 }
 
 .mz-bg,
@@ -185,8 +195,8 @@ body.mz-open .popup { z-index: 9500 !important; }
    The dark wash that used to sit over the image is parked below, commented
    out: backgrounds show clean now. It may return as the daycycle (day/night)
    layer - until then nothing dims the picture. */
-.mz-frame.is-bg-st .mz-bg,
-.mz-frame.is-bg-st .mz-bgsoft {
+.mz-bgstage.is-bg-st .mz-bg,
+.mz-bgstage.is-bg-st .mz-bgsoft {
     background-color: var(--mz-bg);
     /*
     background-image:
@@ -203,8 +213,8 @@ body.mz-open .popup { z-index: 9500 !important; }
     background-repeat: no-repeat;
 }
 
-.mz-frame.is-bg-st .mz-bg::before,
-.mz-frame.is-bg-st .mz-bgsoft::before { opacity: .5; }
+.mz-bgstage.is-bg-st .mz-bg::before,
+.mz-bgstage.is-bg-st .mz-bgsoft::before { opacity: .5; }
 
 .mz-scrim {
     position: absolute;
@@ -2245,6 +2255,8 @@ body.mz-open .popup { z-index: 9500 !important; }
 }
 
 /* ---------- reduced motion ---------- */
+#mz-root[data-mz-motion="reduced"] { --mz-bg-xfade: 0ms; }
+
 #mz-root[data-mz-motion="reduced"] *,
 #mz-root[data-mz-motion="reduced"] *::before,
 #mz-root[data-mz-motion="reduced"] *::after {
@@ -2254,6 +2266,8 @@ body.mz-open .popup { z-index: 9500 !important; }
 }
 
 @media (prefers-reduced-motion: reduce) {
+    #mz-root { --mz-bg-xfade: 0ms; }
+
     #mz-root *,
     #mz-root *::before,
     #mz-root *::after {
