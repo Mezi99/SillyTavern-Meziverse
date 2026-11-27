@@ -120,7 +120,23 @@ body.mz-open .popup { z-index: 9500 !important; }
    glass above it tints and needs no backdrop-filter - Firefox's
    compositor samples those wrong and washes the page's grey over the
    scene), and the soft twin lives in the narration pane's box alone -
-   the pane blur slider's whole domain. */
+   the pane blur slider's whole domain. The wrapper carries the short
+   fade around a picture swap; the layers themselves keep their own
+   filter/opacity/transform behavior (memory mode especially). */
+.mz-bgstage {
+    position: absolute;
+    inset: 0;
+    z-index: var(--mz-z-bg);
+    pointer-events: none;
+    opacity: 1;
+    transition: opacity var(--mz-bg-fade-in) var(--mz-ease);
+}
+
+.mz-bgstage.is-fading {
+    opacity: 0;
+    transition-duration: var(--mz-bg-fade-out);
+}
+
 .mz-bg,
 .mz-bgsoft {
     position: absolute;

@@ -35,7 +35,11 @@ import { closeLibrary, isLibraryOpen, libraryUiClosed, mountLibrary, openLibrary
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr, notify } from './notify.js';
 
-const VERSION = '2.11.2';
+const VERSION = '2.11.3';
+
+/* Keep in step with --mz-bg-fade-out in css/00-primitives.css. */
+const BG_FADE_OUT_MS = 120;
+
 const PANE_DEFAULT = 300;
 const LOG_W_DEFAULT = 720;
 const LOG_H_SHARE = 0.7;
@@ -67,8 +71,10 @@ const svg = name => `<svg class="ico" aria-hidden="true"><use href="#mz-i-${name
 
 const FRAME_HTML = `
 <div class="mz-frame" role="dialog" aria-modal="true" aria-label="Meziverse">
-    <div class="mz-bg" aria-hidden="true"></div>
-    <div class="mz-bgsoft" aria-hidden="true"></div>
+    <div class="mz-bgstage" aria-hidden="true">
+        <div class="mz-bg" aria-hidden="true"></div>
+        <div class="mz-bgsoft" aria-hidden="true"></div>
+    </div>
     <div class="mz-weather" aria-hidden="true"></div>
     <div class="mz-scrim" aria-hidden="true"></div>
 
@@ -584,6 +590,12 @@ let restoreToastr = null;
 let desiredPane = PANE_DEFAULT;
 let dragStart = null;
 let resizeQueued = false;
+let bgStage = null;
+let bgFadeTimer = 0;
+let bgFadeSeq = 0;
+let bgPending = null;
+let bgShownUrl = '';
+let bgStPainted = false;
 
 /**
  * The log has more than one door now — the left menu and the small-screen
@@ -628,6 +640,7 @@ export function mount() {
     mountConnections(root.querySelector('[data-mz="connections-host"]'));
 
     frame = root.querySelector('.mz-frame');
+    bgStage = root.querySelector('.mz-bgstage');
     els = {
         chatName: root.querySelector('[data-mz="chatname"]'),
         chatNameText: root.querySelector('[data-mz="chatname"] b'),
@@ -1647,6 +1660,71 @@ function applyCueMeanwhile() {
     });
 }
 
+/* The fade-out shrinks to an instant swap under either reduced-motion hint,
+   matching the CSS transition-duration override in css/20-shell.css. */
+function backgroundFadeDelay() {
+    if (root?.dataset.mzMotion === 'reduced') return 0;
+    if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) return 0;
+    return BG_FADE_OUT_MS;
+}
+
+/* The picture stays where it always was: the parent's background-image reads
+   --mz-st-bg. Only the wrapper fades, so memory mode's filter/opacity/transform
+   rules on the layers themselves are untouched. */
+function paintBackground(url, useSt) {
+    if (!frame) return;
+    if (useSt && url) {
+        frame.style.setProperty('--mz-st-bg', url);
+        frame.classList.add('is-bg-st');
+        bgShownUrl = url;
+        bgStPainted = true;
+    } else {
+        frame.style.removeProperty('--mz-st-bg');
+        frame.classList.remove('is-bg-st');
+        bgShownUrl = '';
+        bgStPainted = false;
+    }
+}
+
+/**
+ * Fades the scene out, paints the accepted picture while it is hidden, then
+ * fades it back in. Rapid swaps (a turn shuffle walking several backgrounds)
+ * retire the pending paint and restart the fade from wherever opacity is now,
+ * so no stale image lands and no new picture pops in mid-fade.
+ */
+function fadeBackgroundTo(url, useSt) {
+    if (!frame) return;
+
+    if (bgPending && bgPending.url === url && bgPending.useSt === useSt) return;
+    if (!bgPending && useSt === bgStPainted && url === bgShownUrl) return;
+
+    bgPending = { url, useSt };
+    if (!bgStage) {
+        paintBackground(url, useSt);
+        bgPending = null;
+        return;
+    }
+
+    if (bgFadeTimer) clearTimeout(bgFadeTimer);
+    bgFadeTimer = 0;
+    const seq = ++bgFadeSeq;
+    bgStage.classList.add('is-fading');
+
+    bgFadeTimer = setTimeout(() => {
+        bgFadeTimer = 0;
+        if (seq !== bgFadeSeq) return;
+
+        const target = bgPending || { url, useSt };
+        paintBackground(target.url, target.useSt);
+        bgPending = null;
+
+        // Let the new picture settle for one frame before fading it in.
+        requestAnimationFrame(() => {
+            if (seq === bgFadeSeq) bgStage?.classList.remove('is-fading');
+        });
+    }, backgroundFadeDelay());
+}
+
 /**
  * Mirrors the background SillyTavern has right now into the scene's backdrop.
  *
@@ -1668,8 +1746,7 @@ function applyBackground(forcedUrl) {
     });
 
     if (!useSt) {
-        frame.style.removeProperty('--mz-st-bg');
-        frame.classList.remove('is-bg-st');
+        fadeBackgroundTo('', false);
         return;
     }
 
@@ -1684,14 +1761,7 @@ function applyBackground(forcedUrl) {
     // falls through: SillyTavern's own default first, then the procedural
     // scene. The stage is never a black hole.
     const shown = image || sceneUrl(stDefaultBackground(), document.baseURI);
-    if (shown) {
-        frame.style.setProperty('--mz-st-bg', shown);
-        frame.classList.add('is-bg-st');
-        return;
-    }
-
-    frame.style.removeProperty('--mz-st-bg');
-    frame.classList.remove('is-bg-st');
+    fadeBackgroundTo(shown, true);
 }
 
 /* ---------- full screen ---------- */

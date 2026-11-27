@@ -1,5 +1,17 @@
 # Meziverse — version log
 
+## 2.11.3 - 2026-11-27
+
+Background changes now arrive on a short fade instead of appearing all at once.
+
+### Scene fade
+- `FORCE_SET_BACKGROUND` (generated changes and read-only turn shuffles alike) fades the scene wrapper out for 120ms, writes the new `--mz-st-bg` while the scene is hidden, then fades it in for 180ms. The parent layers keep their `background-image: var(--mz-st-bg)`; only the wrapper's opacity moves, leaving memory mode's filter/opacity/transform behavior on the layers alone.
+- Rapid swaps retire the pending paint and restart the fade from the current opacity, so shuffling through turns with different backgrounds never lands a stale image. Reduced motion (setting or OS) makes the swap instant.
+- The authored-url guards, inline-only `#bg1` probe and "unusable stranger keeps the last good picture" rule are unchanged. No response-length or watcher plumbing changed.
+
+### Notes
+- `manifest.json` matches; the synthetic suite stands at 366 tests. Landed on `Background_Module`.
+
 ## 2.11.2 - 2026-11-27
 
 The background watcher asks for prose and decides from ids, so a model that writes the right place in the wrong shape can no longer paint a location chain or fold two places onto one picture.
