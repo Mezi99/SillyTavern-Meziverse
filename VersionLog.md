@@ -1,5 +1,19 @@
 # Meziverse — version log
 
+## 2.11.2 - 2026-11-27
+
+The background watcher asks for prose and decides from ids, so a model that writes the right place in the wrong shape can no longer paint a location chain or fold two places onto one picture.
+
+### Prose-first prompts and id-first claims
+- The three background cores (`bgPromptOn`, `bgPromptOff`, `bgPromptTransport`) are rewritten as 2-4 sentence, 55-90 word establishing-shot briefs: one exact camera position, 4-5 concrete physical objects across the shot, the light source last, an empty place as subject, no vague quality words and no verbatim chains. Saved copies of older defaults follow the default forward (`PROMPT_DEFAULT_REFRESH`); hand-edited cores are never touched. The live ST settings were reset to these defaults (style shortened to `Anime visual novel background art, soft cinematic lighting`; the negative prompt was left as-is).
+- `<currentBackground>` prints `id: bg_n` and its entry in `<knownBackgrounds>` is marked `(on screen)`. The JSON format and the id rule are appended to the system prompt **by code**: the model copies an id and `resolveWatcherClaim` decides `same` / `known` / `draw` from it, trusting the state word only for the old plain-text protocol. A stale id or unsupported claim is checked by name first (`findRecordByName`, with spelling drift and the place/transport pools kept apart), then earns one forced re-ask with `WATCHER_FORCE` / `WATCHER_TRANSPORT_FORCE`.
+- `parseWatcherReply` refuses bare chains, truncated JSON that starts with `{`, short refusals and chain-shaped JSON prompts, while still reading the JSON object, `SAME`, `KNOWN <id>`, `NEW` and bare descriptions. `looksLikeChain` is the last gate before anything reaches the image model.
+- Both hands get at most one forced re-ask per chain. If the second answer still carries no usable description, the last resort is a sentence (`fallbackLocationPrompt` / `fallbackTransportPrompt`) - spot first, its plain-world after it, weather and a day-part for the light - never the reversed location chain. Every fallback logs `[Meziverse] bg template fallback` with the state, reason and raw reply.
+- No `responseLength` was added to the watcher calls; `generateOn` / `connections.js` response-length plumbing is unchanged.
+
+### Notes
+- `manifest.json` matches; the synthetic suite stands at 366 tests. The code landed on `Background_Module` as `d2ca5ae`; this section closes out its docs/version.
+
 ## 2.11.1 - 2026-11-21
 
 The designer's polish round: the immersive band splits into its two layouts, and the poster grows a second door - the one that joins a story's new name to a character already saved.
