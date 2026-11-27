@@ -6,7 +6,7 @@
  */
 
 import { castKey, ctx } from './st.js';
-import { DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_OFF, DEFAULT_BG_TRANSPORT_PROMPT, LEGACY_DEFAULT_BG_PROMPT_ON, LEGACY_DEFAULT_BG_PROMPT_OFF, PRIOR_DEFAULT_BG_PROMPT_ON, PRIOR_DEFAULT_BG_PROMPT_OFF, PRIOR_DEFAULT_BG_TRANSPORT_PROMPT } from './backgrounds.js';
+import { DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_OFF, DEFAULT_BG_TRANSPORT_PROMPT, LEGACY_DEFAULT_BG_PROMPT_ON, LEGACY_DEFAULT_BG_PROMPT_OFF, PRIOR_DEFAULT_BG_PROMPT_ON, PRIOR_DEFAULT_BG_PROMPT_OFF, PRIOR_DEFAULT_BG_TRANSPORT_PROMPT, PRE_PROSE_DEFAULT_BG_PROMPT_ON, PRE_PROSE_DEFAULT_BG_PROMPT_OFF, PRE_PROSE_DEFAULT_BG_TRANSPORT_PROMPT } from './backgrounds.js';
 import { DEFAULT_DJ_PROMPT, LEGACY_DEFAULT_DJ_PROMPT } from './musicdj.js';
 
 const DEFAULTS = {
@@ -40,8 +40,8 @@ const DEFAULTS = {
     // renders every new place; higher values keep the last picture while new
     // places wait their turn.
     bgEveryN: 1,
-    bgStyle: 'anime style, visual novel background art, detailed environment, cinematic lighting',
-    bgNegative: 'people, characters, crowd, portrait, text, watermark, logo, signature, blurry, low quality',
+    bgStyle: 'Anime visual novel background art, soft cinematic lighting',
+    bgNegative: 'people, characters, crowd, portrait, text, watermark, logo, signature, blurry, low quality, silhouette, figure',
     bgSize: 'landscape',
     // Weather effects on the background stage: the scene tag's weatherTag
     // names the state, locationTag gates it to outdoors, and the free-text
@@ -185,9 +185,13 @@ const PROMPT_DEFAULT_REFRESH = [
     ['musicDjPrompt', LEGACY_DEFAULT_DJ_PROMPT, DEFAULT_DJ_PROMPT],
     ['bgPromptOn', LEGACY_DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_ON],
     ['bgPromptOn', PRIOR_DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_ON],
+    ['bgPromptOn', PRE_PROSE_DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_ON],
     ['bgPromptOff', LEGACY_DEFAULT_BG_PROMPT_OFF, DEFAULT_BG_PROMPT_OFF],
     ['bgPromptOff', PRIOR_DEFAULT_BG_PROMPT_OFF, DEFAULT_BG_PROMPT_OFF],
+    ['bgPromptOff', PRE_PROSE_DEFAULT_BG_PROMPT_OFF, DEFAULT_BG_PROMPT_OFF],
     ['bgPromptTransport', PRIOR_DEFAULT_BG_TRANSPORT_PROMPT, DEFAULT_BG_TRANSPORT_PROMPT],
+    ['bgPromptTransport', PRE_PROSE_DEFAULT_BG_TRANSPORT_PROMPT, DEFAULT_BG_TRANSPORT_PROMPT],
+    ['bgStyle', 'anime style, visual novel background art, detailed environment, cinematic lighting', DEFAULTS.bgStyle],
 ];
 
 /** The live settings object, with defaults filled in on first use. */

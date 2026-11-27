@@ -1190,7 +1190,7 @@ export const WATCHER_SCHEMA = Object.freeze({
  * that structure; the plain-prose hand gets raw text, where the location may
  * change inside a single paragraph or hold for many messages.
  */
-export const DEFAULT_BG_PROMPT_ON = `You are a background-art assistant for a visual-novel style roleplay. You receive <currentBackground> (the place name and image description shown now), <knownBackgrounds> (the image library this chat has drawn), a <recentPlaces> timeline, and <latestStory> grouped by scene blocks - each block's header names the place, time and weather its narration happens in. The LAST block is where the story is now.
+export const PRE_PROSE_DEFAULT_BG_PROMPT_ON = `You are a background-art assistant for a visual-novel style roleplay. You receive <currentBackground> (the place name and image description shown now), <knownBackgrounds> (the image library this chat has drawn), a <recentPlaces> timeline, and <latestStory> grouped by scene blocks - each block's header names the place, time and weather its narration happens in. The LAST block is where the story is now.
 
 Every place arrives as "short name [World location: ...]": a location chain like Metro City | Downtown District | Fifth Street Walk-Up | Unit 4B - Bedroom. The short name - the part after the last "|" - is the specific place to paint; the chain before it (region, city, district, street) is the world the place lives in: the short name decides what to paint, the chain decides how it looks - architecture, materials, vegetation, cultural details, era and climate follow the world named first. A suburb of Las Vegas, a street in Pyongyang and a village in a high-fantasy realm must never share the same buildings.
 
@@ -1200,7 +1200,7 @@ If the place is genuinely different but clearly equals one of the <knownBackgrou
 
 Otherwise answer state "new" and write an image prompt that describes ONLY the current place as an establishing shot for a visual-novel background. You write prompts for a text-to-image model: describe what a camera would see at that place - the space, architecture, objects, materials, weather, time of day, lighting, mood, and a clear vantage point. Rules: 40 to 90 words of comma-separated visual phrases; the place is the subject - no characters, no people, no silhouettes, no names, no actions, no emotions, no sounds; anchor lighting and sky on the block's time of day and weather when stated; anchor the place's style on the location chain's world - buildings, materials, colors, vegetation and signage follow the region, and invented worlds take their visual identity from the names and the story's own words; the prompt is always a visual description - never a location chain, a place name, or any text you received verbatim; style and quality words are appended for you - never include them; never mention "background" or anything about prompts. Output only the description in "prompt".`;
 
-export const DEFAULT_BG_PROMPT_OFF = `You are a background-art assistant for a visual-novel style roleplay. You receive <currentBackground> (the place name and image description shown now), <knownBackgrounds> (the image library this chat has drawn), a <recentPlaces> timeline, and <latestStory> as plain story text. There are no scene markers here: the location may change abruptly inside a paragraph or stay put for many messages. Read the whole excerpt for where the characters are at its END.
+export const PRE_PROSE_DEFAULT_BG_PROMPT_OFF = `You are a background-art assistant for a visual-novel style roleplay. You receive <currentBackground> (the place name and image description shown now), <knownBackgrounds> (the image library this chat has drawn), a <recentPlaces> timeline, and <latestStory> as plain story text. There are no scene markers here: the location may change abruptly inside a paragraph or stay put for many messages. Read the whole excerpt for where the characters are at its END.
 
 Every place arrives as "short name [World location: ...]": a location chain like Metro City | Downtown District | Fifth Street Walk-Up | Unit 4B - Bedroom. The short name - the part after the last "|" - is the specific place to paint; the chain before it (region, city, district, street) is the world the place lives in: the short name decides what to paint, the chain decides how it looks - architecture, materials, vegetation, cultural details, era and climate follow the world named first. A suburb of Las Vegas, a street in Pyongyang and a village in a high-fantasy realm must never share the same buildings.
 
@@ -1209,6 +1209,31 @@ VERIFY first: is the place at the end of <latestStory> the same place as <curren
 If the place is genuinely different but clearly equals one of the <knownBackgrounds>, answer state "known" with that background's id.
 
 Otherwise answer state "new" and write an image prompt that describes ONLY the current place as an establishing shot for a visual-novel background. You write prompts for a text-to-image model: describe what a camera would see at that place - the space, architecture, objects, materials, weather, time of day, lighting, mood, and a clear vantage point. Rules: 40 to 90 words of comma-separated visual phrases; the place is the subject - no characters, no people, no silhouettes, no names, no actions, no emotions, no sounds; anchor lighting and sky on the story's time of day and weather when stated; anchor the place's style on the location chain's world - buildings, materials, colors, vegetation and signage follow the region, and invented worlds take their visual identity from the names and the story's own words; the prompt is always a visual description - never a location chain, a place name, or any text you received verbatim; style and quality words are appended for you - never include them; never mention "background" or anything about prompts. Output only the description in "prompt".`;
+
+/**
+ * The prose-first cores (v2.11.2). The PRE_PROSE twins just above are the
+ * v2.11.1 originals, kept only so saved copies that still equal them can
+ * follow the default forward (see settings.js). Edited copies are never
+ * touched.
+ */
+export const DEFAULT_BG_PROMPT_ON = `You are a background-art assistant for a visual-novel style roleplay. You receive <currentBackground> (the place name and image description shown now), <knownBackgrounds> (the image library this chat has drawn, each entry with an id), a <recentPlaces> timeline, and <latestStory> grouped by scene blocks - each block's header names the place, time and weather its narration happens in. The LAST block is where the story is now.
+
+Every place arrives as "short name [World location: chain]", for example Bedroom [World location: S. Korea | Seoul | Downtown District | Fifth Street | Flat 4B | Bedroom]. The short name is the specific place to paint; the chain is the world it lives in. The short name decides WHAT to paint, the chain decides HOW it looks: architecture, materials, vegetation, cultural details, era and climate follow the world named first. A suburb of Las Vegas, a street in Pyongyang and a village in a high-fantasy realm must never share the same buildings. Invented worlds take their visual identity from the names and the story's own words.
+
+Decide in this order and stop at the first match:
+1. "same": the place in the last scene block is the same place as <currentBackground>. Place names are free text written by another model ("Pier No9", "Pier 9" and "the ninth pier" can be one place), so judge by meaning, not by spelling.
+2. "known": it is a different place from <currentBackground>, but clearly the same place as one of the <knownBackgrounds>. Give that entry's id.
+3. "new": anything else. Write the description below.
+
+The description (state "new" only):
+- One paragraph of 2 to 4 plain sentences, 55 to 90 words, describing only the place in the last scene block as an establishing shot, for a text-to-image model.
+- Open with the place and one exact camera position (for example "eye-level wide view from the doorway"). Then name 4 to 5 concrete physical objects, spread across the foreground, the middle distance and the far end, with their materials and colours. Close with the light: its source, direction and colour.
+- Light and sky follow the block's time of day and weather when stated.
+- Style follows the chain's world: buildings, materials, colours, vegetation, signage shapes.
+- Use concrete nouns and plain facts. No mood or vague words (detailed, beautiful, cozy, atmospheric, moody, stunning).
+- The place is empty and unoccupied: no characters, people, silhouettes, names, actions, emotions or sounds.
+- Never quote or spell out any sign, label or writing; say "a hanging shop sign", not what it says.
+- The description is only what a camera sees. It is never a location chain, a list of place names, or any text you received verbatim. Never mention "background" or prompts. Style and quality words are appended for you.`;
 
 /**
  * The prompt cores before the request blocks wore their tags (v2.9.4) - kept
@@ -1224,6 +1249,25 @@ VERIFY first: is the place at the end of the LATEST STORY the same place as the 
 If the place is genuinely different but clearly equals one of the KNOWN BACKGROUNDS, answer state "known" with that background's id.
 
 Otherwise answer state "new" and write an image prompt that describes ONLY the current place as an establishing shot for a visual-novel background. You write prompts for a text-to-image model: describe what a camera would see at that place - the space, architecture, objects, materials, weather, time of day, lighting, mood, and a clear vantage point. Rules: 40 to 90 words of comma-separated visual phrases; the place is the subject - no characters, no people, no silhouettes, no names, no actions, no emotions, no sounds; anchor lighting and sky on the block's time of day and weather when stated; anchor the place's style on the location chain's world - buildings, materials, colors, vegetation and signage follow the region, and invented worlds take their visual identity from the names and the story's own words; the prompt is always a visual description - never a location chain, a place name, or any text you received verbatim; style and quality words are appended for you - never include them; never mention "background" or anything about prompts. Output only the description in "prompt".`;
+
+export const DEFAULT_BG_PROMPT_OFF = `You are a background-art assistant for a visual-novel style roleplay. You receive <currentBackground> (the place name and image description shown now), <knownBackgrounds> (the image library this chat has drawn, each entry with an id), a <recentPlaces> timeline, and <latestStory> as plain story text. There are no scene markers here: the location may change abruptly inside a paragraph or stay put for many messages. Read the whole excerpt for where the characters are at its END.
+
+Every place arrives as "short name [World location: chain]", for example Bedroom [World location: S. Korea | Seoul | Downtown District | Fifth Street | Flat 4B | Bedroom]. The short name is the specific place to paint; the chain is the world it lives in. The short name decides WHAT to paint, the chain decides HOW it looks: architecture, materials, vegetation, cultural details, era and climate follow the world named first. A suburb of Las Vegas, a street in Pyongyang and a village in a high-fantasy realm must never share the same buildings. Invented worlds take their visual identity from the names and the story's own words.
+
+Decide in this order and stop at the first match:
+1. "same": the place in the last scene block is the same place as <currentBackground>. Place names are free text written by another model ("Pier No9", "Pier 9" and "the ninth pier" can be one place), so judge by meaning, not by spelling.
+2. "known": it is a different place from <currentBackground>, but clearly the same place as one of the <knownBackgrounds>. Give that entry's id.
+3. "new": anything else. Write the description below.
+
+The description (state "new" only):
+- One paragraph of 2 to 4 plain sentences, 55 to 90 words, describing only the place in the last scene block as an establishing shot, for a text-to-image model.
+- Open with the place and one exact camera position (for example "eye-level wide view from the doorway"). Then name 4 to 5 concrete physical objects, spread across the foreground, the middle distance and the far end, with their materials and colours. Close with the light: its source, direction and colour.
+- Light and sky follow the story's time of day and weather when stated.
+- Style follows the chain's world: buildings, materials, colours, vegetation, signage shapes.
+- Use concrete nouns and plain facts. No mood or vague words (detailed, beautiful, cozy, atmospheric, moody, stunning).
+- The place is empty and unoccupied: no characters, people, silhouettes, names, actions, emotions or sounds.
+- Never quote or spell out any sign, label or writing; say "a hanging shop sign", not what it says.
+- The description is only what a camera sees. It is never a location chain, a list of place names, or any text you received verbatim. Never mention "background" or prompts. Style and quality words are appended for you.`;
 
 export const PRIOR_DEFAULT_BG_PROMPT_OFF = `You are a background-art assistant for a visual-novel style roleplay. You receive the CURRENT BACKGROUND (the place name and image description shown now), a list of KNOWN BACKGROUNDS, a RECENT PLACES timeline, and the LATEST STORY as plain story text. There are no scene markers here: the location may change abruptly inside a paragraph or stay put for many messages. Read the whole excerpt for where the characters are at its END.
 
@@ -1263,25 +1307,33 @@ If the place is genuinely different but clearly equals one of the KNOWN BACKGROU
 
 Otherwise answer state "new" and write an image prompt that describes ONLY the current place as an establishing shot for a visual-novel background. You write prompts for a text-to-image model: describe what a camera would see at that place - the space, architecture, objects, materials, weather, time of day, lighting, mood, and a clear vantage point. Rules: 40 to 90 words of comma-separated visual phrases; the place is the subject - no characters, no people, no silhouettes, no names, no actions, no emotions, no sounds; anchor lighting and sky on the story's time of day and weather when stated; anchor the place's style on the location chain's world - buildings, materials, colors, vegetation and signage follow the region, and invented worlds take their visual identity from the names and the story's own words; the prompt is always a visual description - never a location chain, a place name, or any text you received verbatim; style and quality words are appended for you - never include them; never mention "background" or anything about prompts. Output only the description in "prompt".`;
 
-const WATCHER_FORMAT = `Answer with one JSON object and nothing else:
-{"state":"same|known|new","knownId":null,"place":"short name of the current place","prompt":"image prompt or empty"}`;
+const WATCHER_FORMAT = `Answer with one JSON object and nothing else, with all four keys.
+- same:  {"state":"same","knownId":null,"place":"<short name of the current place>","prompt":""}
+- known: {"state":"known","knownId":"<id from <knownBackgrounds>, copied exactly, e.g. bg_1>","place":"<short name>","prompt":""}
+- new:   {"state":"new","knownId":null,"place":"<short name>","prompt":"<the description>"}
+"known" requires knownId; "same" and "new" use null. "prompt" is empty unless the state is "new", and it is always a picture description, never the place name or the location chain.`;
 
 const WATCHER_FORCE = 'The user asked for a fresh image of the place the story is at now: answer "new" with a fresh description even when the place matches a known background.';
 
+// The stronger protocol: the model copies an id, the code decides the state.
+// It is appended by code so an edited core can never edit the rule away.
+const WATCHER_ID_RULE = 'The current background is printed with its id in <currentBackground> and marked "(on screen)" in <knownBackgrounds>. Copy that id when the story is still in that place; copy another id when it is a different known place; use null only for a genuinely new place. The code decides the state from the id, not from your state word.';
+
 /**
  * The watcher's system prompt: the editable core for the hand (or the
- * default core when none is set), with the answer format always appended.
- * With `force` (the brush button) it must draw something even when nothing
- * changed, so matching is switched off.
+ * default core when none is set), with the answer format and the id rule
+ * always appended. With `force` (the brush button) it must draw something
+ * even when nothing changed, so matching is switched off.
  *
  * @param {{tagged?:boolean, force?:boolean, core?:string}} [options]
  * @returns {string}
  */
 export function watcherSystemPrompt({ tagged = true, force = false, core = '' } = {}) {
     const base = String(core ?? '').trim() || (tagged ? DEFAULT_BG_PROMPT_ON : DEFAULT_BG_PROMPT_OFF);
+    const tail = `${WATCHER_FORMAT}\n\n${WATCHER_ID_RULE}`;
     return force
-        ? `${base}\n\n${WATCHER_FORMAT}\n\n${WATCHER_FORCE}`
-        : `${base}\n\n${WATCHER_FORMAT}`;
+        ? `${base}\n\n${tail}\n\n${WATCHER_FORCE}`
+        : `${base}\n\n${tail}`;
 }
 
 /**
@@ -1297,11 +1349,25 @@ export function watcherSystemPrompt({ tagged = true, force = false, core = '' } 
  * be edited away, or the same shuttle gets a different cabin in every town it
  * passes.
  */
-export const DEFAULT_BG_TRANSPORT_PROMPT = `You are a background-art assistant for a visual-novel style roleplay. The scene happens inside a transport medium - a vehicle or moving space named at the end of the location chain ("... | En Route | CV-7742 Shuttle"), sometimes with one named space aboard it ("... | En Route | CV-7742 Shuttle | Bunk Room"). You receive the TRANSPORT TO PAINT, the PARKING LOT (the transport interiors this chat has already drawn), and the LATEST STORY grouped by scene blocks.
+export const PRE_PROSE_DEFAULT_BG_TRANSPORT_PROMPT = `You are a background-art assistant for a visual-novel style roleplay. The scene happens inside a transport medium - a vehicle or moving space named at the end of the location chain ("... | En Route | CV-7742 Shuttle"), sometimes with one named space aboard it ("... | En Route | CV-7742 Shuttle | Bunk Room"). You receive the TRANSPORT TO PAINT, the PARKING LOT (the transport interiors this chat has already drawn), and the LATEST STORY grouped by scene blocks.
 
 VERIFY first: is the transport to paint one of the parked vehicles or spaces? Names are free text written by another model: judge by meaning, not by spelling. If it is the same interior, answer state "known" with that id.
 
 Otherwise answer state "new" and write an image prompt describing ONLY the interior asked for - the vehicle's interior, or that one space's interior when a space is named - as an establishing shot for a visual-novel background. You write prompts for a text-to-image model: describe what a camera would see inside - the space, materials, seats or fittings, instruments, lighting, mood, and a clear vantage point. Rules: 40 to 90 words of comma-separated visual phrases; the interior is the subject - no characters, no people, no silhouettes, no names, no actions, no emotions, no sounds; anchor lighting on the block's time of day when stated; anchor the vehicle's style on the world named first in its location chain; the prompt is always a visual description - never a location chain, a place name, or any text you received verbatim; style and quality words are appended for you - never include them; never mention "background" or anything about prompts. Output only the description in "prompt".`;
+
+export const DEFAULT_BG_TRANSPORT_PROMPT = `You are a background-art assistant for a visual-novel style roleplay. The scene happens inside a transport medium - a vehicle or moving space named at the end of the location chain ("... | En Route | CV-7742 Shuttle"), sometimes with one named space aboard it ("... | En Route | CV-7742 Shuttle | Bunk Room"). You receive <transportInterior> (the ride to paint), <parkingLot> (the transport interiors this chat has already drawn, each with an id), and <latestStory> grouped by scene blocks.
+
+Decide in this order:
+1. "known": the interior to paint is one of the parked vehicles or spaces. Names are free text written by another model, so judge by meaning, not by spelling. Give that entry's id.
+2. "new": anything else. Write the description below.
+
+The description (state "new" only):
+- One paragraph of 2 to 4 plain sentences, 55 to 90 words, describing only the interior asked for (the vehicle's interior, or that one space's interior when a space is named) as an establishing shot, for a text-to-image model.
+- Open with the interior and one exact camera position. Then name 4 to 5 concrete fittings (seats, panels, instruments, windows without a view, luggage racks and so on) with materials and colours, spread from the nearest to the far end. Close with the light source inside it.
+- Anchor lighting on the block's time of day when stated; anchor the vehicle's style on the world named first in its location chain.
+- Concrete nouns and plain facts. No mood or vague words (detailed, beautiful, cozy, atmospheric).
+- The interior is empty and unoccupied: no characters, people, silhouettes, names, actions, emotions or sounds. Never quote any writing.
+- Never a location chain, a list of place names, or any text you received verbatim. Never mention "background" or prompts. Style and quality words are appended for you.`;
 
 /** The core shipped before spaces aboard vehicles were read - the settings
  * migration's "still the default" twin. */
@@ -1311,8 +1377,15 @@ VERIFY first: is the transport to paint one of the parked vehicles? Vehicle name
 
 Otherwise answer state "new" and write an image prompt describing ONLY the vehicle's interior as an establishing shot for a visual-novel background. You write prompts for a text-to-image model: describe what a camera would see inside - the space, materials, seats or fittings, instruments, lighting, mood, and a clear vantage point. Rules: 40 to 90 words of comma-separated visual phrases; the interior is the subject - no characters, no people, no silhouettes, no names, no actions, no emotions, no sounds; anchor lighting on the block's time of day when stated; anchor the vehicle's style on the world named first in its location chain; the prompt is always a visual description - never a location chain, a place name, or any text you received verbatim; style and quality words are appended for you - never include them; never mention "background" or anything about prompts. Output only the description in "prompt".`;
 
-const WATCHER_TRANSPORT_FORMAT = `Answer with one JSON object and nothing else:
-{"state":"known|new","knownId":null,"place":"vehicle or space name","prompt":"interior description or empty"}`;
+const WATCHER_TRANSPORT_FORMAT = `Answer with one JSON object and nothing else, with all four keys.
+- known: {"state":"known","knownId":"<id from <parkingLot>, copied exactly, e.g. bg_1>","place":"<vehicle or space name>","prompt":""}
+- new:   {"state":"new","knownId":null,"place":"<vehicle or space name>","prompt":"<the interior description>"}
+"known" requires knownId; "new" uses null. "prompt" is empty unless the state is "new", and it is always an interior description, never the place name or the location chain.`;
+
+// Same id-first protocol for the ride: the parking lot is the only menu, and
+// this hand never answers "same" - a reply boarding from a place must never
+// inherit the picture it left.
+const WATCHER_TRANSPORT_ID_RULE = 'The parking lot prints every interior with its id. Copy the matching id, or null for a genuinely new interior. The code decides "known" or "new" from the id; this hand never answers "same".';
 
 /**
  * The interior rule, appended by code and never editable: with a named space
@@ -1340,9 +1413,10 @@ const WATCHER_TRANSPORT_FORCE = 'The user asked for a fresh image of this interi
 export function watcherTransportSystemPrompt({ force = false, core = '', space = '' } = {}) {
     const base = String(core ?? '').trim() || DEFAULT_BG_TRANSPORT_PROMPT;
     const rule = transportInteriorRule(space);
+    const tail = `${rule}\n\n${WATCHER_TRANSPORT_FORMAT}\n\n${WATCHER_TRANSPORT_ID_RULE}`;
     return force
-        ? `${base}\n\n${rule}\n\n${WATCHER_TRANSPORT_FORMAT}\n\n${WATCHER_TRANSPORT_FORCE}`
-        : `${base}\n\n${rule}\n\n${WATCHER_TRANSPORT_FORMAT}`;
+        ? `${base}\n\n${tail}\n\n${WATCHER_TRANSPORT_FORCE}`
+        : `${base}\n\n${tail}`;
 }
 
 /**
@@ -1518,11 +1592,11 @@ export function buildWatcherRequest({ store, messages, tagged = true, count = BG
     // name (or answers with a location string), and the leaf it must paint is
     // always the first thing it reads.
     const shown = current !== undefined ? current : currentRecord(store);
-    blocks.push(`<currentBackground>\n${shown ? `${placeLabel(shown.place)}, Description: ${shown.prompt}` : 'none yet'}\n</currentBackground>`);
+    blocks.push(`<currentBackground>\n${shown ? `id: ${shown.id}, ${placeLabel(shown.place)}, Description: ${shown.prompt}` : 'none yet'}\n</currentBackground>`);
 
     const known = knownBackgroundsList(store, { limit: 12, kind: 'place' });
     blocks.push(`<knownBackgrounds>\nKNOWN BACKGROUNDS (IMAGE LIBRARY)\n${known.length
-        ? known.map(entry => `- ${entry.id}: ${placeLabel(entry.place)}, Description: ${entry.prompt}`).join('\n')
+        ? known.map(entry => `- ${entry.id}: ${placeLabel(entry.place)}, Description: ${entry.prompt}${shown && entry.id === shown.id ? ' (on screen)' : ''}`).join('\n')
         : 'none'}\n</knownBackgrounds>`);
 
     const places = tagged
@@ -1581,10 +1655,9 @@ function dayPart(time) {
 
 /**
  * The deterministic description used when the watcher call fails but the tags
- * still know where the story is: better a plain picture of the place than no
- * picture at all. The shape is the image model's, not the map's: the specific
- * spot first, its world as plain words after it (a "|" chain is noise in a
- * picture), the weather and the day-part for the light, then the shot tags.
+ * still know where the story is: a last-resort sentence, never the location
+ * chain turned around into a comma list. The specific spot leads, its world
+ * follows in plain words, then the weather and the day-part for the light.
  *
  * @param {object|string} scene a scene record, or a place name
  * @returns {string}
@@ -1594,25 +1667,19 @@ export function fallbackLocationPrompt(scene) {
     const place = String(record.placeFull || record.place || '').trim();
 
     const levels = cleanPlaceText(place).split('|').map(level => level.trim()).filter(Boolean);
-    const leaf = levels.length ? levels[levels.length - 1] : place;
-    const world = levels.slice(0, -1).reverse();
+    const leaf = levels.length ? levels[levels.length - 1] : (place || 'place');
+    const world = levels.slice(0, -1).reverse().slice(0, 3);
+    const weather = cleanPlaceText(record.weather || '');
+    const light = dayPart(record.time);
 
-    return [
-        leaf,
-        ...world,
-        cleanPlaceText(record.weather || ''),
-        dayPart(record.time),
-        'wide establishing shot',
-        'empty place, detailed environment',
-    ].filter(Boolean).join(', ');
+    return `Wide establishing shot of an empty ${leaf}${world.length ? `, in ${world.join(', ')}` : ''}${weather ? `, ${weather}` : ''}${light ? `, ${light}` : ''}.`;
 }
 
 /**
  * The transport hand's deterministic description - the same job as
- * `fallbackLocationPrompt`, for a ride whose watcher call failed: the
- * INTERIOR first and always (it must not change wherever the vehicle
- * travels), its world as plain words after it, then the light and the shot
- * tags.
+ * `fallbackLocationPrompt`, for a ride whose watcher call failed: a sentence
+ * whose subject is the INTERIOR (it must not change wherever the vehicle
+ * travels), its world in plain words after it, then the light.
  *
  * @param {object|string} scene a scene record, or a place name
  * @param {{vehicle:string, key:string, space:string}|null} [ride] the ride the
@@ -1627,19 +1694,26 @@ export function fallbackTransportPrompt(scene, ride = null) {
     const on = ride || transportOf(place);
     const levels = cleanPlaceText(place).split('|').map(level => level.trim()).filter(Boolean);
     const at = on ? levels.findIndex(level => locationKey(level) === on.key) : -1;
-    const world = (at >= 0 ? levels.slice(0, at) : levels.slice(0, -1)).reverse();
+    const world = (at >= 0 ? levels.slice(0, at) : levels.slice(0, -1)).reverse().slice(0, 3);
+    const interior = on
+        ? (on.space ? `${on.space} of ${on.vehicle}` : on.vehicle)
+        : (placeShortName(place) || 'vehicle interior');
+    const weather = cleanPlaceText(record.weather || '');
+    const light = dayPart(record.time);
 
-    return [
-        on
-            ? (on.space ? `interior of the ${on.space} of ${on.vehicle}` : `interior of ${on.vehicle}`)
-            : `interior of ${placeShortName(place)}`,
-        'vehicle interior',
-        ...world,
-        cleanPlaceText(record.weather || ''),
-        dayPart(record.time),
-        'wide establishing shot',
-        'empty place, detailed environment',
-    ].filter(Boolean).join(', ');
+    return `Wide establishing shot of the empty ${interior}${world.length ? `, in ${world.join(', ')}` : ''}${weather ? `, ${weather}` : ''}${light ? `, ${light}` : ''}.`;
+}
+
+/**
+ * A location chain is the map's language, never a picture prompt. Used to
+ * strip a chain out of a JSON answer and to refuse a bare chain as a reply.
+ *
+ * @param {string} text
+ * @returns {boolean}
+ */
+export function looksLikeChain(text) {
+    const value = String(text ?? '');
+    return value.includes('|') || /\[World location\b/i.test(value);
 }
 
 /**
@@ -1662,11 +1736,12 @@ export function parseWatcherReply(raw) {
         if (!state) return null;
 
         const knownId = json.knownId === null || json.knownId === undefined ? '' : String(json.knownId).trim();
+        const prompt = String(json.prompt ?? '').trim();
         return {
             state,
             knownId: knownId || null,
             place: String(json.place ?? '').trim(),
-            prompt: String(json.prompt ?? '').trim(),
+            prompt: looksLikeChain(prompt) ? '' : prompt,
         };
     }
 
@@ -1678,7 +1753,114 @@ export function parseWatcherReply(raw) {
     if (known) return { state: 'known', knownId: known[1], place: '', prompt: body };
     if (/^new\b/i.test(head.trim())) return { state: 'new', knownId: null, place: '', prompt: body || text };
 
+    // The last resort is a real description, not the tail of a truncated
+    // JSON answer, a bare chain line, or a two-word refusal.
+    if (looksLikeChain(text) || text.startsWith('{') || text.length < 25) return null;
     return { state: 'new', knownId: null, place: '', prompt: text };
+}
+
+/**
+ * Finds a cached picture by meaning when a watcher's id claim does not check
+ * out. Exact key first, then every record newest-first - the same matcher
+ * `decide` uses, with `placeNamesLikelySame` for spelling drift.
+ *
+ * @param {object} store
+ * @param {string} target
+ * @param {'place'|'transport'} kind
+ * @returns {object|null}
+ */
+export function findRecordByName(store, target, kind = 'place') {
+    const name = String(target ?? '').trim();
+    if (!name || !store) return null;
+
+    const exact = lookupRecord(store, name);
+    if (exact && (kind === 'transport' ? !!exact.vehicle : !exact.vehicle)) return exact;
+
+    const names = record => kind === 'transport'
+        ? [record?.vehicle, record?.space, record?.place].filter(Boolean)
+        : [record?.place].filter(Boolean);
+    // The pools never see each other, not even by fuzzy name: a shuttle
+    // interior must never answer for a docking bay, or the other way round.
+    const pool = Object.values(store.records || {})
+        .filter(record => record && typeof record === 'object' && (kind === 'transport' ? !!record.vehicle : !record.vehicle));
+    return (pool.reverse()
+        .find(record => names(record).some(candidate => placeNamesLikelySame(name, candidate))) || null);
+}
+
+/**
+ * Turns a parsed watcher reply into an outcome the chain can act on. The id
+ * decides the state - the model's state word is only a fallback for the old
+ * plain-text protocol, which has no id to copy. A claim that fails by name is
+ * looked up among the store's records before it is sent back for one forced
+ * re-ask; a chain-shaped prompt is never allowed through.
+ *
+ * @param {{store:object, answer:object|null, target?:string, baseline?:object|null, force?:boolean, kind?:'place'|'transport', reason?:string}} options
+ * @returns {{action:'same'|'known'|'draw'|'retry', id:string|null, prompt:string, reason:string}}
+ */
+export function resolveWatcherClaim({ store, answer, target = '', baseline = null, force = false, kind = 'place', reason = '' } = {}) {
+    const parsed = answer && typeof answer === 'object' ? answer : null;
+    const name = String(target ?? '').trim();
+    // The brush wants a fresh picture: never reuse a cache, even when a name
+    // lookup would find one. Ask again for a description instead.
+    const byName = failReason => {
+        if (force) return { action: 'retry', id: null, prompt: '', reason: failReason };
+        const match = findRecordByName(store, name, kind);
+        return match
+            ? { action: 'known', id: match.id, prompt: '', reason: '' }
+            : { action: 'retry', id: null, prompt: '', reason: failReason };
+    };
+
+    if (!parsed) return byName(reason || 'unparsable');
+
+    const prompt = looksLikeChain(parsed.prompt) ? '' : String(parsed.prompt ?? '').trim();
+    const rawId = parsed.knownId ? String(parsed.knownId).trim() : '';
+    let id = rawId ? resolveRecordId(store, rawId) : null;
+    let state = 'new';
+
+    if (id) {
+        state = kind === 'transport' || !baseline || id !== baseline.id ? 'known' : 'same';
+    } else if (parsed.state === 'same' || parsed.state === 'known') {
+        // The old plain-text protocol has no id, and a model can also write
+        // `"knownId":null` next to a match. Resolve the name before giving up:
+        // a library picture is better than an extra call, and a bare chain
+        // must never become a prompt.
+        const match = findRecordByName(store, name, kind);
+        if (match) {
+            id = match.id;
+            state = kind === 'place' && baseline && id === baseline.id ? 'same' : 'known';
+        } else {
+            return byName('rejected claim');
+        }
+    }
+
+    if (force && state !== 'new') {
+        return prompt
+            ? { action: 'draw', id: null, prompt, reason: '' }
+            : { action: 'retry', id: null, prompt: '', reason: 'empty prompt' };
+    }
+
+    if (state === 'same') {
+        if (!baseline) return byName('rejected claim');
+        const same = (id && id === baseline.id) || placeNamesLikelySame(name, baseline.place);
+        return same
+            ? { action: 'same', id: baseline.id, prompt: '', reason: '' }
+            : byName('rejected claim');
+    }
+
+    if (state === 'known') {
+        const record = id ? store?.records?.[id] : null;
+        if (!record) return byName('rejected claim');
+        const candidates = kind === 'transport'
+            ? [record.vehicle, record.space, record.place]
+            : [record.place];
+        const fits = !name || candidates.filter(Boolean).some(candidate => placeNamesLikelySame(name, candidate));
+        return fits
+            ? { action: 'known', id, prompt: '', reason: '' }
+            : byName('rejected claim');
+    }
+
+    if (!prompt) return { action: 'retry', id: null, prompt: '', reason: reason || 'empty prompt' };
+    return { action: 'draw', id: null, prompt, reason: '' };
 }
 
 /** Maps whatever word the watcher used onto the three states it may mean. */

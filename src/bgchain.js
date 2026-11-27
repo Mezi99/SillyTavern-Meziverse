@@ -45,6 +45,7 @@ import {
     recoverCurrentKey,
     reconcileRecordPlace,
     resolveRecordId,
+    resolveWatcherClaim,
     resolveStampId,
     resolveStampRecord,
     restorePlan,
@@ -77,6 +78,12 @@ import { generateOn } from './connections.js';
 import { resolveScene } from './scene.js';
 
 const LOG = '[Meziverse] bg';
+
+// A template is a last resort. Say why, and show the raw watcher reply, so a
+// chain-shaped prompt or a truncated JSON can be diagnosed from one log line.
+function warnTemplate(state, reason, raw) {
+    console.warn(`${LOG} template fallback`, { state, reason, raw });
+}
 
 // The master switch: the scene being open. Everything the chain does - every
 // watcher call, every draw, every metadata write - stays inside the extension
@@ -492,7 +499,7 @@ async function runTarget({ index, swipeId, force, refresh, my, signal }) {
  * brings back a cached image, "new" draws one.
  */
 async function runWatcherChain({ store, messages, index, swipeId, place, scene, tagged, baseline, persona, force, my, signal }) {
-    const request = buildWatcherRequest({
+    const args = {
         store,
         messages,
         tagged,
@@ -501,15 +508,19 @@ async function runWatcherChain({ store, messages, index, swipeId, place, scene, 
         force,
         systemCore: tagged ? settings().bgPromptOn : settings().bgPromptOff,
         current: baseline,
-    });
+    };
+    const request = buildWatcherRequest(args);
     lastRequest = { systemPrompt: request.systemPrompt, prompt: request.prompt, at: Date.now() };
 
     console.debug(`${LOG} asking the watcher`, { index, place, force });
 
     const plain = () => fallbackLocationPrompt(scene || place);
     const thinking = stage('Envisioning the location\u2026');
-    let answer = null;
+    let target = place || 'the story';
+    let raw = '';
     let failure = null;
+    let outcome = null;
+    let reason = '';
     try {
         // The one ride: the Background Agent's own connection (whatever the
         // Connections tab has chosen), the same `{ok, text, error}` back
@@ -517,89 +528,79 @@ async function runWatcherChain({ store, messages, index, swipeId, place, scene, 
         // structured output outright (422 Unprocessable Entity), and nothing
         // here needs it - parseWatcherReply reads the JSON out of the answer
         // text, plain-text protocol tolerated, same as the music DJ.
-        const reply = await generateOn('backgroundAgent', {
-            prompt: request.prompt,
-            systemPrompt: request.systemPrompt,
-        });
+        // A rejected claim or an empty prompt earns exactly one forced re-ask
+        // before the template; the second request carries WATCHER_FORCE.
+        for (let attempt = 1; attempt <= 2; attempt += 1) {
+            const ask = attempt === 2 ? buildWatcherRequest({ ...args, force: true }) : request;
+            if (attempt === 2) lastRequest = { systemPrompt: ask.systemPrompt, prompt: ask.prompt, at: Date.now() };
 
-        if (my !== chainSeq) return { status: 'superseded' };
+            const reply = await generateOn('backgroundAgent', {
+                prompt: ask.prompt,
+                systemPrompt: ask.systemPrompt,
+            });
 
-        answer = reply.ok ? parseWatcherReply(reply.text) : null;
-        if (!answer) {
-            // The watcher failed. A tagged reply still knows its place from
-            // the tags and draws from the template; without tags there is
-            // nothing to fall back on.
-            if (!place) {
+            if (my !== chainSeq) return { status: 'superseded' };
+
+            raw = reply.text;
+            if (!reply.ok) {
                 failure = reply.error || 'The watcher call failed.';
-            } else {
-                answer = { state: 'new', knownId: null, place, prompt: plain() };
+                reason = 'call failed';
+                continue;
             }
-        }
 
-        // The brush must draw something, and "same" with nothing carried in
-        // has nothing to keep - both draw fresh.
-        if (answer && (force || (answer.state === 'same' && !baseline)) && answer.state !== 'new') {
-            answer = {
-                state: 'new',
-                knownId: null,
-                place: answer.place || place,
-                prompt: answer.prompt || plain(),
-            };
+            const parsed = parseWatcherReply(reply.text);
+            target = place || parsed?.place || firstPhrase(parsed?.prompt) || target;
+            outcome = resolveWatcherClaim({ store, answer: parsed, target, baseline, force });
+            if (outcome.action !== 'retry') {
+                failure = null;
+                break;
+            }
+            reason = outcome.reason || 'unparsable';
         }
     } finally {
         thinking();
     }
 
-    if (failure) return { status: 'error', error: failure };
+    if (my !== chainSeq) return { status: 'superseded' };
 
-    console.debug(`${LOG} watcher answered`, answer);
+    // A failed call with no tags has nothing to fall back on. A tagged reply
+    // still knows its place, so it goes on to the sentence template.
+    if (failure && !place && !outcome) return { status: 'error', error: failure };
 
-    // The tag knows the place; the plain-prose hand leans on the watcher's
-    // own naming, and only a nameless answer falls back to its first phrase.
-    const target = place || answer.place || firstPhrase(answer.prompt) || 'the story';
+    if (!outcome) outcome = { action: 'draw', id: null, prompt: '', reason: reason || 'unparsable' };
+    console.debug(`${LOG} watcher answered`, outcome);
 
-    // A "same" or "known" claims the place being drawn is the named record's
-    // place under another spelling. The claim is checked before anything
-    // folds: a careless answer must never merge two different spots onto one
-    // picture - the fold would stick in the keys map and one brush would then
-    // repaint both places at once. A rejected claim draws fresh, from the
-    // watcher's own description when it wrote one.
-    if (answer.state === 'same' && !placeNamesLikelySame(target, baseline?.place || '')) {
-        answer = { state: 'new', knownId: null, place: answer.place || place, prompt: answer.prompt || plain() };
-    } else if (answer.state === 'known') {
-        const claimed = resolveRecordId(store, answer.knownId);
-        const claimedRecord = claimed ? store.records[claimed] : null;
-        if (!claimedRecord || !placeNamesLikelySame(target, claimedRecord.place)) {
-            answer = { state: 'new', knownId: null, place: answer.place || place, prompt: answer.prompt || plain() };
-        }
-    }
-
-    if (answer.state === 'same') {
+    if (outcome.action === 'same') {
         // The same place, spelled differently: fold the spelling onto the
         // picture the reply carried, so the next skip-gate compares equal.
-        if (target && baseline) aliasLocation(store, target, baseline.id);
+        if (target && baseline) aliasLocation(store, target, outcome.id || baseline.id);
         stampLanded(index, swipeId, baseline?.id);
         return { status: 'unchanged', record: baseline || undefined };
     }
 
-    if (answer.state === 'known') {
-        const id = resolveRecordId(store, answer.knownId);
+    if (outcome.action === 'known') {
+        const id = resolveRecordId(store, outcome.id);
         const record = id ? aliasLocation(store, target || store.records[id].place, id) : null;
         if (record) {
             stampLanded(index, swipeId, record.id);
             globalThis.toastr?.success?.(`Background set: ${placeShortName(record.place)}`);
             return { status: 'cached', record };
         }
-        // A stale id (hand-edited or pruned chat data): draw fresh instead,
-        // from the watcher's own description when it wrote one.
+        // A stale id (hand-edited or pruned chat data): draw fresh instead.
+        warnTemplate('known', 'stale claim', raw);
     }
+
+    // Nothing but a real picture description may reach the image model. The
+    // template is a sentence now, never the reversed location chain.
+    const description = outcome.prompt || plain();
+    if (!outcome.prompt) warnTemplate('new', outcome.reason || reason, raw);
 
     return generateBackground({
         store,
         index,
         swipeId,
         place: target,
-        description: answer.prompt || plain(),
+        description,
         force,
         my,
         signal,
@@ -615,7 +616,7 @@ async function runWatcherChain({ store, messages, index, swipeId, place, scene, 
  * location must never inherit the place it left.
  */
 async function runTransportChain({ store, messages, index, swipeId, ride, scene, baseline, persona, force, my, signal }) {
-    const request = buildTransportRequest({
+    const args = {
         store,
         messages,
         at: index,
@@ -625,64 +626,85 @@ async function runTransportChain({ store, messages, index, swipeId, ride, scene,
         place: scene?.placeFull || '',
         force,
         systemCore: settings().bgPromptTransport,
-    });
+    };
+    const request = buildTransportRequest(args);
     lastRequest = { systemPrompt: request.systemPrompt, prompt: request.prompt, at: Date.now() };
 
     const plain = () => fallbackTransportPrompt(scene || `En Route | ${ride.vehicle}${ride.space ? ` | ${ride.space}` : ''}`, ride);
     const thinking = stage(`Envisioning ${placeShortName(ride.space || ride.vehicle)}\u2026`);
-    let answer = null;
+    // A ride's identity comes from the tag, never from the watcher's state
+    // word: this hand has no "same", and a reply boarding from a place must
+    // never inherit the picture it left.
+    const target = ride.space || ride.vehicle || 'the ride';
+    let raw = '';
     let failure = null;
+    let outcome = null;
+    let reason = '';
     try {
-        const reply = await generateOn('backgroundAgent', {
-            prompt: request.prompt,
-            systemPrompt: request.systemPrompt,
-        });
+        // Like the location hand: one forced re-ask for a rejected claim or
+        // an empty description, then the sentence template. The second ask
+        // carries WATCHER_TRANSPORT_FORCE.
+        for (let attempt = 1; attempt <= 2; attempt += 1) {
+            const ask = attempt === 2 ? buildTransportRequest({ ...args, force: true }) : request;
+            if (attempt === 2) lastRequest = { systemPrompt: ask.systemPrompt, prompt: ask.prompt, at: Date.now() };
 
-        if (my !== chainSeq) return { status: 'superseded' };
+            const reply = await generateOn('backgroundAgent', {
+                prompt: ask.prompt,
+                systemPrompt: ask.systemPrompt,
+            });
 
-        answer = reply.ok ? parseWatcherReply(reply.text) : null;
-        if (!answer) {
-            failure = reply.error || 'The watcher call failed.';
-        } else if (answer.state === 'same' || (force && answer.state !== 'new')) {
-            // Identity of a ride is decided here, never by "same" - a reply
-            // boarding from a location must never inherit the place it left -
-            // and the brush must paint whatever the watcher matches.
-            answer = { state: 'new', knownId: null, place: answer.place || ride.vehicle, prompt: answer.prompt || plain() };
-        } else if (answer.state === 'known') {
-            const id = resolveRecordId(store, answer.knownId);
-            const record = id ? store.records[id] : null;
-            if (!record || !record.vehicle || !placeNamesLikelySame(ride.vehicle, record.vehicle)) {
-                // A stale id, or a location misread as a ride: the interior
-                // draws instead, from the watcher's own description.
-                answer = { state: 'new', knownId: null, place: answer.place || ride.vehicle, prompt: answer.prompt || plain() };
+            if (my !== chainSeq) return { status: 'superseded' };
+
+            raw = reply.text;
+            if (!reply.ok) {
+                failure = reply.error || 'The watcher call failed.';
+                reason = 'call failed';
+                continue;
             }
+
+            const parsed = parseWatcherReply(reply.text);
+            outcome = resolveWatcherClaim({ store, answer: parsed, target, baseline, force, kind: 'transport' });
+            if (outcome.action !== 'retry') {
+                failure = null;
+                break;
+            }
+            reason = outcome.reason || 'unparsable';
         }
     } finally {
         thinking();
     }
 
-    if (failure) return { status: 'error', error: failure };
     if (my !== chainSeq) return { status: 'superseded' };
 
-    if (answer.state === 'known') {
-        const id = resolveRecordId(store, answer.knownId);
-        const record = store.records[id];
-        // The spelling drift parks the variant's name onto the interior it
-        // matched - the same record under one more name - so the next ride
-        // needs no call at all.
-        const variantKey = ride.spaceKey;
-        if (variantKey) store.transports[variantKey] = record.id;
-        stampLanded(index, swipeId, record.id);
-        globalThis.toastr?.success?.(`Background set: ${placeShortName(record.place)}`);
-        return { status: 'cached', record };
+    if (failure && !outcome) return { status: 'error', error: failure };
+    if (!outcome) outcome = { action: 'draw', id: null, prompt: '', reason: reason || 'unparsable' };
+    console.debug(`${LOG} ride watcher answered`, outcome);
+
+    if (outcome.action === 'known') {
+        const id = resolveRecordId(store, outcome.id);
+        const record = id ? store.records[id] : null;
+        if (record) {
+            // The spelling drift parks the variant's name onto the interior
+            // it matched - the same record under one more name - so the next
+            // ride needs no call at all.
+            const variantKey = ride.spaceKey;
+            if (variantKey) store.transports[variantKey] = record.id;
+            stampLanded(index, swipeId, record.id);
+            globalThis.toastr?.success?.(`Background set: ${placeShortName(record.place)}`);
+            return { status: 'cached', record };
+        }
+        warnTemplate('known', 'stale claim', raw);
     }
+
+    const description = outcome.prompt || plain();
+    if (!outcome.prompt) warnTemplate('new', outcome.reason || reason, raw);
 
     return generateBackground({
         store,
         index,
         swipeId,
         place: scene?.placeFull || ride.vehicle,
-        description: answer.prompt || plain(),
+        description,
         force,
         my,
         signal,

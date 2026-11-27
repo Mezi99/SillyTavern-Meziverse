@@ -18,6 +18,7 @@ import {
     extractRecentPlaces,
     fallbackLocationPrompt,
     fallbackTransportPrompt,
+    findRecordByName,
     formatLatestStory,
     groupMessageByScene,
     isOurBackground,
@@ -41,6 +42,8 @@ import {
     resolveStampId,
     restorePlan,
     isNoPicture,
+    looksLikeChain,
+    resolveWatcherClaim,
     sceneUrl,
     setStamp,
     stampOf,
@@ -416,8 +419,8 @@ test('buildWatcherRequest serves the store and the story, and knows force', () =
 
     storeRecord(store, { key: 'A', place: 'A', prompt: 'a pier at dusk', path: '/a.png' });
     const full = buildWatcherRequest({ store, messages, tagged: true, count: 2 });
-    assert.ok(full.prompt.includes('<currentBackground>\nA [World location: A], Description: a pier at dusk\n</currentBackground>'));
-    assert.ok(full.prompt.includes('- bg_1: A [World location: A], Description: a pier at dusk'));
+    assert.ok(full.prompt.includes('<currentBackground>\nid: bg_1, A [World location: A], Description: a pier at dusk\n</currentBackground>'));
+    assert.ok(full.prompt.includes('- bg_1: A [World location: A], Description: a pier at dusk (on screen)'), 'the on-screen entry is marked so the model can copy its id');
 
     assert.ok(watcherSystemPrompt({ force: true }).includes('fresh image'), 'force switches matching off');
 });
@@ -428,17 +431,26 @@ test('watcherSystemPrompt keeps the answer format while the core stays tunable',
 
     const custom = watcherSystemPrompt({ core: 'Describe places like a haiku.' });
     assert.ok(custom.startsWith('Describe places like a haiku.'));
-    assert.ok(custom.includes('"state":"same|known|new"'), 'the answer format is appended whatever the core says');
+    for (const example of [
+        '- same:  {"state":"same","knownId":null,"place":"<short name of the current place>","prompt":""}',
+        '- known: {"state":"known","knownId":"<id from <knownBackgrounds>, copied exactly, e.g. bg_1>","place":"<short name>","prompt":""}',
+        '- new:   {"state":"new","knownId":null,"place":"<short name>","prompt":"<the description>"}',
+    ]) {
+        assert.ok(custom.includes(example), `the answer format is appended whatever the core says: ${example}`);
+        assert.ok(watcherSystemPrompt({ tagged: false }).includes(example), 'the plain-prose hand gets the same protocol');
+    }
+    assert.ok(custom.includes('The code decides the state from the id, not from your state word.'));
 
     const forced = watcherSystemPrompt({ force: true, core: 'Describe places like a haiku.' });
     assert.ok(forced.includes('fresh image'), 'force switches matching off');
+    assert.ok(forced.includes('The code decides the state from the id'), 'the id rule survives force');
 });
 
 test('buildWatcherRequest uses the core and the hand it is given', () => {
     const store = normalizeStore();
     const request = buildWatcherRequest({ store, messages: [msg('<scene location="A" /> x')], systemCore: 'My own rules.' });
     assert.ok(request.systemPrompt.startsWith('My own rules.'));
-    assert.ok(request.systemPrompt.includes('"state":"same|known|new"'));
+    assert.ok(request.systemPrompt.includes('- same:  {"state":"same","knownId":null'));
     assert.equal(request.responseLength, undefined, 'no cap: providers that count the prompt against the budget starve the answer');
 });
 
@@ -491,6 +503,11 @@ test('parseWatcherReply reads the JSON, the text protocol, or a bare description
         { state: 'same', knownId: null, place: '', prompt: '' },
         'the state word is judged by meaning too',
     );
+    assert.deepEqual(
+        parseWatcherReply('{"state":"known","knownId":null,"place":"Docks","prompt":""}'),
+        { state: 'known', knownId: null, place: 'Docks', prompt: '' },
+        'a null id still parses - the resolver checks the name instead',
+    );
 
     assert.deepEqual(parseWatcherReply('SAME'), { state: 'same', knownId: null, place: '', prompt: '' });
     assert.deepEqual(parseWatcherReply('KNOWN bg_3'), { state: 'known', knownId: 'bg_3', place: '', prompt: '' });
@@ -506,6 +523,112 @@ test('parseWatcherReply reads the JSON, the text protocol, or a bare description
     );
     assert.equal(parseWatcherReply(''), null);
     assert.equal(parseWatcherReply('{"state":"???"}'), null, 'an unknown state is not guessed at');
+
+    assert.ok(looksLikeChain('Metro City | Docks | Pier 9'));
+    assert.ok(looksLikeChain('Pier 9 [World location: Metro City | Pier 9]'));
+    assert.ok(!looksLikeChain('a wet timber pier with brass lamps at dusk'));
+
+    assert.equal(parseWatcherReply('Metro City | Docks | Pier 9'), null, 'a bare location chain is not a picture');
+    assert.equal(parseWatcherReply('{"state":"new","knownId":null,"place":"Pier 9","prompt":"a wet pier at'), null, 'a truncated JSON is not a description');
+    assert.equal(parseWatcherReply('I cannot help with that.'), null, 'a short refusal is not a description');
+    assert.equal(
+        parseWatcherReply('{"state":"new","knownId":null,"place":"Pier 9","prompt":"Metro City | Docks | Pier 9"}').prompt,
+        '',
+        'a chain inside a JSON answer never reaches the image model',
+    );
+    assert.equal(
+        parseWatcherReply('{"state":"new","knownId":null,"place":"Pier 9","prompt":"a wet timber pier at dusk, rain on the planks"}').prompt,
+        'a wet timber pier at dusk, rain on the planks',
+        'a real prose description is untouched',
+    );
+});
+
+test('findRecordByName catches spelling drift and keeps the two pools apart', () => {
+    const store = normalizeStore();
+    const pier = storeRecord(store, { place: 'Metro City | Docks | Pier 9', prompt: 'a pier', path: '/p.png' });
+    const ride = parkTransport(store, { vehicle: 'CV-7742 Shuttle', place: 'Space | En Route | CV-7742 Shuttle', prompt: 'a cabin', path: '/s.png' });
+
+    assert.equal(findRecordByName(store, 'Pier No9')?.id, pier.id, 'the old decide matcher folds a spelling drift');
+    assert.equal(findRecordByName(store, 'CV-7742 Shuttle', 'transport')?.id, ride.id);
+    assert.equal(findRecordByName(store, 'CV-7742 Shuttle'), null, 'a ride never answers for a place');
+    assert.equal(findRecordByName(store, 'Never Seen Before'), null);
+});
+
+test('resolveWatcherClaim decides from the id, never from the state word', () => {
+    const store = normalizeStore();
+    const pier = storeRecord(store, { place: 'Pier 9', prompt: 'a pier', path: '/p.png' });
+    const rooftop = storeRecord(store, { place: 'Rooftop', prompt: 'a roof', path: '/r.png' });
+
+    assert.deepEqual(
+        resolveWatcherClaim({ store, answer: { state: 'known', knownId: '1', place: '', prompt: '' }, target: 'Pier No9', baseline: pier }),
+        { action: 'same', id: pier.id, prompt: '', reason: '' },
+        'the on-screen id means "same" whatever the model called it',
+    );
+    assert.deepEqual(
+        resolveWatcherClaim({ store, answer: { state: 'same', knownId: 'bg_2', place: '', prompt: '' }, target: 'Rooftop', baseline: pier }),
+        { action: 'known', id: rooftop.id, prompt: '', reason: '' },
+        'a same claim for a known place that is not on screen must not fold onto the baseline',
+    );
+    assert.deepEqual(
+        resolveWatcherClaim({ store, answer: { state: 'new', knownId: 'bg_2', place: '', prompt: '' }, target: 'Rooftop', baseline: pier }),
+        { action: 'known', id: rooftop.id, prompt: '', reason: '' },
+        'a copied id wins over a "new" word too',
+    );
+});
+
+test('a rejected claim is looked up by name, then earns one forced re-ask', () => {
+    const store = normalizeStore();
+    const pier = storeRecord(store, { place: 'Pier No9', prompt: 'a pier', path: '/p.png' });
+
+    assert.deepEqual(
+        resolveWatcherClaim({ store, answer: { state: 'known', knownId: null, place: 'Pier 9', prompt: '' }, target: 'Pier 9' }),
+        { action: 'known', id: pier.id, prompt: '', reason: '' },
+        'a null id next to a library name reuses the picture, no template',
+    );
+    assert.deepEqual(
+        resolveWatcherClaim({ store, answer: { state: 'same', knownId: null, place: 'Pier 9', prompt: '' }, target: 'Pier 9', baseline: pier }),
+        { action: 'same', id: pier.id, prompt: '', reason: '' },
+        'the old plain-text SAME still checks its name against the baseline',
+    );
+
+    const rejected = resolveWatcherClaim({ store, answer: { state: 'known', knownId: 'bg_99', place: 'Rooftop', prompt: '' }, target: 'Rooftop' });
+    assert.equal(rejected.action, 'retry', 'a stale id for an unknown place does not draw a template yet');
+    assert.equal(rejected.reason, 'rejected claim');
+
+    const drawn = resolveWatcherClaim({ store, answer: { state: 'known', knownId: 'bg_1', place: 'Pier 9', prompt: 'a wet pier at dusk' }, target: 'Pier 9', force: true });
+    assert.deepEqual(drawn, { action: 'draw', id: null, prompt: 'a wet pier at dusk', reason: '' }, 'the forced re-ask paints from the description it finally wrote');
+    assert.equal(
+        resolveWatcherClaim({ store, answer: { state: 'known', knownId: 'bg_1', place: 'Pier 9', prompt: '' }, target: 'Pier 9', force: true }).action,
+        'retry',
+        'no description even under force means the template is the last resort',
+    );
+    assert.ok(watcherSystemPrompt({ force: true }).includes('fresh image'), 'the re-ask carries the force instruction');
+    assert.equal(
+        resolveWatcherClaim({ store, answer: { state: 'new', knownId: null, place: 'Pier 9', prompt: 'Metro City | Docks | Pier 9' }, target: 'Pier 9' }).action,
+        'retry',
+        'a chain-shaped prompt is never drawn',
+    );
+});
+
+test('resolveWatcherClaim keeps a ride out of the location library', () => {
+    const store = normalizeStore();
+    const pier = storeRecord(store, { place: 'Pier 9', prompt: 'a pier', path: '/p.png' });
+    const cabin = parkTransport(store, { vehicle: 'CV-7742 Shuttle', place: 'Space | En Route | CV-7742 Shuttle', prompt: 'a cabin', path: '/s.png' });
+
+    assert.deepEqual(
+        resolveWatcherClaim({ store, answer: { state: 'same', knownId: 'bg_2', place: '', prompt: '' }, target: 'CV-7742 Shuttle', kind: 'transport', baseline: pier }),
+        { action: 'known', id: cabin.id, prompt: '', reason: '' },
+        'this hand never answers "same" - an id is a parked interior',
+    );
+    assert.equal(
+        resolveWatcherClaim({ store, answer: { state: 'known', knownId: pier.id, place: '', prompt: '' }, target: 'CV-9999 Freight', kind: 'transport' }).action,
+        'retry',
+        'a location record cannot stand in for an unknown ride',
+    );
+    assert.equal(
+        resolveWatcherClaim({ store, answer: { state: 'new', knownId: null, place: '', prompt: 'an empty cabin with blue seats and a dim overhead lamp' }, target: 'CV-7742 Shuttle', kind: 'transport' }).action,
+        'draw',
+    );
 });
 
 test('compileBgPrompt layers the style over the watcher description', () => {
@@ -557,20 +680,25 @@ test('buildWatcherRequest labels the place and never truncates the description',
     const request = buildWatcherRequest({ store, messages: [msg('<scene location="Metro City | Unit 4B - Bedroom" /> x')], tagged: true });
     const line = `- bg_1: Unit 4B - Bedroom [World location: Metro City | Unit 4B - Bedroom], Description: ${long}`;
     assert.ok(request.prompt.includes(line), 'the short name names the picture, the chain is context, the description arrives whole');
-    assert.ok(request.prompt.includes(`<currentBackground>\nUnit 4B - Bedroom [World location: Metro City | Unit 4B - Bedroom], Description: ${long}`));
+    assert.ok(request.prompt.includes(`<currentBackground>\nid: bg_1, Unit 4B - Bedroom [World location: Metro City | Unit 4B - Bedroom], Description: ${long}`));
     assert.ok(!request.prompt.includes('...'), 'nothing is cut');
 });
 
 test('fallbackLocationPrompt describes the place plainly when the watcher fails', () => {
     assert.equal(
         fallbackLocationPrompt({ placeFull: 'The Docks', date: 'Tuesday, March 4', time: '9:40 PM', weather: 'Rain' }),
-        'The Docks, Rain, night, wide establishing shot, empty place, detailed environment',
+        'Wide establishing shot of an empty The Docks, Rain, night.',
     );
-    assert.equal(fallbackLocationPrompt('Pier 9'), 'Pier 9, wide establishing shot, empty place, detailed environment');
+    assert.equal(fallbackLocationPrompt('Pier 9'), 'Wide establishing shot of an empty Pier 9.');
+    assert.equal(
+        fallbackLocationPrompt({ placeFull: 'Pier 9', time: '09:58', weather: 'Rain' }),
+        'Wide establishing shot of an empty Pier 9, Rain, morning light.',
+    );
 
     const chain = fallbackLocationPrompt({ placeFull: 'Corporate Space | Core Systems | New Eden Station | Docking Bay 7-C | CV-7742 Shuttle', time: '09:58', weather: 'Controlled atmosphere, 21\u00b0C' });
-    assert.ok(chain.startsWith('CV-7742 Shuttle, Docking Bay 7-C, New Eden Station'), 'the specific spot first, its world as plain words after it');
+    assert.ok(chain.startsWith('Wide establishing shot of an empty CV-7742 Shuttle, in Docking Bay 7-C, New Eden Station, Core Systems'), 'the specific spot first, its world as plain words after it');
     assert.ok(!chain.includes('|'), 'a pipe chain is noise in a picture');
+    assert.ok(!chain.includes('detailed environment'), 'no shot-tag list - the fallback reads like a description');
     assert.ok(!chain.includes('2347') && !chain.includes('March'), 'no calendar stamp - the clock becomes a day-part');
     assert.ok(chain.includes('morning light'));
 });
@@ -676,12 +804,12 @@ test("buildWatcherRequest asks about its own reply, not the chat's end", () => {
     ];
 
     const request = buildWatcherRequest({ store, messages, at: 1, current: prior });
-    assert.ok(request.prompt.includes('<currentBackground>\nPier 9 [World location: Pier 9], Description: a pier at dusk'), 'the reply carried its own baseline in');
+    assert.ok(request.prompt.includes('<currentBackground>\nid: bg_1, Pier 9 [World location: Pier 9], Description: a pier at dusk'), 'the reply carried its own baseline in');
     assert.ok(request.prompt.includes('SCENE: Rooftop'), 'the story ends at the target reply');
     assert.ok(!request.prompt.includes('still on the roof'), 'later replies are not part of its story');
 
     const plain = buildWatcherRequest({ store, messages });
-    assert.ok(plain.prompt.includes('<currentBackground>\nPier 9 [World location: Pier 9], Description: a pier at dusk'), 'with no baseline given, the on-screen record stands in');
+    assert.ok(plain.prompt.includes('<currentBackground>\nid: bg_1, Pier 9 [World location: Pier 9], Description: a pier at dusk'), 'with no baseline given, the on-screen record stands in');
 });
 
 /* ---------- the parking lot: transport interiors ---------- */
@@ -825,7 +953,8 @@ test('buildTransportRequest asks about one ride against the parking lot alone', 
     assert.ok(request.prompt.includes('cramped cabin'));
     assert.ok(!request.prompt.includes('rain-slick pier'), 'the location library never appears on a ride');
     assert.ok(request.systemPrompt.includes('INTERIOR'), 'the interior rule rides along - by code');
-    assert.ok(request.systemPrompt.includes('"state":"known|new"'), 'a ride is known or new - never "same"');
+    assert.ok(request.systemPrompt.includes('- known: {"state":"known","knownId":"<id from <parkingLot>, copied exactly, e.g. bg_1>"'), 'the ride format names the lot as the id menu');
+    assert.ok(request.systemPrompt.includes('this hand never answers "same"'), 'a ride is known or new - never "same"');
 
     parkTransport(store, { vehicle: 'CV-7742 Shuttle', space: 'Cockpit', prompt: 'glowing console', path: '/c.png' });
     const spaced = buildTransportRequest({
@@ -852,18 +981,16 @@ test('the location hand\u2019s library never lists a ride', () => {
 
 test('fallbackTransportPrompt speaks interior when the watcher fails on a ride', () => {
     const line = fallbackTransportPrompt({ placeFull: 'Space | Mars | En Route | CV-7742 Shuttle', time: '21:00', weather: 'Cold' });
-    assert.ok(line.startsWith('interior of CV-7742 Shuttle, vehicle interior'), 'the interior first - it never changes wherever the vehicle travels');
+    assert.ok(line.startsWith('Wide establishing shot of the empty CV-7742 Shuttle, in En Route, Mars, Space'), 'the interior first - it never changes wherever the vehicle travels');
     assert.ok(!line.includes('|'), 'no pipe chain in a picture');
+    assert.ok(!line.includes('detailed environment'), 'a sentence, not a tag list');
     assert.ok(line.includes('night'));
-    assert.equal(
-        fallbackTransportPrompt('Pier 9'),
-        'interior of Pier 9, vehicle interior, wide establishing shot, empty place, detailed environment',
-    );
+    assert.equal(fallbackTransportPrompt('Pier 9'), 'Wide establishing shot of the empty Pier 9.');
 
     const room = fallbackTransportPrompt(
         { placeFull: 'Space | Mars | En Route | CV-7742 Shuttle | Cockpit', time: '21:00' },
         { vehicle: 'CV-7742 Shuttle', key: 'cv-7742 shuttle', space: 'Cockpit', spaceKey: 'cv-7742 shuttle::cockpit' },
     );
-    assert.ok(room.startsWith('interior of the Cockpit of CV-7742 Shuttle, vehicle interior'), 'the named space is the subject');
+    assert.ok(room.startsWith('Wide establishing shot of the empty Cockpit of CV-7742 Shuttle'), 'the named space is the subject');
     assert.ok(room.includes('Mars') && room.includes('night'), 'the world and the hour still ride along');
 });
