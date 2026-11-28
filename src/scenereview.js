@@ -432,11 +432,14 @@ function queue(targets, label) {
         return;
     }
 
-    pending = { writes, label, total: seen.size };
+    // The confirmation counts real tag changes, not rows selected: a rename
+    // may leave rows that already carry the chosen spelling untouched.
+    const total = writes.reduce((sum, write) => sum + write.edits, 0);
+    pending = { writes, label, total };
     editing = null;
     rename = null;
     render();
-    if (seen.size < 2) void runPending();
+    if (total < 2) void runPending();
 }
 
 function saveEditor(id) {
