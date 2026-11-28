@@ -11,6 +11,7 @@ import { mount, open, isOpen, applyMusic } from './src/overlay.js';
 import { initBackgrounds } from './src/bgchain.js';
 import { initMusic } from './src/music.js';
 import { initMap } from './src/map.js';
+import { initSceneReview } from './src/scenereview.js';
 import { addLauncher, addDrawerBlock } from './src/launcher.js';
 
 async function boot() {
@@ -22,6 +23,7 @@ async function boot() {
     initBackgrounds({ isOpen });
     initMusic({ isOpen, onPickChange: applyMusic });
     initMap({ isOpen });
+    initSceneReview({ isOpen });
     addLauncher(open);
     addDrawerBlock(open);
 

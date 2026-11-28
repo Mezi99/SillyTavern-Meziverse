@@ -16,7 +16,7 @@
     --mzc-name: color-mix(in srgb, var(--mz-text) 62%, transparent);
     --mzc-halo: var(--mz-surface-solid);
     --mzc-trail: var(--mz-accent);
-    --mzc-flag: var(--mz-warn);
+    --mzc-flag: var(--mz-flag);
 }
 
 
@@ -305,7 +305,7 @@
 .mz-map-key i.k-pass { width: 9px; height: 9px; border: 1px solid color-mix(in srgb, var(--mz-text) 22%, transparent); border-radius: 50%; background: var(--mzc-land-2); margin: 0 4px; }
 .mz-map-key i.k-ride { width: 11px; height: 11px; border: 1.5px dashed color-mix(in srgb, var(--mz-text) 55%, transparent); border-radius: 50%; margin: 0 3px; }
 .mz-map-key i.k-road { width: 8px; height: 8px; border: 1px dashed color-mix(in srgb, var(--mz-text) 35%, transparent); border-radius: 50%; margin: 0 5px; }
-.mz-map-key i.k-flag { width: 11px; height: 11px; border: 0; border-radius: 50%; background: var(--mz-warn); margin: 0 3px; }
+.mz-map-key i.k-flag { width: 11px; height: 11px; border: 0; border-radius: 50%; background: var(--mz-flag); margin: 0 3px; }
 .mz-map-compass { position: absolute; z-index: 3; right: 24px; bottom: 24px; width: 46px; height: 46px; color: var(--mz-text-muted); pointer-events: none; opacity: .85; }
 
 /* ---------- the place card ---------- */
@@ -340,8 +340,8 @@
 .mz-map-legs span { flex: 1; min-width: 0; overflow: hidden; color: var(--mz-text); text-overflow: ellipsis; white-space: nowrap; }
 .mz-map-legs em { font-style: normal; color: var(--mz-text-dim); }
 .mz-map-flags { margin: 0; padding: 0; list-style: none; display: grid; gap: 5px; }
-.mz-map-flags li { display: flex; gap: 8px; padding: 7px 9px; border: 1px solid color-mix(in srgb, var(--mz-warn) 30%, transparent); border-radius: var(--mz-r-sm); background: color-mix(in srgb, var(--mz-warn) 8%, transparent); color: color-mix(in srgb, var(--mz-warn) 55%, var(--mz-text)); line-height: 1.4; }
-.mz-map-flags li::before { content: "!"; flex: none; display: grid; place-items: center; width: 14px; height: 14px; margin-top: 1px; border-radius: 50%; background: var(--mz-warn); color: var(--mz-accent-ink); font-size: 9px; font-weight: 700; }
+.mz-map-flags li { display: flex; gap: 8px; padding: 7px 9px; border: 1px solid var(--mz-flag-line); border-radius: var(--mz-r-sm); background: var(--mz-flag-soft); color: color-mix(in srgb, var(--mz-flag) 55%, var(--mz-text)); line-height: 1.4; }
+.mz-map-flags li::before { content: "!"; flex: none; display: grid; place-items: center; width: 14px; height: 14px; margin-top: 1px; border-radius: 50%; background: var(--mz-flag); color: var(--mz-accent-ink); font-size: 9px; font-weight: 700; }
 .mz-map-visits { margin: 0; padding: 0; list-style: none; }
 .mz-map-visits li { display: flex; align-items: center; gap: 8px; padding: 3px 0; border-bottom: 1px solid var(--mz-line); }
 .mz-map-visits .lines { flex: 1; min-width: 0; display: grid; gap: 1px; }

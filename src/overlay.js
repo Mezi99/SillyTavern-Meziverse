@@ -32,6 +32,14 @@ import { mountMusic, musicUiClosed, musicUiOpened, refreshMusic } from './music.
 import { mountConnections } from './connections.js';
 import { mountMap, mapUiClosed, mapUiOpened, refreshMap, isMapWinOpen, openMapWin, closeMapWin, terrainRecordView, writeTerrainRecord, reseedTerrainRecord, rederiveTerrainRecord } from './map.js';
 import { closeLibrary, isLibraryOpen, libraryUiClosed, mountLibrary, openLibrary, primeSprites, refreshLibrary } from './library.js';
+import {
+    closeSceneReview,
+    isSceneReviewOpen,
+    mountSceneReview,
+    openSceneReview,
+    sceneReviewUiClosed,
+    sceneReviewUiOpened,
+} from './scenereview.js';
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr, notify } from './notify.js';
 
@@ -76,7 +84,7 @@ const FRAME_HTML = `
     <div class="mz-scrim" aria-hidden="true"></div>
 
     <header class="mz-header">
-        <div class="mz-brand"><b>Meziverse</b><small class="mz-version">v${VERSION}</small><span class="mz-hair mz-quick-hair" aria-hidden="true"></span><div class="mz-autoquick" role="group" aria-label="Quick toggles"><button class="mz-qpill mz-bgauto" type="button" role="switch" aria-checked="false" title="Backgrounds follow the story" aria-label="Backgrounds follow the story" data-mz-action="bg-auto">${svg('image')}</button><button class="mz-qpill mz-musicdj" type="button" role="switch" aria-checked="false" title="Music DJ on/off" aria-label="Music DJ on/off" data-mz-action="music-dj">${svg('music')}</button><button class="mz-qpill" type="button" role="switch" aria-checked="true" title="Map on or off" aria-label="Map" data-mz-action="map">${svg('map')}</button><button class="mz-qpill" type="button" title="Character Library" aria-label="Character Library" data-mz-action="library-open">${svg('library')}</button></div></div>
+        <div class="mz-brand"><b>Meziverse</b><small class="mz-version">v${VERSION}</small><span class="mz-hair mz-quick-hair" aria-hidden="true"></span><div class="mz-autoquick" role="group" aria-label="Quick toggles"><button class="mz-qpill mz-bgauto" type="button" role="switch" aria-checked="false" title="Backgrounds follow the story" aria-label="Backgrounds follow the story" data-mz-action="bg-auto">${svg('image')}</button><button class="mz-qpill mz-musicdj" type="button" role="switch" aria-checked="false" title="Music DJ on/off" aria-label="Music DJ on/off" data-mz-action="music-dj">${svg('music')}</button><button class="mz-qpill" type="button" role="switch" aria-checked="true" title="Map on or off" aria-label="Map" data-mz-action="map">${svg('map')}</button><button class="mz-qpill" type="button" title="Character Library" aria-label="Character Library" data-mz-action="library-open">${svg('library')}</button></div><button class="mz-scenetop" type="button" title="Scene review" aria-label="Scene review" data-mz-action="scenes-open">${svg('scenes')}<span>Scenes</span><span class="mz-scenebadge" data-mz="scene-count" hidden></span></button></div>
         <div class="mz-chatname" data-mz="chatname"><b class="is-empty">No chat open</b></div>
         <div class="mz-header-tools">
             <div class="mz-music-slot" data-mz="music-slot"></div>
@@ -724,6 +732,7 @@ export function mount() {
     mountMusic({ slot: root.querySelector('[data-mz="music-slot"]'), frame });
     mountMap({ frame, goto: index => transcript?.show(index) });
     mountLibrary({ frame, presentNames: () => lastShown?.scene?.present || [] });
+    mountSceneReview({ frame, goto: index => transcript?.show(index) });
 
     transcript = createTranscript({
         frame,
@@ -852,6 +861,7 @@ export function open() {
     uiOpened().finally(() => applyBackground(undefined, true));
     musicUiOpened();
     mapUiOpened();
+    sceneReviewUiOpened();
     transcript.refresh({ followLatest: true });
     desiredPane = Number(settings().paneHeight) || PANE_DEFAULT;
     applyPaneHeight(desiredPane);
@@ -879,6 +889,7 @@ export function close() {
     // The map window goes away with the scene as well.
     mapUiClosed();
     libraryUiClosed();
+    sceneReviewUiClosed();
 
     if (frame.contains(document.activeElement)) document.activeElement.blur();
 
@@ -2713,7 +2724,8 @@ function wireActions() {
                 else enterFullscreen();
                 break;
             case 'dismiss':
-                if (isMapWinOpen()) closeMapWin();
+                if (isSceneReviewOpen()) closeSceneReview();
+                else if (isMapWinOpen()) closeMapWin();
                 else if (isLibraryOpen()) closeLibrary();
                 else if (isCardOpen()) closeCard();
                 else if (isDockOpen()) closeDock();
@@ -2819,6 +2831,14 @@ function wireActions() {
                 // close leaves the pill to open and shut it.
                 if (isLibraryOpen()) closeLibrary();
                 else openLibrary();
+                break;
+            case 'scenes-open':
+                // The top-bar Scenes pill works the same way as Library's.
+                if (isSceneReviewOpen()) closeSceneReview();
+                else openSceneReview();
+                break;
+            case 'scenes-close':
+                closeSceneReview();
                 break;
             case 'map-open':
                 openMapWin();
@@ -2999,7 +3019,8 @@ function wireKeys() {
             // rest of the scene.
             if (closeFloats()) return;
             if (closeMemory()) return;
-            if (isMapWinOpen()) closeMapWin();
+            if (isSceneReviewOpen()) closeSceneReview();
+            else if (isMapWinOpen()) closeMapWin();
             else if (isLibraryOpen()) closeLibrary();
             else if (isCardOpen()) closeCard();
             else if (isDockOpen()) closeDock();

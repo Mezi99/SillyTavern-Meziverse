@@ -94,6 +94,10 @@ const DEFAULTS = {
     // Null = centred default.
     libWinPos: null,
     libWinSize: null,
+    // The Scene review window's remembered spot and size. Null = centred
+    // default; a narrow screen always falls back to the full-frame layout.
+    sceneWinPos: null,
+    sceneWinSize: null,
     // The map's land: 'ink' paints the story's terrain under the chart,
     // 'flat' is the plain chart. The map window's Land chips edit this.
     mapTerrain: 'ink',

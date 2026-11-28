@@ -189,10 +189,11 @@ export function activeStamp(message) {
 
 /* The message whose text the map reads: the selected variant's, patched onto
    a shim when the `mes` mirror lags behind it. One shim per message keeps the
-   identity caches in tags.js and scene.js hitting. */
+   identity caches in tags.js and scene.js hitting. Exported so the scene
+   review reads the same source the map draws, without a second shim cache. */
 const sourceCache = new WeakMap();
 
-function sourceOf(message) {
+export function sourceOf(message) {
     const text = activeSwipeText(message);
     const mirrored = typeof message?.mes === 'string' ? message.mes : '';
     if (text === mirrored) return message;

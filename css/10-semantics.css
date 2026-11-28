@@ -34,6 +34,13 @@
     --mz-scene-soft: #e2d6bb;
     --mz-scene-line: rgba(242, 196, 109, .45);
     --mz-scene-scrim: rgba(36, 34, 32, .55);
+
+    /* Review flags: one warning hue shared by the map and the scene window.
+       Themes retune it below; amber turns it cool so a flag never reads as
+       that theme's gold accent. */
+    --mz-flag: #e3b36b;
+    --mz-flag-soft: rgba(227, 179, 107, .13);
+    --mz-flag-line: rgba(227, 179, 107, .35);
 }
 
 /* ---------- ink · jade (default) ---------- */
@@ -61,6 +68,9 @@
     --mz-tone-desire-low: #b794f4;
     --mz-ok: #86c295;
     --mz-warn: #d6a966;
+    --mz-flag: #e3b36b;
+    --mz-flag-soft: rgba(227, 179, 107, .13);
+    --mz-flag-line: rgba(227, 179, 107, .35);
     --mz-bad: #cf7d76;
     /* the ink the scene's scrims shade with: the same hue family as the
        background, so the overlays tint instead of graying it out */
@@ -101,6 +111,10 @@
     --mz-tone-desire-low: #b794f4;
     --mz-ok: #9dbe8f;
     --mz-warn: #d9ac68;
+    /* Amber's accent is already gold, so its flags borrow the mock's blue. */
+    --mz-flag: #8fc7e8;
+    --mz-flag-soft: rgba(143, 199, 232, .12);
+    --mz-flag-line: rgba(143, 199, 232, .34);
     --mz-bad: #cf7d70;
     --mz-scrim-ink: #0b0704;
     --mz-scene-1: #140e07;
@@ -138,6 +152,9 @@
     --mz-tone-desire-low: #b794f4;
     --mz-ok: #93bb9a;
     --mz-warn: #d3a973;
+    --mz-flag: #e3b36b;
+    --mz-flag-soft: rgba(227, 179, 107, .13);
+    --mz-flag-line: rgba(227, 179, 107, .35);
     --mz-bad: #d07e7e;
     --mz-scrim-ink: #09050b;
     --mz-scene-1: #120c15;
