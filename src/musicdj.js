@@ -35,7 +35,8 @@ const LOG = '[Meziverse music dj]';
  * the answer format are appended by `djSystemPrompt`, never part of this
  * text.
  */
-export const DEFAULT_DJ_PROMPT = `You are the scene's music DJ. You read the story's recent turns - the latest story turn kept separate at the end - and answer with a playback intent that fits its mood, setting, pace, and genre. You have no tools: the app searches YouTube and plays the top result for your searchQuery.
+/** The core as v2.9.1 shipped it - a saved copy still holding this follows the new default. */
+export const PRIOR_DEFAULT_DJ_PROMPT = `You are the scene's music DJ. You read the story's recent turns - the latest story turn kept separate at the end - and answer with a playback intent that fits its mood, setting, pace, and genre. You have no tools: the app searches YouTube and plays the top result for your searchQuery.
 
 Rules:
 - Let the story's own genre and era decide the sound: a Wild West tale, a science-fiction tale, a medieval tale and a modern tale must never end up sounding alike.
@@ -43,6 +44,15 @@ Rules:
 - Change only on a clear mood shift, or when the question marks a forced fresh pick, which needs a different, fitting choice.
 - Never target Shorts, memes, reaction videos, compilations, or joke clips.
 - Use volume 20-40 for quiet scenes and 60-85 for action; answer "volume" alone when only loudness should change.`;
+
+export const DEFAULT_DJ_PROMPT = `You are the music supervisor for an interactive story. You read the story's recent turns - the latest story turn kept separate at the end - and decide what the scene should sound like, the way a supervisor spots music for a film. You have no tools: the app searches YouTube with your searchQuery and plays a playable result.
+
+How to decide:
+- Read the world first. The scene tags and the narration give you the era (a date, a technology, a costume), the place (a tavern, a starship corridor, a rain-soaked street) and the culture. The world decides the sound; the moment decides only its intensity. A Wild West tale, a medieval tale, a science-fiction tale and a modern tale must never sound alike.
+- Keep the current track with action "none" while it still clearly fits. Music that is merely different is not better. Change only on a real shift in place, pace or mood, or when the question marks a forced fresh pick, which needs a clearly different choice that still fits the world.
+- Choose for the scene, not the plot: never put character names, plot details, props or quoted lines into the choice.
+- Never target Shorts, memes, reaction videos, compilations of unrelated tracks, or joke clips.
+- Volume 20-40 for quiet scenes and 60-85 for action; answer "volume" alone when only loudness should change.`;
 
 /**
  * The default core as v2.8.0 shipped it. A saved settings copy still holding
@@ -65,13 +75,33 @@ Rules:
  * invent anything.
  */
 export const PICK_MODES = {
-    orchestra: 'PICK STYLE - ORCHESTRA: write a precise search query for an INSTRUMENTAL score or instrumental rendition that fits this story\u2019s own genre and era - western guitars and harmonica for a Wild West tale, synth and electronics for science fiction, lute, flute and choir for a medieval one. Never choose vocal songs. Favor OST, soundtrack, ambient, extended, mix, or no-copyright results.',
-    songs: 'PICK STYLE - SONGS: name one specific, well-known real song as "Artist - Title" that fits this story\u2019s own genre, era, and mood - the pop and rock its characters would actually know for a modern tale, country and western for a Wild West one. Prefer the official or artist upload; add "official audio" to the query when it helps. If no specific song clearly fits, fall back to a precise vibe query. Never invent songs.',
+    orchestra: `PICK STYLE - ORCHESTRA (the score): choose underscore - instrumental music that plays under the scene and that nobody in the story hears. Never choose songs with vocals.
+
+searchQuery: YouTube matches video titles, so write it the way uploaders title their videos: 3 to 6 words, in this order.
+1. World: the era or setting in one or two plain words (medieval, western, cyberpunk, 1920s, feudal Japan, space station, haunted mansion).
+2. Sound: one genre or one lead instrument (tavern lute, saloon piano, dark ambient, synthwave, solo cello, taiko drums).
+3. Format: exactly one of: music, ambience, soundtrack, ost.
+Add one feeling word before the format word only when the scene is clearly tense, calm, sad, romantic or epic.
+Good: "medieval tavern lute music", "cyberpunk rain ambience", "western saloon piano", "feudal Japan tense soundtrack", "haunted mansion dark ambient".
+Bad: strings of adjectives; names from the story; the exact action of the scene; quotation marks; stacking instrumental, no copyright, extended, mix, hour, loop or HD; anything over 6 words. Fewer, commoner words match more videos.
+
+alternates: up to 2 backup queries, each a broader 2 to 3 words (the world plus the format), tried in order only if the first search finds nothing playable.`,
+
+    songs: `PICK STYLE - SONGS (source music): choose one real, well-known song that belongs in the story's world - what a character would hear on a radio, in a bar or on a playlist, or that carries the scene like a film's needle-drop. Fit the era first (nothing released after the story's time; classics for a retro or historical tale), then the genre, then the mood.
+
+searchQuery: exactly "Artist - Title" and nothing else: no "official", "audio", "lyrics", year or quotation marks. Choose a song with a standard studio recording that is widely uploaded; avoid live versions, covers, remixes, and anything you are not certain exists. Never invent a song.
+
+alternates: up to 2 other real songs in the same form ("Artist - Title"), by different artists, that fit the scene about as well. They are tried in order if the first song cannot be played here.
+
+If the world has no real songs (high fantasy, far future), choose instrumental music instead and write searchQuery in the ORCHESTRA form: 3 to 6 words, world, sound, format.`,
 };
 
 const ANSWER_FORMAT = [
     'Answer with one JSON object and nothing else:',
-    '{"action":"play"|"volume"|"none","mood":"brief detected mood","searchQuery":"YouTube search query or null","volume":number|null}',
+    '{"action":"play"|"volume"|"none","mood":"2-4 words","searchQuery":"..."|null,"alternates":["...","..."],"volume":number|null}',
+    '- play: searchQuery is required; alternates is optional (up to 2, as the pick style says).',
+    '- volume: volume is required (0-100); the others are null or empty.',
+    '- none: everything else is null or empty.',
 ].join('\n');
 
 /**
@@ -126,10 +156,10 @@ export function djMessages({ history = [], last = null, playing = null, forceFre
  * never stop the music that is already playing.
  *
  * @param {string} text
- * @returns {{action:'play'|'volume'|'none', mood:string|null, searchQuery:string|null, volume:number|null}}
+ * @returns {{action:'play'|'volume'|'none', mood:string|null, searchQuery:string|null, alternates:string[], volume:number|null}}
  */
 export function parseDjAnswer(text) {
-    const intent = { action: 'none', mood: null, searchQuery: null, volume: null };
+    const intent = { action: 'none', mood: null, searchQuery: null, alternates: [], volume: null };
 
     const json = extractObject(typeof text === 'string' ? text : '');
     if (!json) return intent;
@@ -143,6 +173,19 @@ export function parseDjAnswer(text) {
     const query = typeof json.searchQuery === 'string' ? json.searchQuery.trim() : '';
     intent.searchQuery = query || null;
 
+    // Two backup searches at most, each a distinct non-empty string. Anything
+    // else the model sends is ignored rather than trusted with a search.
+    if (Array.isArray(json.alternates)) {
+        const seen = new Set();
+        for (const value of json.alternates) {
+            const alternate = typeof value === 'string' ? value.trim().slice(0, 80) : '';
+            if (!alternate || seen.has(alternate)) continue;
+            seen.add(alternate);
+            intent.alternates.push(alternate);
+            if (intent.alternates.length === 2) break;
+        }
+    }
+
     const volume = Number(json.volume);
     intent.volume = Number.isFinite(volume) && json.volume !== null && json.volume !== ''
         ? Math.max(0, Math.min(100, Math.round(volume)))
@@ -152,8 +195,36 @@ export function parseDjAnswer(text) {
     if (intent.action === 'play' && !intent.searchQuery) intent.action = 'none';
     // A volume with no number is not a volume.
     if (intent.action === 'volume' && intent.volume === null) intent.action = 'none';
+    // The answer format says every other field is empty on a non-play.
+    if (intent.action !== 'play') intent.alternates = [];
 
     return intent;
+}
+
+/**
+ * The safety net for a model that ignores the prompt's query rules: strip
+ * wrapping quotes and punctuation, collapse spaces, and - for orchestra -
+ * drop the filler words that make a YouTube title match nothing. Songs keep
+ * their "Artist - Title" shape and are only trimmed.
+ */
+const QUERY_EDGES_RE = /^[\s"'“”‘’`.,!?:;(){}\[\]-]+|[\s"'“”‘’`.,!?:;(){}\[\]-]+$/g;
+const ORCHESTRA_FILLER = [
+    'no copyright', 'copyright free', 'royalty free', 'instrumental',
+    'extended', 'hd', '4k', '1 hour', '10 hours', 'loop',
+];
+
+export function tidyQuery(query, mode = 'orchestra') {
+    let text = typeof query === 'string'
+        ? query.trim().replace(QUERY_EDGES_RE, '').replace(/\s+/g, ' ').trim()
+        : '';
+    if (mode !== 'orchestra' || !text) return text;
+
+    for (const phrase of ORCHESTRA_FILLER) {
+        const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+        text = text.replace(new RegExp(`\\b${escaped}\\b`, 'gi'), ' ');
+    }
+    // Dropping a filler word can leave the comma that introduced it.
+    return text.replace(/[,;:]+/g, ' ').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean).slice(0, 7).join(' ');
 }
 
 /** The first JSON object in a string - code fences and chatter tolerated. */
@@ -241,8 +312,9 @@ async function askDj({ forceFreshPick = false } = {}) {
     controller?.picking?.(true);
     try {
         const { history, last } = await splitStory(chatMessages(), { turns: DJ_STORY_TURNS });
+        const mode = controller?.pickMode?.();
         const request = {
-            systemPrompt: djSystemPrompt({ core: controller?.promptCore?.(), mode: controller?.pickMode?.() }),
+            systemPrompt: djSystemPrompt({ core: controller?.promptCore?.(), mode }),
             prompt: djMessages({
                 history,
                 last,
@@ -273,8 +345,15 @@ async function askDj({ forceFreshPick = false } = {}) {
         if (intent.action === 'volume' && intent.volume !== null) {
             controller?.setVolume?.(intent.volume);
         }
-        if (intent.action === 'play' && intent.searchQuery) {
-            controller?.play?.(intent.searchQuery, { mood: intent.mood });
+        if (intent.action === 'play') {
+            // The model's query is cleaned here - not in the prompt's hands
+            // alone - and each backup is cleaned the same way. A query that
+            // tidies to nothing is not a play.
+            const query = tidyQuery(intent.searchQuery, mode);
+            if (query) {
+                const alternates = [...new Set(intent.alternates.map(alternate => tidyQuery(alternate, mode)).filter(Boolean))].slice(0, 2);
+                controller?.play?.(query, { mood: intent.mood, alternates });
+            }
         }
 
         return intent;

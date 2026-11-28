@@ -7,7 +7,7 @@
 
 import { castKey, ctx } from './st.js';
 import { DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_OFF, DEFAULT_BG_TRANSPORT_PROMPT, LEGACY_DEFAULT_BG_PROMPT_ON, LEGACY_DEFAULT_BG_PROMPT_OFF, PRIOR_DEFAULT_BG_PROMPT_ON, PRIOR_DEFAULT_BG_PROMPT_OFF, PRIOR_DEFAULT_BG_TRANSPORT_PROMPT, PRE_PROSE_DEFAULT_BG_PROMPT_ON, PRE_PROSE_DEFAULT_BG_PROMPT_OFF, PRE_PROSE_DEFAULT_BG_TRANSPORT_PROMPT } from './backgrounds.js';
-import { DEFAULT_DJ_PROMPT, LEGACY_DEFAULT_DJ_PROMPT } from './musicdj.js';
+import { DEFAULT_DJ_PROMPT, LEGACY_DEFAULT_DJ_PROMPT, PRIOR_DEFAULT_DJ_PROMPT } from './musicdj.js';
 
 const DEFAULTS = {
     // Meziverse mode: the master switch for the extras (see modeOn). Phase 5
@@ -137,6 +137,12 @@ const DEFAULTS = {
     // What the DJ picks: an instrumental score, or one specific real song.
     // Either way the story's own genre and era decide the sound.
     musicPick: 'orchestra',
+    // The YouTube region used by the search: derived from the browser's
+    // language unless this internal override is set (never a settings row).
+    musicRegion: null,
+    // Blocked video ids learned from playback errors, newest first, capped at
+    // 200 - a video that refused to embed here is not tried again.
+    musicBlocked: [],
     // The DJ prompt the user tunes: the rules. The pick style and the answer
     // format are appended by code.
     musicDjPrompt: DEFAULT_DJ_PROMPT,
@@ -183,6 +189,7 @@ const DEFAULTS = {
  */
 const PROMPT_DEFAULT_REFRESH = [
     ['musicDjPrompt', LEGACY_DEFAULT_DJ_PROMPT, DEFAULT_DJ_PROMPT],
+    ['musicDjPrompt', PRIOR_DEFAULT_DJ_PROMPT, DEFAULT_DJ_PROMPT],
     ['bgPromptOn', LEGACY_DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_ON],
     ['bgPromptOn', PRIOR_DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_ON],
     ['bgPromptOn', PRE_PROSE_DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_ON],

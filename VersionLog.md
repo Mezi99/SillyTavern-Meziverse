@@ -1,5 +1,23 @@
 # Meziverse — version log
 
+## 2.11.5 - 2026-11-28
+
+Music picks now rest on the designer's supervisor prompts, and a named song has real backups when the first videos cannot play.
+
+### Music supervisor
+- The default DJ core is the final **music supervisor** brief: the story's own world and era decide the sound, and short queries beat over-specific stacks. Both pick styles were rewritten - Orchestra asks for a 3-6 word instrumental score with a genre and era drawn from the story, Songs asks for one real "Artist - Title" without official/audio/lyrics padding and never invents a song. Saved cores that still hold the prior default follow the new one; hand edits are never touched.
+- The appended answer contract now asks for up to two distinct `alternates` as well as the play/volume/none intent, and `parseDjAnswer` trims, de-duplicates and caps them (two, 80 characters); a non-play clears them. `askDj` tidies the chosen query (quotes and Orchestra filler stripped, seven words) before it reaches the player. Neither watcher wire gained a `responseLength` cap or structured-output flag, and `Show last request` prints the verbatim question and the returned queries/alternates.
+
+### Playback that keeps going
+- Search asks for embeddable **and** syndicated videos, rides the browser's region (or an internal override - no new settings row), and retries a too-narrow Songs pass in the Music category. `videos.list?part=status,contentDetails` checks the whole fetched pool before a frame loads: private/unprocessed, age-restricted, region-blocked and Short videos are dropped, survivors are ranked (Topic and official audio up, live/cover/remix down unless the query names the same word, unlicensed long Orchestra uploads up only when `licensedContent === false`), and missing fields stay neutral.
+- An empty answer spends the next alternate; a failed video spends the next candidate. One pick has six attempts across the primary query and its two alternates. Video-specific refusals (100/101/105/150) are remembered as blocked ids (200 newest), so cached results stop offering them; a transient failure (5) rebuilds the embed once. Error 153 stops after a second different video fails the same way with the exact localhost/https guidance. Every first play and failure logs one `[Meziverse music] attempt` line for tuning.
+
+### Pick style in the player
+- The player card carries a labelled **Pick style** row with Orchestra / Songs beside it - not a full-width pair of bare buttons. It shares the settings segment's saved value, syncs both ways, hides without an API key and steps aside in mini mode.
+
+### Notes
+- `manifest.json` matches; the synthetic suite stands at 380 tests. Landed on `main` from `Music_Module`.
+
 ## 2.11.4 - 2026-11-27
 
 Background changes now crossfade smoothly instead of dipping through the frame's own colour.

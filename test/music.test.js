@@ -1,13 +1,46 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { clampVolume, errorClass, parseVideoRef, readMusicTag, rotateIndex, thumbnailUrl } from '../src/music.js';
+import {
+    clampVolume,
+    errorClass,
+    isBlockedVideoError,
+    isConfigError,
+    parseVideoRef,
+    readMusicTag,
+    rotateIndex,
+    thumbnailUrl,
+    trimBlockedIds,
+} from '../src/music.js';
 
 test('a transient error earns one rebuild; a blocked one never does', () => {
     assert.equal(errorClass(5), 'transient', 'a stream that would not load may settle in a fresh instance');
     for (const code of [2, 100, 101, 105, 150, 153, 999]) {
         assert.equal(errorClass(code), 'blocked', `error ${code} goes to the next candidate`);
     }
+});
+
+test('only video-specific refusals are learned from; 153 is the embedder', () => {
+    for (const code of [100, 101, 105, 150]) {
+        assert.equal(isBlockedVideoError(code), true, `error ${code} names a video that blocks embeds`);
+        assert.equal(isConfigError(code), false);
+    }
+    for (const code of [2, 5, 153, 999]) {
+        assert.equal(isBlockedVideoError(code), false, `error ${code} is not the video's fault`);
+    }
+    assert.equal(isConfigError(153), true);
+    assert.equal(isConfigError(150), false);
+});
+
+test('blocked ids dedupe newest-first and stop at 200', () => {
+    assert.deepEqual(trimBlockedIds(['b', 'a', 'b', '', null, 'c']), ['b', 'a', 'c']);
+    assert.deepEqual(trimBlockedIds(null), []);
+
+    const many = Array.from({ length: 250 }, (_, i) => `id${i}`);
+    const kept = trimBlockedIds(many);
+    assert.equal(kept.length, 200);
+    assert.equal(kept[0], 'id0');
+    assert.equal(kept[199], 'id199');
 });
 
 test('rotation skips the track playing and the ones just heard', () => {

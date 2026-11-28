@@ -9,6 +9,7 @@ import {
     PRE_PROSE_DEFAULT_BG_PROMPT_ON,
     PRE_PROSE_DEFAULT_BG_TRANSPORT_PROMPT,
 } from '../src/backgrounds.js';
+import { DEFAULT_DJ_PROMPT, PRIOR_DEFAULT_DJ_PROMPT } from '../src/musicdj.js';
 import { dialogueFaceMode, settings } from '../src/settings.js';
 
 /** Runs `fn` with a SillyTavern stub carrying the given meziverse settings. */
@@ -70,5 +71,22 @@ test('untouched background defaults follow the prose-first refresh; edits stay t
     withStore({}, () => {
         assert.ok(settings().bgNegative.includes('silhouette'), 'the default negative also rules out figures');
         assert.ok(settings().bgNegative.includes('figure'));
+    });
+});
+
+test('an unedited music DJ core follows the supervisor default; a real edit stays', () => {
+    withStore({ musicDjPrompt: PRIOR_DEFAULT_DJ_PROMPT }, meziverse => {
+        assert.equal(settings().musicDjPrompt, DEFAULT_DJ_PROMPT);
+        assert.equal(meziverse.musicDjPrompt, DEFAULT_DJ_PROMPT, 'the migration rewrites the store');
+    });
+
+    withStore({ musicDjPrompt: 'My own supervisor rules.' }, meziverse => {
+        assert.equal(settings().musicDjPrompt, 'My own supervisor rules.');
+        assert.equal(meziverse.musicDjPrompt, 'My own supervisor rules.');
+    });
+
+    withStore({}, () => {
+        assert.equal(settings().musicBlocked.length, 0);
+        assert.equal(settings().musicRegion, null);
     });
 });
