@@ -7,7 +7,7 @@
  */
 
 import { whenReady } from './src/st.js';
-import { mount, open, isOpen } from './src/overlay.js';
+import { mount, open, isOpen, applyMusic } from './src/overlay.js';
 import { initBackgrounds } from './src/bgchain.js';
 import { initMusic } from './src/music.js';
 import { initMap } from './src/map.js';
@@ -20,7 +20,7 @@ async function boot() {
     // The chain rides the master switch: the scene's open state decides, and
     // until it is opened nothing runs.
     initBackgrounds({ isOpen });
-    initMusic({ isOpen });
+    initMusic({ isOpen, onPickChange: applyMusic });
     initMap({ isOpen });
     addLauncher(open);
     addDrawerBlock(open);

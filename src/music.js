@@ -21,7 +21,7 @@ import { chatMessages, on } from './st.js';
 import { musicAutoOn, musicDjOn, musicKey, musicOn, musicPickMode, saveSettings, settings } from './settings.js';
 import { notify } from './notify.js';
 import { parseTags } from './tags.js';
-import { buildSearchUrl, buildVideosUrl, dropUnembeddable, friendlySearchError, preferredDuration, toResults } from './musicsearch.js';
+import { buildSearchUrl, buildVideosUrl, dropUnplayable, friendlySearchError, preferredDuration, rankResults, toResults } from './musicsearch.js';
 import { initMusicDj, musicDjArrived, musicDjFreshPick, resetMusicDjPacing } from './musicdj.js';
 import { generateOn } from './connections.js';
 
@@ -124,6 +124,64 @@ export function errorClass(code) {
     return Number(code) === 5 ? 'transient' : 'blocked';
 }
 
+/** Video-specific refusals: this upload is gone or blocks embeds, remember it. */
+export function isBlockedVideoError(code) {
+    return [100, 101, 105, 150].includes(Number(code));
+}
+
+/** A configuration refusal: the videos are not the problem. */
+export function isConfigError(code) {
+    return Number(code) === 153;
+}
+
+/** Dedupe newest-first and keep the 200 most recent blocked ids. */
+export function trimBlockedIds(ids) {
+    return [...new Set((Array.isArray(ids) ? ids : []).filter(Boolean))].slice(0, 200);
+}
+
+const MAX_ATTEMPTS = 6;
+const CONFIG_MESSAGE = 'YouTube refuses embeds from this address (error 153). Check that SillyTavern is opened as http://localhost or https.';
+let blockedIds = null;
+
+/** The session's blocked ids, hydrated once from the saved setting. */
+function blockedSet() {
+    if (!blockedIds) blockedIds = new Set(trimBlockedIds(settings().musicBlocked));
+    return blockedIds;
+}
+
+function rememberBlocked(id) {
+    if (!id || blockedSet().has(id)) return;
+    const list = trimBlockedIds([id, ...blockedSet()]);
+    blockedIds = new Set(list);
+    settings().musicBlocked = list;
+    saveSettings();
+}
+
+/* The browser's region, read once. A bare language (`en`) names no region;
+   `el-GR` (or `zh-Hans-CN`) does. The internal override wins when present. */
+let browserRegion;
+function musicRegion() {
+    const override = settings().musicRegion;
+    if (/^[A-Za-z]{2}$/.test(String(override ?? ''))) return String(override).toUpperCase();
+    if (browserRegion === undefined) {
+        const parts = String(typeof navigator !== 'undefined' ? navigator.language ?? '' : '').split('-');
+        browserRegion = parts.slice(1).find(part => /^[A-Za-z]{2}$/.test(part))?.toUpperCase() ?? null;
+    }
+    return browserRegion;
+}
+
+/** One line per pick's first play and every failure - how the ranks get tuned. */
+function logAttempt({ videoId, channel, error = null }) {
+    const licensed = state.details?.get?.(videoId)?.contentDetails?.licensedContent;
+    console.info(`${LOG} attempt`, {
+        videoId: videoId ?? null,
+        channel: channel ?? '',
+        mode: musicPickMode(),
+        licensed: licensed === undefined ? null : licensed,
+        error,
+    });
+}
+
 /**
  * The candidate to play under rotation: the first one neither playing now
  * nor among the tracks just heard, so a fresh pick is never a repeat. With
@@ -155,6 +213,8 @@ const state = {
     videoOpen: false,
     candidates: null,
     candidateAt: 0,
+    details: null,
+    plan: null,
     cur: 0,
     dur: 0,
 };
@@ -162,6 +222,7 @@ const state = {
 const NARROW = 760;
 
 let uiIsOpen = () => true;
+let onPickChange = null;
 let widget = null;
 let stage = null;
 let els = {};
@@ -292,48 +353,118 @@ const PLAYER_ERRORS = {
     101: 'The owner of that video blocks embedded playback.',
     105: 'That video is gone or private.',
     150: 'The owner of that video blocks embedded playback.',
-    153: 'The owner of that video blocks embedded playback here.',
+    153: CONFIG_MESSAGE,
 };
 
 function onPlayerError(code) {
-    const message = PLAYER_ERRORS[code] ?? 'This video cannot play here.';
-    console.warn(`${LOG} embed error ${code} for ${state.videoId ?? '(none)'}`);
+    const id = state.videoId ?? null;
+    logAttempt({ videoId: id, channel: state.channel, error: Number(code) });
+    console.warn(`${LOG} embed error ${code} for ${id ?? '(none)'}`);
+
+    if (state.plan) state.plan.lastError = Number(code);
+
+    // 153 is the embedder's fault, not the upload's. One try is fair; a
+    // second different video failing the same way stops the whole cycle.
+    if (isConfigError(code)) {
+        if (!state.plan || (state.plan.lastConfigId && state.plan.lastConfigId !== id)) {
+            stopPick(CONFIG_MESSAGE);
+            return;
+        }
+        if (state.plan) state.plan.lastConfigId = id;
+        void advanceCandidate();
+        return;
+    }
+    if (state.plan) state.plan.lastConfigId = null;
+
+    // A video-specific refusal is learned, so the same search never puts it
+    // first again. A transient stream failure is not the video's fault.
+    if (isBlockedVideoError(code)) rememberBlocked(id);
 
     // A transient failure earns one fresh instance - that has settled
-    // born-broken players before. A blocked video is blocked in any
-    // instance, so it goes straight to the candidates below.
-    if (errorClass(code) === 'transient' && retryArmed && state.videoId) {
+    // born-broken players before. The rebuild keeps the same video and the
+    // same place in the plan.
+    if (errorClass(code) === 'transient' && retryArmed && id) {
         retryArmed = false;
-        rebuildPlayer(state.videoId);
+        rebuildPlayer(id);
         return;
     }
 
-    // Blocked or gone: fall through to the next search candidate before
-    // saying anything - only the last one speaks.
-    if (state.candidates && state.candidateAt + 1 < state.candidates.length) {
-        advanceCandidate();
+    if (state.plan) {
+        void advanceCandidate();
         return;
     }
 
+    stopPick(PLAYER_ERRORS[code] ?? 'This video cannot play here.');
+}
+
+/** Ends a pick with one message and the escape-hatch link still on screen. */
+function stopPick(message) {
+    state.plan = null;
+    state.candidates = null;
+    state.details = new Map();
+    state.candidateAt = 0;
     state.error = message;
     state.playing = false;
+    state.searching = false;
     state.panelOpen = true;
     render();
     notify(message, 'warning');
 }
 
-/** Steps to the next search candidate - its own title, channel and all. */
-function advanceCandidate() {
-    state.candidateAt += 1;
-    const next = state.candidates[state.candidateAt];
-    retryArmed = true;
-    state.videoId = next.videoId;
-    state.title = next.title ?? '';
-    state.channel = next.channel ?? '';
+/**
+ * The next attempt: the next candidate of this query, then the next query's
+ * candidates, until a playable one starts or the pick is out of attempts.
+ * The iframe is reused throughout - only a null player builds a new one.
+ */
+async function advanceCandidate() {
+    const plan = state.plan;
+    if (!plan) return;
+
+    while (plan.attempts < MAX_ATTEMPTS) {
+        const next = (state.candidates ?? [])[state.candidateAt + 1];
+        if (next) {
+            state.candidateAt += 1;
+            await playCandidate(next, { plan });
+            return;
+        }
+
+        const query = plan.queries[plan.queryIndex + 1];
+        if (!query) break;
+        const pick = await loadQuery(plan.queryIndex + 1, plan.rotate);
+        if (state.plan !== plan) return;
+        if (pick) {
+            await playCandidate(pick, { firstForQuery: true, plan });
+            return;
+        }
+    }
+
+    const message = plan.lastError === 153 ? CONFIG_MESSAGE
+        : (PLAYER_ERRORS[plan.lastError] ?? `Nothing playable found for \u201c${plan.queries[0]}\u201d.`);
+    stopPick(message);
+}
+
+/** Plays one already-chosen candidate, counted against this pick's cap. */
+async function playCandidate(pick, { firstForQuery = false, plan = null } = {}) {
+    if (!pick || !state.plan || (plan && state.plan !== plan)) return;
+    const first = state.plan.attempts === 0;
+
+    state.plan.attempts += 1;
+    state.pending = null;
+    state.videoId = pick.videoId;
+    state.title = pick.title ?? '';
+    state.channel = pick.channel ?? '';
     state.cur = 0;
     state.dur = 0;
+    state.error = null;
+    retryArmed = true;
+    if (first || firstForQuery) logAttempt({ videoId: pick.videoId, channel: pick.channel });
     render();
-    rebuildPlayer(next.videoId);
+
+    try {
+        await playById(pick.videoId);
+    } catch (error) {
+        console.warn(`${LOG} the embed failed`, error);
+    }
 }
 
 /** Tears the embed down and plays the same video in a fresh one, once. */
@@ -364,7 +495,7 @@ function applyVolume() {
  * input, and the Music DJ. `rotate` is the DJ's: a repeated pick is never
  * the track already playing.
  */
-function playRequest(text, { mood = null, rotate = false } = {}) {
+function playRequest(text, { mood = null, rotate = false, alternates = [] } = {}) {
     if (!musicOn()) return;
 
     const ref = parseVideoRef(text);
@@ -378,7 +509,7 @@ function playRequest(text, { mood = null, rotate = false } = {}) {
             notify(`\u201c${ref.query}\u201d \u2014 song search needs a YouTube Data API key (Settings \u25b8 Features \u25b8 Music).`, 'info');
             return;
         }
-        searchAndPlay(ref.query, { mood, rotate });
+        searchAndPlay(ref.query, { mood, rotate, alternates });
         return;
     }
 
@@ -388,11 +519,14 @@ function playRequest(text, { mood = null, rotate = false } = {}) {
     state.title = '';
     state.channel = '';
     state.error = null;
+    state.plan = null;
     state.candidates = null;
+    state.details = new Map();
     state.candidateAt = 0;
     state.cur = 0;
     state.dur = 0;
     retryArmed = true;
+    logAttempt({ videoId: ref.id, channel: '' });
     render();
 
     playById(ref.id).catch(error => {
@@ -423,86 +557,142 @@ async function searchFetch(url) {
     }
 }
 
-/** The playable candidates for a query: filtered, deduped, cached. */
-async function searchVideos(query) {
+/** The primary query plus up to two distinct, non-empty backups. */
+function searchQueries(query, alternates) {
+    const seen = new Set([query.toLowerCase()]);
+    const queries = [query];
+    for (const value of (Array.isArray(alternates) ? alternates : [])) {
+        const text = typeof value === 'string' ? value.trim() : '';
+        if (!text || seen.has(text.toLowerCase())) continue;
+        seen.add(text.toLowerCase());
+        queries.push(text);
+        if (queries.length === 3) break;
+    }
+    return queries;
+}
+
+/** A cached answer is still filtered on every read: a block is learned late. */
+function readCache(query) {
     const hit = searchCache.get(query);
-    if (hit) return hit;
+    if (!hit) return null;
+    return {
+        results: dropUnplayable(hit.results, hit.details, {
+            region: musicRegion(), mode: musicPickMode(), blockedIds: blockedSet(),
+        }),
+        details: hit.details,
+    };
+}
+
+/**
+ * The verified candidates for a query: filtered, ranked, deduped, cached.
+ * The whole fetched pool is checked in one call before the best eight are
+ * kept, so a few refusals cannot leave a pick short of candidates.
+ */
+async function searchVideos(query) {
+    const cached = readCache(query);
+    if (cached) return cached;
 
     const key = musicKey();
     const limit = 5;
+    const mode = musicPickMode();
+    const region = musicRegion();
+    const options = { limit, duration: preferredDuration(query), mode, region };
 
-    const preferred = await searchFetch(buildSearchUrl(query, key, { limit, duration: preferredDuration(query) }));
+    const preferred = await searchFetch(buildSearchUrl(query, key, options));
     let results = toResults(preferred.items);
-    if (!results.length) {
-        // The long-form pass came back empty; a plain track may still fit.
-        const fallback = await searchFetch(buildSearchUrl(query, key, { limit }));
-        results = toResults(fallback.items);
+    if (!results.length && mode === 'songs') {
+        // The Music category was too narrow; a plain search may find the song.
+        results = toResults((await searchFetch(buildSearchUrl(query, key, { ...options, mode: 'orchestra' }))).items);
     }
-    results = results.slice(0, limit);
-    results = await verifyEmbeddable(results);
+    results = results.slice(0, 25);
+    const verified = await verifyPlayable(results, query, { mode, region });
 
     if (searchCache.size >= SEARCH_CACHE_MAX) {
         searchCache.delete(searchCache.keys().next().value);
     }
-    searchCache.set(query, results);
-    return results;
+    const entry = { results: verified.results, details: verified.details };
+    searchCache.set(query, entry);
+    return readCache(query) ?? entry;
 }
 
 /**
- * Drops candidates the API now reports unembeddable before any embed frame
- * is loaded - one cheap call (1 quota unit against the search's 100). A
- * check that fails changes nothing: the player's own fallback through the
- * candidates is the safety net.
+ * One cheap details call (1 quota unit against the search's 100) checks
+ * every candidate before any embed frame is loaded. A check that fails
+ * changes nothing: the player's own fallback through the candidates is the
+ * safety net.
  */
-async function verifyEmbeddable(results) {
-    if (!results.length) return results;
+async function verifyPlayable(results, query, { mode, region }) {
+    const details = new Map();
+    if (!results.length) return { results, details };
     try {
         const data = await searchFetch(buildVideosUrl(results.map(result => result.videoId), musicKey()));
-        const statuses = new Map((data.items ?? []).map(item => [item.id, item?.status?.embeddable]));
-        return dropUnembeddable(results, statuses);
+        for (const item of data.items ?? []) {
+            if (item?.id) details.set(item.id, item);
+        }
+        const playable = dropUnplayable(results, details, { region, mode, blockedIds: blockedSet() });
+        return { results: rankResults(playable, details, { mode, query }), details };
     } catch (error) {
-        console.warn(`${LOG} the embeddable check changed nothing`, error);
-        return results;
+        console.warn(`${LOG} the playability check changed nothing`, error);
+        return {
+            results: results.filter(result => !blockedSet().has(result.videoId)).slice(0, 8),
+            details,
+        };
     }
 }
 
-/** Searches a named song and plays the best candidate. */
-async function searchAndPlay(query, { mood = null, rotate = false } = {}) {
+/**
+ * Points the plan at one query's best candidate. An empty answer is not an
+ * error: it is the signal to spend the next alternate.
+ */
+async function loadQuery(index, rotate) {
+    const plan = state.plan;
+    if (!plan) return null;
+    const query = plan.queries[index];
+    plan.queryIndex = index;
+    state.pending = query;
+    render();
+
+    const { results, details } = await searchVideos(query);
+    if (state.plan !== plan) return null;
+    state.candidates = results;
+    state.details = details;
+    state.candidateAt = rotate ? rotateIndex(results, [state.videoId, ...recentIds]) : 0;
+    state.pending = null;
+    return state.candidates[state.candidateAt] ?? null;
+}
+
+/** Searches a named song and plays the best candidate, then its backups. */
+async function searchAndPlay(query, { mood = null, rotate = false, alternates = [] } = {}) {
+    const plan = {
+        queries: searchQueries(query, alternates),
+        queryIndex: 0,
+        attempts: 0,
+        lastError: null,
+        lastConfigId: null,
+        rotate: !!rotate,
+    };
     state.searching = true;
     state.pending = query;
     state.mood = mood;
     state.error = null;
+    state.plan = plan;
+    state.candidates = null;
+    state.details = new Map();
+    state.candidateAt = 0;
     render();
 
     try {
-        const results = await searchVideos(query);
-        if (!results.length) {
-            state.error = `Nothing playable found for \u201c${query}\u201d.`;
-            state.panelOpen = true;
-            notify(state.error, 'warning');
-            return;
+        for (let index = 0; index < plan.queries.length; index += 1) {
+            const pick = await loadQuery(index, plan.rotate);
+            if (state.plan !== plan) return;
+            if (pick) {
+                await playCandidate(pick, { firstForQuery: index > 0, plan });
+                return;
+            }
         }
-
-        state.pending = null;
-        state.candidates = results;
-        // A rotating pick skips what plays now and what played recently -
-        // the next candidate carries the same mood instead of repeating it.
-        state.candidateAt = rotate ? rotateIndex(results, [state.videoId, ...recentIds]) : 0;
-        const pick = results[state.candidateAt];
-        state.videoId = pick.videoId;
-        state.title = pick.title;
-        state.channel = pick.channel;
-        state.cur = 0;
-        state.dur = 0;
-        retryArmed = true;
-        render();
-
-        await playById(pick.videoId);
+        stopPick(`Nothing playable found for \u201c${query}\u201d.`);
     } catch (error) {
-        state.error = error instanceof Error ? error.message : 'YouTube search failed.';
-        state.panelOpen = true;
-        render();
-        notify(state.error, 'warning');
+        stopPick(error instanceof Error ? error.message : 'YouTube search failed.');
     } finally {
         state.searching = false;
         render();
@@ -547,10 +737,11 @@ function scanNewTurn() {
  * switch gates it all - closed or never opened, nothing is asked and
  * nothing plays.
  *
- * @param {{isOpen?:() => boolean}} [parts] the scene's open-state gate
+ * @param {{isOpen?:() => boolean, onPickChange?:() => void}} [parts] the scene's open-state gate and the settings-sheet sync
  */
-export function initMusic({ isOpen } = {}) {
+export function initMusic({ isOpen, onPickChange: pickChange } = {}) {
     if (typeof isOpen === 'function') uiIsOpen = isOpen;
+    if (typeof pickChange === 'function') onPickChange = pickChange;
 
     // The DJ is its own watcher - switch, pace, prompt and call - reaching
     // the player only through this controller. `enabled` is the floor (the
@@ -596,6 +787,10 @@ export function initMusic({ isOpen } = {}) {
         lastHandled = null;
         resetMusicDjPacing();
     });
+
+    // The settings sheet may start from a saved pick style: let it sync the
+    // player once, and keep both faces in step from then on.
+    onPickChange?.();
 
     window.addEventListener('resize', () => {
         if (widget && !widget.hidden) render();
@@ -680,6 +875,13 @@ const WIDGET_HTML = `
             <button class="mz-ibtn" type="button" title="Show video" aria-label="Show video" aria-pressed="false" data-mz-music="video">${svg('video')}</button>
         </div>
     </div>
+    <div class="mz-music-pick" role="group" aria-label="Pick style">
+        <span class="mz-music-pick-label">Pick style</span>
+        <div class="mz-seg">
+            <button type="button" data-mz-music="pick" data-pick="orchestra" aria-pressed="false" title="Instrumental scores that fit the story's world">Orchestra</button>
+            <button type="button" data-mz-music="pick" data-pick="songs" aria-pressed="false" title="Real songs the characters might know">Songs</button>
+        </div>
+    </div>
     <label class="mz-music-find">${svg('search')}<input type="text" data-mz-music="input" placeholder="Paste a link or name a song" aria-label="YouTube link, video ID, or song to find"><button class="mz-ibtn mz-music-go" type="button" title="Play" aria-label="Play" data-mz-music="load" disabled>${svg('send')}</button></label>
     <p class="mz-music-note" data-mz-music="note" hidden></p>
 </section>`;
@@ -714,6 +916,7 @@ export function mountMusic({ slot, frame }) {
         volume: widget.querySelector('[data-mz-music="volume"]'),
         scrub: widget.querySelector('[data-mz-music="scrub"]'),
         ticker: widget.querySelector('[data-mz-music="ticker"]'),
+        pick: widget.querySelector('.mz-music-pick'),
         embed: stage.querySelector('.mz-music-embed'),
     };
 
@@ -793,6 +996,12 @@ function wireWidget() {
                 musicDjFreshPick().catch(error => {
                     console.warn(`${LOG} the pick failed`, error);
                 });
+                break;
+            case 'pick':
+                settings().musicPick = target.dataset.pick === 'songs' ? 'songs' : 'orchestra';
+                saveSettings();
+                render();
+                onPickChange?.();
                 break;
             case 'load': {
                 const text = els.input?.value ?? '';
@@ -1126,6 +1335,13 @@ function render() {
     // the Music DJ switch (the auto watcher) notwithstanding.
     const dj = one('dj');
     if (dj) dj.hidden = !musicKey();
+    const pick = musicPickMode();
+    q('pick').forEach(button => {
+        const isOn = button.dataset.pick === pick;
+        button.classList.toggle('is-on', isOn);
+        button.setAttribute('aria-pressed', String(isOn));
+    });
+    if (els.pick) els.pick.hidden = !musicKey();
     const video = one('video');
     if (video) video.setAttribute('aria-pressed', String(state.videoOpen));
 

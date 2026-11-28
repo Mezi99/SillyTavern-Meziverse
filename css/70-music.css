@@ -475,12 +475,19 @@
 .mz-music-note a { justify-self: start; color: inherit; text-decoration: underline; text-underline-offset: 2px; }
 .mz-music-note a:hover { color: var(--mz-text); }
 
+/* ---------- pick style: the score or a real song ---------- */
+
+.mz-music-pick { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 2px; }
+.mz-music-pick-label { font-size: var(--mz-text-xs); letter-spacing: .14em; text-transform: uppercase; color: var(--mz-text-dim); }
+.mz-music-pick .mz-seg button { height: 22px; padding: 0 10px; }
+
 /* ---------- mini: one row, covers as little story as possible ---------- */
 
 .mz-music.is-undocked.is-mini .mz-music-card { width: 296px; gap: 0; padding: 8px 8px 8px 8px; }
 .mz-music.is-mini .mz-music-grip,
 .mz-music.is-mini .mz-music-seek,
 .mz-music.is-mini .mz-music-transport,
+.mz-music.is-mini .mz-music-pick,
 .mz-music.is-mini .mz-music-find,
 .mz-music.is-mini .mz-music-note,
 .mz-music.is-mini .mz-music-chip,

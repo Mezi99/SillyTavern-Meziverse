@@ -35,7 +35,7 @@ import { closeLibrary, isLibraryOpen, libraryUiClosed, mountLibrary, openLibrary
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr, notify } from './notify.js';
 
-const VERSION = '2.11.4';
+const VERSION = '2.11.5';
 
 const PANE_DEFAULT = 300;
 const LOG_W_DEFAULT = 720;
@@ -1248,7 +1248,7 @@ function applySceneHeader() {
     });
 }
 
-function applyMusic() {
+export function applyMusic() {
     for (const button of root.querySelectorAll('[data-mz-action="music"]')) {
         button.classList.toggle('is-on', musicOn());
         button.setAttribute('aria-checked', String(musicOn()));
