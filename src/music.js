@@ -849,7 +849,6 @@ const WIDGET_HTML = `
         <div class="mz-music-meta">
             <b class="mz-music-name" data-mz-music="title">No track</b>
             <span class="mz-music-by" data-mz-music="by"></span>
-            <span class="mz-music-chip" data-mz-music="chip" hidden></span>
         </div>
         <div class="mz-music-nowtools">
             <button class="mz-ibtn mz-music-miniplay" type="button" data-mz-music="playpause" data-mz-playbtn></button>
@@ -1273,12 +1272,6 @@ function render() {
         : picking ? ''
             : (state.title ? state.channel : (live ? '' : 'Paste a link or name a song'));
     q('by').forEach(el => { el.textContent = by; });
-
-    const chip = one('chip');
-    if (chip) {
-        chip.hidden = !state.mood || !live;
-        chip.textContent = state.mood ? `Mood \u00b7 ${state.mood}` : '';
-    }
 
     // The status line reads the room: working, playing, or gone wrong.
     const status = state.error ? 'Could not play'
