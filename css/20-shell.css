@@ -77,6 +77,19 @@ body.mz-open .popup { z-index: 9500 !important; }
     flex: none;
 }
 
+/* The ST-mirror buttons wear Font Awesome now: ST's own glyph classes, the
+   theme's colours through currentColor. The sizes mirror the sprite boxes
+   they replaced (an em reads a touch wider than the same svg box). */
+:where(#mz-root) .fa-solid,
+:where(#mz-root) .fa-regular { flex: none; line-height: 1; }
+/* ST-mirror icons kept small to match the tight head/composer */
+.mz-ibtn .fa-solid, .mz-ibtn .fa-regular { font-size: 11px; }
+.mz-dlg-actions .mz-ibtn .fa-solid, .mz-dlg-actions .mz-ibtn .fa-regular { font-size: 11px; }
+.mz-swipebtn .fa-solid { font-size: 11px; }
+.mz-sendbtn .fa-solid { font-size: 11px; }
+.mz-menu-item .fa-solid { font-size: 11px; }
+.mz-log-branch .fa-solid, .mz-log-branch .fa-regular { font-size: 11px; }
+
 #mz-root ::-webkit-scrollbar { width: 8px; height: 8px; }
 #mz-root ::-webkit-scrollbar-thumb {
     border-radius: var(--mz-r-pill);
@@ -107,7 +120,33 @@ body.mz-open .popup { z-index: 9500 !important; }
    glass above it tints and needs no backdrop-filter - Firefox's
    compositor samples those wrong and washes the page's grey over the
    scene), and the soft twin lives in the narration pane's box alone -
-   the pane blur slider's whole domain. */
+   the pane blur slider's whole domain. Two stacked stages hold one
+   picture each: the incoming stage fades in over the still opaque old
+   one, so the blend never dips through the frame's own colour. The
+   layers keep their filter/opacity/transform behavior (memory mode). */
+.mz-bgstack {
+    position: absolute;
+    inset: 0;
+    z-index: var(--mz-z-bg);
+    pointer-events: none;
+    isolation: isolate;
+}
+
+.mz-bgstage {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    opacity: 1;
+}
+
+.mz-bgstage.is-top { z-index: 1; }
+
+.mz-bgstage.is-in {
+    opacity: 1;
+    transition: opacity var(--mz-bg-xfade) var(--mz-ease-inout, ease-in-out);
+    will-change: opacity;
+}
+
 .mz-bg,
 .mz-bgsoft {
     position: absolute;
@@ -156,8 +195,8 @@ body.mz-open .popup { z-index: 9500 !important; }
    The dark wash that used to sit over the image is parked below, commented
    out: backgrounds show clean now. It may return as the daycycle (day/night)
    layer - until then nothing dims the picture. */
-.mz-frame.is-bg-st .mz-bg,
-.mz-frame.is-bg-st .mz-bgsoft {
+.mz-bgstage.is-bg-st .mz-bg,
+.mz-bgstage.is-bg-st .mz-bgsoft {
     background-color: var(--mz-bg);
     /*
     background-image:
@@ -174,8 +213,8 @@ body.mz-open .popup { z-index: 9500 !important; }
     background-repeat: no-repeat;
 }
 
-.mz-frame.is-bg-st .mz-bg::before,
-.mz-frame.is-bg-st .mz-bgsoft::before { opacity: .5; }
+.mz-bgstage.is-bg-st .mz-bg::before,
+.mz-bgstage.is-bg-st .mz-bgsoft::before { opacity: .5; }
 
 .mz-scrim {
     position: absolute;
@@ -245,23 +284,31 @@ body.mz-open .popup { z-index: 9500 !important; }
     color: var(--mz-text-dim);
 }
 
-/* The mode switch rides beside the wordmark: the one control that stays
-   visible exactly when everything it governs steps aside. */
-.mz-mode {
+/* The quick toggles ride beside the wordmark: Backgrounds, Music, Map -
+   quiet icon pills, each the same switch as its settings row, for play-time
+   access. The names ride in their tooltips; narrow screens send them back
+   to settings, where they never crowd the title. */
+.mz-quick-hair {
+    align-self: center;
+    margin-left: 8px;
+}
+
+.mz-autoquick {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
-    margin-left: 10px;
-    padding: 2px 9px;
+    gap: 4px;
+}
+
+.mz-qpill {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
     border: 1px solid var(--mz-line);
-    border-radius: var(--mz-r-pill);
+    border-radius: 50%;
     background: transparent;
     color: var(--mz-text-dim);
-    font-family: var(--mz-font-ui);
-    font-size: var(--mz-text-2xs);
-    letter-spacing: .1em;
-    line-height: 1.4;
-    white-space: nowrap;
     cursor: pointer;
     transition:
         color var(--mz-dur) var(--mz-ease),
@@ -269,39 +316,34 @@ body.mz-open .popup { z-index: 9500 !important; }
         background var(--mz-dur) var(--mz-ease);
 }
 
-.mz-mode:hover {
+.mz-qpill .ico {
+    width: 13px;
+    height: 13px;
+}
+
+.mz-qpill:hover {
     color: var(--mz-text);
     border-color: var(--mz-line-strong);
     background: color-mix(in srgb, var(--mz-text) 6%, transparent);
 }
 
-.mz-mode i {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    border: 1px solid currentColor;
-    background: transparent;
-    transition:
-        background var(--mz-dur) var(--mz-ease),
-        border-color var(--mz-dur) var(--mz-ease),
-        box-shadow var(--mz-dur) var(--mz-ease);
-}
-
-.mz-mode.is-on {
+.mz-qpill.is-on {
     color: var(--mz-text);
     border-color: color-mix(in srgb, var(--mz-accent) 35%, var(--mz-line));
+    background: var(--mz-accent-soft);
 }
 
-.mz-mode.is-on i {
-    border-color: var(--mz-accent);
-    background: var(--mz-accent);
-    box-shadow: 0 0 6px color-mix(in srgb, var(--mz-accent) 55%, transparent);
+.mz-qpill.is-on .ico { color: var(--mz-accent); }
+
+/* Below phone-landscape width the trio steps away - the same switches
+   live in settings. */
+@media (max-width: 560px) {
+    .mz-autoquick,
+    .mz-quick-hair { display: none; }
 }
 
-/* The background switch and the brush ride with the mode switch: the same
-   pill, one more promise kept beside it. */
-.mz-bgauto { margin-left: 6px; }
-
+/* The brush moved to the pane head beside the card name - position-neutral;
+   only its state is styled here. */
 .mz-brush {
     margin-left: 2px;
     align-self: center;
@@ -316,15 +358,7 @@ body.mz-open .popup { z-index: 9500 !important; }
 
 .mz-set-row input.mz-select { max-width: 320px; }
 
-/* The watcher prompts are edited in place: label above, room to write. */
-.mz-set-row--prompt {
-    grid-template-columns: 1fr;
-    align-items: stretch;
-}
-
-.mz-set-row--prompt .mz-btn-ghost { justify-self: start; }
-
-/* The Connections tab's test answer, beside its button. */
+/* The Connections tab's test answer, in its card foot. */
 .mz-conn-state {
     margin-left: 8px;
     font-family: var(--mz-font-ui);
@@ -618,11 +652,10 @@ body.mz-open .popup { z-index: 9500 !important; }
 }
 
 /* our turn-stepping, centred in the header so long speaker names cannot
-   push it around: the speaker and the actions flex, the cluster does not */
-.mz-speaker {
-    flex: 1 1 0;
-    min-width: 0;
-}
+   push it around: the speaker (and the brush hugging it) and the actions
+   flex, the cluster does not */
+.mz-dlg-who { flex: 1 1 0; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.mz-dlg-who .mz-speaker { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mz-dlg-actions { flex: 1 1 0; justify-content: flex-end; min-width: 0; }
 .mz-dlg-nav {
     display: flex;
@@ -674,6 +707,17 @@ body.mz-open .popup { z-index: 9500 !important; }
 .mz-prose.is-prompt-hidden,
 .mz-log-entry.is-prompt-hidden .mz-log-prose { opacity: .55; }
 .mz-log-entry.is-prompt-hidden .mz-log-who { opacity: .55; }
+
+/* the reasoning display: a pane-wide choice, kept within reach at the
+   head's left, before the speaker name */
+.mz-reasonbtn {
+    width: 22px;
+    height: 22px;
+    color: var(--mz-text-dim);
+    transition: color var(--mz-dur-fast) var(--mz-ease);
+}
+.mz-reasonbtn .ico { width: 13px; height: 13px; }
+.mz-reasonbtn:hover { color: var(--mz-text); }
 
 .mz-ibtn:disabled {
     opacity: .3;
@@ -953,6 +997,7 @@ body.mz-open .popup { z-index: 9500 !important; }
     min-width: 0;
     min-height: 30px;
     max-height: 50dvh;
+    padding: 5px;
     font-family: var(--mz-font-ui);
     font-size: var(--mz-text-md);
     line-height: 1.4;
@@ -1691,7 +1736,7 @@ body.mz-open .popup { z-index: 9500 !important; }
        its content - a long tab scrolls inside (see .mz-set-scroll). */
     height: min(700px, calc(100% - 96px));
     overflow: hidden;
-    padding: 22px 24px 20px;
+    padding: 20px 22px 0;
     border: 1px solid var(--mz-line-strong);
     border-radius: var(--mz-r-lg);
     background: var(--mz-surface-solid);
@@ -1702,18 +1747,19 @@ body.mz-open .popup { z-index: 9500 !important; }
 
 .mz-frame.is-settings-open .mz-sheet {
     display: grid;
-    grid-template-rows: auto auto minmax(0, 1fr) auto;
-    gap: 18px;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    gap: 14px;
     animation: mz-sheet-in var(--mz-dur) var(--mz-ease);
 }
 
 /* The panes' own region: what a tab shows, scrolled when it runs long. */
 .mz-set-scroll {
     display: grid;
-    gap: 18px;
+    gap: 22px;
     align-content: start;
     min-height: 0;
     overflow-y: auto;
+    padding: 2px 8px 26px 4px;
     scrollbar-width: thin;
 }
 
@@ -1724,11 +1770,9 @@ body.mz-open .popup { z-index: 9500 !important; }
 
 .mz-sheet-head {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid var(--mz-line);
 }
 .mz-sheet-head h2 {
     font-family: var(--mz-font-prose);
@@ -1736,58 +1780,117 @@ body.mz-open .popup { z-index: 9500 !important; }
     font-weight: 400;
     letter-spacing: .01em;
 }
-.mz-sheet-head small {
-    font-size: var(--mz-text-2xs);
-    letter-spacing: .1em;
-    text-transform: uppercase;
-    color: var(--mz-text-dim);
-}
 
-.mz-set-group { display: grid; gap: 12px; }
-.mz-set-group > h3 {
-    font-size: var(--mz-text-2xs);
-    font-weight: 500;
+/* A group: a quiet title line (icon, name, optional master switch) over one
+   card of rows. Ordinary groups never fold - the whole card is always there. */
+.mz-set-group { display: grid; gap: 8px; }
+
+.mz-set-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 24px;
+    padding: 0 2px;
+}
+.mz-set-title .ico {
+    width: 15px;
+    height: 15px;
+    color: var(--mz-accent);
+    flex: none;
+}
+.mz-set-title h3 {
+    margin: 0;
+    font-size: var(--mz-text-xs);
+    font-weight: 600;
     letter-spacing: .14em;
     text-transform: uppercase;
     color: var(--mz-text-muted);
 }
+.mz-set-sp { flex: 1; }
+.mz-set-note { font-size: var(--mz-text-sm); color: var(--mz-text-muted); }
 
-/* Foldable sections (the Features tab): the header opens and closes its rows.
-   Closed by default; the sheet is built once and never rebuilt, so the state
-   sticks for the session on its own. */
-.mz-set-head {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
-    padding: 0;
-    border: 0;
-    background: none;
-    color: inherit;
-    font: inherit;
-    letter-spacing: inherit;
-    text-transform: inherit;
-    cursor: pointer;
+.mz-set-card {
+    border: 1px solid var(--mz-line);
+    border-radius: 12px;
+    background: var(--mz-surface-2);
+    transition: opacity var(--mz-dur);
 }
-.mz-set-head .ico { transition: transform var(--mz-dur) var(--mz-ease); }
-.mz-set-group--fold.is-open .mz-set-head .ico { transform: rotate(180deg); }
-.mz-set-group--fold:not(.is-open) .mz-set-row { display: none; }
 
 .mz-set-row {
-    display: grid;
-    grid-template-columns: 1fr auto;
+    display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 16px;
-    min-height: 36px;
+    min-height: 46px;
+    padding: 7px 14px;
 }
-.mz-set-label { display: grid; gap: 2px; min-width: 0; }
-.mz-set-label b { font-size: var(--mz-text-md); font-weight: 500; }
-.mz-set-label small {
+.mz-set-row + .mz-set-row { border-top: 1px solid var(--mz-line); }
+
+.mz-set-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    font-size: var(--mz-text-md);
+    font-weight: 500;
+}
+.mz-set-label b { font-size: inherit; font-weight: 500; }
+
+/* The hint dot: one quiet sentence, on hover and on tap or keyboard focus.
+   The button carries the sentence as its name; the bubble repeats it. */
+.mz-hint {
+    display: inline-grid;
+    place-items: center;
+    width: 15px;
+    height: 15px;
+    padding: 0;
+    border: 1px solid var(--mz-line-strong);
+    border-radius: 50%;
+    background: none;
+    font-family: var(--mz-font-ui);
+    font-size: var(--mz-text-2xs);
+    line-height: 1;
+    color: var(--mz-text-dim);
+    cursor: help;
+    flex: none;
+    position: relative;
+}
+.mz-hint:hover,
+.mz-hint:focus,
+.mz-hint.is-open {
+    color: var(--mz-text);
+    border-color: var(--mz-accent-line);
+    outline: none;
+}
+.mz-hint::after {
+    content: attr(data-tip);
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 8px);
+    transform: translateX(-50%);
+    width: max-content;
+    max-width: 240px;
+    padding: 7px 10px;
+    border: 1px solid var(--mz-line-strong);
+    border-radius: 8px;
+    background: var(--mz-ink-1000);
+    color: var(--mz-text);
     font-size: var(--mz-text-sm);
-    line-height: 1.4;
-    color: var(--mz-text-muted);
+    line-height: 1.45;
+    font-weight: 400;
+    white-space: normal;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity var(--mz-dur-fast);
+    z-index: 5;
 }
-.mz-set-control { display: flex; flex: none; align-items: center; gap: 8px; }
+.mz-hint:hover::after,
+.mz-hint:focus::after,
+.mz-hint.is-open::after {
+    opacity: 1;
+    visibility: visible;
+}
 
 .mz-seg {
     display: inline-flex;
@@ -1810,20 +1913,24 @@ body.mz-open .popup { z-index: 9500 !important; }
 .mz-seg button.is-on { color: var(--mz-text); background: var(--mz-line-strong); }
 
 /* the settings sheet's section tabs: the seg bar stretched across the
-   sheet, one tab's groups on stage at a time */
+   sheet, one tab's groups on stage at a time - each tab wearing its icon */
 .mz-set-tabs {
     display: flex;
-    gap: 4px;
+    gap: 2px;
     width: 100%;
+    padding: 3px;
 }
 .mz-set-tabs button {
     flex: 1;
     min-width: 0;
-    height: 28px;
+    height: 30px;
+    gap: 6px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: var(--mz-text-sm);
 }
+.mz-set-tabs .ico { width: 14px; height: 14px; flex: none; }
 
 .mz-step {
     display: inline-flex;
@@ -1890,8 +1997,11 @@ body.mz-open .popup { z-index: 9500 !important; }
    (scoped: this stylesheet loads into SillyTavern's page) */
 #mz-root [hidden] { display: none !important; }
 
-/* the four ink pickers, shown only in Custom mode */
-.mz-set-row--colors { min-height: 0; }
+/* the four ink pickers, shown only in Custom mode - swatches in a quiet row */
+.mz-set-row--colors {
+    justify-content: flex-end;
+    min-height: 0;
+}
 
 .mz-colors {
     display: flex;
@@ -1979,15 +2089,114 @@ body.mz-open .popup { z-index: 9500 !important; }
     box-shadow: inset 0 0 0 1px var(--mz-accent-line);
 }
 
-.mz-sheet-foot {
+/* Actions at a card's foot: right-aligned, quiet, never a row of their own.
+   The Connections status sits on the left of the same strip. */
+.mz-set-foot {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 10px 14px;
+    border-top: 1px solid var(--mz-line);
+}
+.mz-set-foot .mz-conn-state {
+    margin-right: auto;
+    margin-left: 0;
+}
+
+/* The quiet sub-panel at a card's foot: prompts, keys and the last request.
+   Closed by default; every fold stands on its own. */
+.mz-adv { border-top: 1px solid var(--mz-line); }
+.mz-adv-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 40px;
+    padding: 0 14px;
+    border: 0;
+    background: none;
+    font-family: var(--mz-font-ui);
+    font-size: var(--mz-text-sm);
+    color: var(--mz-text-muted);
+    cursor: pointer;
+    text-align: left;
+}
+.mz-adv-head:hover { color: var(--mz-text); }
+.mz-adv-head .ico {
+    width: 12px;
+    height: 12px;
+    margin-left: auto;
+    transition: transform var(--mz-dur) var(--mz-ease);
+}
+.mz-adv.is-open .mz-adv-head .ico { transform: rotate(180deg); }
+
+.mz-adv-inner {
+    display: none;
+    gap: 14px;
+    padding: 2px 14px 14px;
+}
+.mz-adv.is-open .mz-adv-inner { display: grid; }
+
+.mz-adv-field { display: grid; gap: 6px; min-width: 0; }
+.mz-adv-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    font-size: var(--mz-text-sm);
+    color: var(--mz-text-muted);
+}
+.mz-adv-label > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+.mz-adv-field .mz-select {
+    width: 100%;
+    max-width: none;
+}
+.mz-adv-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.mz-btn-mini {
+    height: 22px;
+    padding: 0 8px;
+    font-size: var(--mz-text-xs);
+}
+
+/* The connection cards' source picker and field blocks. */
+.mz-seg--full { display: flex; }
+.mz-seg--full button { flex: 1; }
+.mz-conn-fields {
+    display: grid;
+    gap: 12px;
+    padding: 12px 14px 14px;
+}
+
+/* The tracker's tiles: one 1px hairline between every tile, label left,
+   switch right. */
+.mz-set-tiles {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: var(--mz-line);
+    overflow: hidden;
+    border-radius: 11px;
+}
+.mz-set-tile {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    padding-top: 12px;
-    border-top: 1px solid var(--mz-line);
-    font-size: var(--mz-text-2xs);
-    color: var(--mz-text-dim);
+    gap: 10px;
+    min-height: 46px;
+    padding: 7px 14px;
+    background: var(--mz-surface-solid);
+    font-size: var(--mz-text-md);
+    font-weight: 500;
 }
 
 .mz-btn-ghost {
@@ -1996,6 +2205,7 @@ body.mz-open .popup { z-index: 9500 !important; }
     border: 1px solid var(--mz-line-strong);
     border-radius: var(--mz-r-sm);
     font-size: var(--mz-text-sm);
+    font-weight: 500;
     color: var(--mz-text);
 }
 .mz-btn-ghost:hover { border-color: var(--mz-accent-line); color: var(--mz-accent); }
@@ -2014,7 +2224,6 @@ body.mz-open .popup { z-index: 9500 !important; }
     .mz-header { padding: 0 8px 0 10px; gap: 8px; }
     .mz-brand { font-size: var(--mz-text-xs); letter-spacing: .12em; }
     .mz-brand > span { display: none; }
-    .mz-mode { padding: 1px 7px; gap: 4px; letter-spacing: .06em; }
     .mz-chatname { max-width: 52vw; font-size: var(--mz-text-2xs); }
 
     .mz-chatbar { gap: 2px; padding: 4px 6px 4px 10px; }
@@ -2028,18 +2237,26 @@ body.mz-open .popup { z-index: 9500 !important; }
     .mz-dlg { padding: 11px 12px 9px; gap: 7px; }
     .mz-prose { font-size: calc(var(--mz-narr-size) * .9); }
 
-    .mz-sheet { width: calc(100% - 24px); max-height: calc(100% - 44px); padding: 18px 16px 16px; }
+    .mz-sheet { width: calc(100% - 24px); max-height: calc(100% - 44px); padding: 18px 16px 0; }
     .mz-card { width: calc(100% - 24px); max-height: calc(100% - 44px); }
 
     /* the log window relaxes its margins the same way the sheet does */
     .mz-log { width: min(var(--mz-log-w, 720px), calc(100% - 24px)); max-height: calc(100% - 44px); }
 
-    .mz-set-row { grid-template-columns: 1fr; gap: 8px; }
-    .mz-set-control { justify-content: flex-start; }
-    .mz-select { max-width: none; width: 100%; }
+    .mz-set-row { flex-wrap: wrap; gap: 8px 16px; }
+    .mz-set-row .mz-select { max-width: none; width: 100%; }
+}
+
+@media (max-width: 560px) {
+    .mz-sheet { padding: 16px 14px 0; }
+    .mz-range input[type="range"] { width: 110px; }
+    .mz-set-tabs .ico { display: none; }
+    .mz-set-tiles { grid-template-columns: 1fr; }
 }
 
 /* ---------- reduced motion ---------- */
+#mz-root[data-mz-motion="reduced"] { --mz-bg-xfade: 0ms; }
+
 #mz-root[data-mz-motion="reduced"] *,
 #mz-root[data-mz-motion="reduced"] *::before,
 #mz-root[data-mz-motion="reduced"] *::after {
@@ -2049,6 +2266,8 @@ body.mz-open .popup { z-index: 9500 !important; }
 }
 
 @media (prefers-reduced-motion: reduce) {
+    #mz-root { --mz-bg-xfade: 0ms; }
+
     #mz-root *,
     #mz-root *::before,
     #mz-root *::after {

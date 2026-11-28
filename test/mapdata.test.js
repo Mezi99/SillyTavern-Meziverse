@@ -11,7 +11,13 @@ import {
     layoutAtlas,
     splitAspect,
     splitMapChain,
+    stoodPlaces,
     travelMode,
+    trailWalks,
+    walkedPath,
+    walkedPoints,
+    walkSegments,
+    worldMatrix,
 } from '../src/mapdata.js';
 
 const obs = (...chains) => chains.map((chain, i) => ({
@@ -139,7 +145,9 @@ test('shape 2: one mobile node per vehicle, trips as legs, parked stops as spots
     assert.equal(car[0].visits.length, 4);
     assert.equal(car[0].trajectory.length, 4);
 
-    // route context leaves no nodes behind; only the parked stop anchors the car
+    // route context above the keyword is where the car WAS - placed as the
+    // trail's crossed levels (visited, never a stop); the generic street
+    // levels name no place and stay out
     assert.deepEqual(foldsOf(atlas).sort(), [
         'jins lotus emira',
         'local cafe parking lot',
@@ -150,17 +158,22 @@ test('shape 2: one mobile node per vehicle, trips as legs, parked stops as spots
     assert.equal(lot.kind, 'spot');
     assert.deepEqual(
         car[0].trajectory.map(stop => (stop.positionId ? atlas.nodes[stop.positionId].name : null)),
-        [null, null, 'Local Cafe Parking Lot', null]);
+        ['New York City', 'New York City', 'Local Cafe Parking Lot', 'New York City']);
+    assert.deepEqual(car[0].trajectory.map(stop => !!stop.moving), [true, true, false, true]);
 });
 
-test('en route marks a leg, not a place: the chain creates no node above the vehicle', () => {
+test('en route places the route context as the trail - soft, and nothing at the keyword', () => {
     const atlas = buildAtlas(obs(['USA', 'New York City', 'En Route', 'Jin\u2019s Lotus Emira']));
 
-    assert.deepEqual(foldsOf(atlas), ['jins lotus emira']);
+    assert.deepEqual(foldsOf(atlas).sort(), ['jins lotus emira', 'new york city', 'usa']);
     const car = byFold(atlas, 'jins lotus emira')[0];
     assert.equal(car.kind, 'mobile');
     assert.equal(car.key, '~jins lotus emira');
     assert.equal(atlas.observations[0].nodeId, car.id);
+    // the crossed levels are soft evidence: visited, never a stop
+    const city = byFold(atlas, 'new york city')[0];
+    assert.deepEqual(city.visits, [0]);
+    assert.equal(city.stops, 0);
 });
 
 test('two trips in one vehicle share one node, and a walk is no place at all', () => {
@@ -170,7 +183,7 @@ test('two trips in one vehicle share one node, and a walk is no place at all', (
         ['Japan', 'Osaka', 'En Route', 'Night Ferry'],
     ));
 
-    assert.deepEqual(foldsOf(atlas), ['night ferry']);
+    assert.deepEqual(foldsOf(atlas).sort(), ['japan', 'kyoto', 'night ferry', 'osaka']);
     const ferry = byFold(atlas, 'night ferry')[0];
     assert.equal(ferry.kind, 'mobile');
     assert.deepEqual(ferry.visits, [0, 2]);
@@ -178,6 +191,11 @@ test('two trips in one vehicle share one node, and a walk is no place at all', (
     // the walk between places is pure transit: no node, but not forgotten
     assert.equal(atlas.observations[1].transit, true);
     assert.equal(atlas.observations[1].nodeId, null);
+
+    // the trail crossed Kyoto, then Osaka
+    assert.deepEqual(
+        ferry.trajectory.map(stop => (stop.positionId ? atlas.nodes[stop.positionId].name : null)),
+        ['Kyoto', 'Osaka']);
 });
 
 test('a parked vehicle is a spot of its place until a trip makes it mobile', () => {
@@ -453,7 +471,7 @@ test('a passed place promotes the moment a response ends there', () => {
     assert.equal(find('bedroom').stops, 1);
 });
 
-test('legs: a trip by vehicle closes one leg carrying its mode', () => {
+test('legs: a trip by vehicle segments through the levels it crossed', () => {
     const atlas = buildAtlas(obs(
         ['USA', 'New York City', 'Local Cafe'],
         ['USA', 'New York City', 'En Route', 'Jin\u2019s Lotus Emira'],
@@ -461,20 +479,21 @@ test('legs: a trip by vehicle closes one leg carrying its mode', () => {
     ));
     const d = deriveLegs(atlas);
 
-    assert.equal(d.legs.length, 1);
-    const leg = d.legs[0];
-    assert.equal(leg.count, 1);
-    assert.deepEqual(leg.at, [2]);
+    assert.equal(d.legs.length, 2);
+    const [out, back] = d.legs;
     assert.deepEqual(
-        [atlas.nodes[leg.dir[0]].name, atlas.nodes[leg.dir[1]].name],
-        ['Local Cafe', 'Pier 9']);
-    assert.equal(leg.mode.glyph, 'car');
-    assert.equal(leg.mode.label, 'by road');
-    assert.equal(d.nowId, atlas.nodes[leg.dir[1]].id);
+        [atlas.nodes[out.dir[0]].name, atlas.nodes[out.dir[1]].name],
+        ['Local Cafe', 'New York City']);
+    assert.equal(out.mode.glyph, 'car', 'the car made this segment');
+    assert.deepEqual(
+        [atlas.nodes[back.dir[0]].name, atlas.nodes[back.dir[1]].name],
+        ['New York City', 'Pier 9']);
+    assert.equal(back.mode.glyph, 'car', 'the trip\u2019s mode carries to the arrival');
+    assert.equal(d.nowId, atlas.nodes[back.dir[1]].id);
     assert.equal(d.inTransit, false);
 });
 
-test('legs: a flight changing country mid-leg is still one leg', () => {
+test('legs: a flight changing country segments through the levels it crossed', () => {
     const atlas = buildAtlas(obs(
         ['Japan', 'Kyoto', 'Temple'],
         ['Japan', 'En Route', 'Sky Chariot'],
@@ -482,12 +501,15 @@ test('legs: a flight changing country mid-leg is still one leg', () => {
     ));
     const d = deriveLegs(atlas);
 
-    assert.equal(d.legs.length, 1);
-    const leg = d.legs[0];
+    assert.equal(d.legs.length, 2);
     assert.deepEqual(
-        [atlas.nodes[leg.dir[0]].name, atlas.nodes[leg.dir[1]].name],
-        ['Temple', 'Hotel']);
-    assert.equal(leg.mode.glyph, 'plane');
+        [atlas.nodes[d.legs[0].dir[0]].name, atlas.nodes[d.legs[0].dir[1]].name],
+        ['Temple', 'Japan']);
+    assert.equal(d.legs[0].mode.glyph, 'plane');
+    assert.deepEqual(
+        [atlas.nodes[d.legs[1].dir[0]].name, atlas.nodes[d.legs[1].dir[1]].name],
+        ['Japan', 'Hotel']);
+    assert.equal(d.legs[1].mode.glyph, 'plane', 'the flight carries to the landing');
 });
 
 test('legs: a teleport with no vehicle gives a leg with no mode', () => {
@@ -569,6 +591,23 @@ test('travelMode reads the vehicle, and the unknown rides the generic route', ()
     assert.equal(travelMode('').label, 'on the way');
 });
 
+test('stoodPlaces: a land node draws for its own tags - the road never stands', () => {
+    const atlas = buildAtlas(obs(
+        ['USA', 'Residential Street', 'Accident Site'],
+        ['USA', 'Residential Street', 'En Route', 'Night Ferry'],
+        ['USA', 'Harbor', 'En Route', 'Night Ferry'],
+        ['Harbor', 'Night Ferry'],
+    ));
+    const find = fold => Object.values(atlas.nodes).find(node => node.fold === fold);
+    const stood = stoodPlaces(atlas);
+
+    assert.ok(stood.has(find('accident site').id), 'the land tag stands at its own place');
+    assert.ok(!stood.has(find('residential street').id),
+        'the street the road crossed stands nowhere - the vehicle marks carry it');
+    assert.ok(stood.has(find('harbor').id), 'a scene aboard a parked vehicle stands at the berth');
+    assert.ok(!stood.has(find('usa').id), 'a container stands for its own tags only');
+});
+
 const coordsOf = layout => layout.order.map(item => [item.n.key, item.ax, item.ay]);
 
 test('layout: the same story draws the same chart, rebuild after rebuild', () => {
@@ -629,6 +668,38 @@ test('layout: revisiting a place moves nothing at all', () => {
     assert.deepEqual(coordsOf(a), coordsOf(b));
 });
 
+test('layout: a huge world loses no place, and no place is ever NaN', () => {
+    /* two trees big enough that one root demands more clearance from its
+       sibling than the ring sweep reaches - the case that used to drop the
+       item (undefined x), poison bounds, and freeze the map at
+       translate(NaN NaN). Long stories run to worlds like this. */
+    const tree = (root, depth) => {
+        const chains = [];
+        const walk = path => {
+            if (path.length === depth) { chains.push(path); return; }
+            walk([...path, `${path.join(' ')}-a`]);
+            walk([...path, `${path.join(' ')}-b`]);
+        };
+        walk([root]);
+        return chains;
+    };
+    const make = () => buildAtlas(obs(...tree('Rome', 6), ...tree('Peru', 6)));
+    const layout = layoutAtlas(make(), { depth: 99 });
+
+    const placed = Object.keys(layout.items).filter(key => !key.startsWith('hub:'));
+    assert.equal(placed.length, Object.keys(make().nodes).length,
+        'every place is placed - a dropped one has no position');
+    for (const item of layout.order) {
+        assert.ok(Number.isFinite(item.ax) && Number.isFinite(item.ay), `${item.n.key} stands somewhere finite`);
+        assert.ok(Number.isFinite(item.r), `${item.n.key} has a finite size`);
+    }
+    for (const side of ['x0', 'x1', 'y0', 'y1']) {
+        assert.ok(Number.isFinite(layout.bounds[side]), `bounds.${side} is finite`);
+    }
+    assert.deepEqual(coordsOf(layoutAtlas(make(), { depth: 99 })), coordsOf(layout),
+        'the stand-in slot is seeded, not random');
+});
+
 test('layout: depth collapses children into the parent pin, and the anchor follows', () => {
     const atlas = buildAtlas(obs(
         ['USA', 'New York City', 'Jammie\u2019s house', 'Kitchen'],
@@ -671,4 +742,194 @@ test('similarity is flagged for the curator, and digits alone never flag', () =>
     assert.ok(pair('st vincents high school', 'st vincents high'));
     assert.ok(!pair('pier 9', 'pier 10'));
     assert.equal(atlas.flags.same.length, 2);
+});
+
+test('the trail: the journey segments through every level the ship crossed', () => {
+    const atlas = buildAtlas(obs(
+        ['Corporate Space', 'Outer Rim', 'Mara\u2019s Rest', 'Transit Hub', 'Landing Pad'],
+        ['Corporate Space', 'Outer Rim', 'Mara\u2019s Rest', 'En Route', 'CV-7742 Shuttle'],
+        ['Corporate Space', 'En Route', 'CV-7742 Shuttle', 'Cockpit'],
+        ['Corporate Space', 'Kessel Drift', 'En Route', 'CV-7742 Shuttle', 'Bunk Room'],
+        ['Corporate Space', 'Kessel Drift', 'Kessel\u2019s Rest Station', 'Docking Bay 7'],
+    ));
+    const d = deriveLegs(atlas);
+    const name = id => atlas.nodes[id].name;
+
+    assert.deepEqual(d.legs.map(leg => [name(leg.dir[0]), name(leg.dir[1])]), [
+        ['Landing Pad', 'Mara\u2019s Rest'],
+        ['Mara\u2019s Rest', 'Corporate Space'],
+        ['Corporate Space', 'Kessel Drift'],
+        ['Kessel Drift', 'Docking Bay 7'],
+    ]);
+    assert.ok(d.legs.every(leg => leg.mode && leg.mode.glyph === 'rocket'), 'the shuttle carries every segment');
+
+    // rooms aboard are places of their own, never leg endpoints
+    assert.deepEqual(foldsOf(atlas).filter(fold => fold === 'cockpit' || fold === 'bunk room').sort(), ['bunk room', 'cockpit']);
+    const ship = byFold(atlas, 'cv 7742 shuttle')[0];
+    assert.deepEqual(
+        ship.trajectory.map(stop => (stop.positionId ? atlas.nodes[stop.positionId].name : null)),
+        ['Mara\u2019s Rest', 'Corporate Space', 'Kessel Drift']);
+    assert.deepEqual(ship.trajectory.map(stop => !!stop.moving), [true, true, true]);
+    assert.equal(name(d.nowId), 'Docking Bay 7', 'the story ends on land');
+});
+
+test('legs: a reply walks its own scene tags; a shuffle across replies stays silent', () => {
+    const at = (msgIndex, tagIndex) => ({ msgIndex, tagIndex });
+    const base = { date: '', time: '', hour: null, weather: '', locationTag: '', present: [] };
+    const atlas = buildAtlas([
+        { ...base, chain: ['Corporate Space', 'Helios-9', 'Platform K-22', 'Docking Port'], at: at(0, 0) },
+        { ...base, chain: ['Corporate Space', 'Helios-9', 'Platform K-22', 'Vault Interior'], at: at(0, 1) },
+        { ...base, chain: ['Corporate Space', 'Helios-9', 'Platform K-22', 'Vault Interior'], at: at(1, 0) },
+        { ...base, chain: ['Corporate Space', 'Helios-9', 'Platform K-22', 'Vault Corridor'], at: at(1, 1) },
+        { ...base, chain: ['Corporate Space', 'Helios-9', 'Platform K-22', 'Docking Port'], at: at(2, 0) },
+    ]);
+    const d = deriveLegs(atlas);
+    const name = id => atlas.nodes[id].name;
+
+    assert.deepEqual(d.legs.map(leg => [name(leg.dir[0]), name(leg.dir[1])]), [
+        ['Docking Port', 'Vault Interior'],
+        ['Vault Interior', 'Vault Corridor'],
+    ]);
+});
+
+test('layoutAtlas: a vehicle\u2019s rooms live on its deck, never on the world chart', () => {
+    const atlas = buildAtlas(obs(
+        ['Space', 'En Route', 'CV-7742 Shuttle', 'Cockpit'],
+        ['Space', 'En Route', 'CV-7742 Shuttle', 'Bunk Room'],
+        ['Space', 'Port', 'Pier 9'],
+    ));
+
+    const world = layoutAtlas(atlas, { depth: 99 });
+    assert.deepEqual(world.order.map(item => item.n.name).sort(), ['Pier 9', 'Port', 'Space']);
+    assert.ok(!world.order.some(item => item.n.name === 'Cockpit'), 'no rooms on the world chart');
+
+    const ship = Object.values(atlas.nodes).find(node => node.kind === 'mobile');
+    const deck = layoutAtlas(atlas, { depth: 99, inside: ship.id });
+    assert.deepEqual(deck.order.map(item => item.n.name).sort(), ['Bunk Room', 'CV-7742 Shuttle', 'Cockpit']);
+    assert.ok(deck.order.filter(item => item.pin).some(item => item.n.name === 'Cockpit'), 'the rooms are pins on the deck');
+});
+
+test('walkedPoints: a path that wanders but always lands on its places', () => {
+    const pts = walkedPoints(0, 0, 100, 0, 42, 10, 8);
+    assert.equal(pts.length, 9);
+    assert.deepEqual(pts[0], [0, 0], 'lands exactly where it started');
+    assert.deepEqual(pts[pts.length - 1], [100, 0], 'lands exactly on the place');
+    assert.deepEqual(pts, walkedPoints(0, 0, 100, 0, 42, 10, 8), 'same journey, same walk');
+    assert.notDeepEqual(pts, walkedPoints(0, 0, 100, 0, 43, 10, 8), 'another journey, another walk');
+    for (const [, y] of pts) assert.ok(Math.abs(y) <= 12, `the wander stays near the line: ${y}`);
+    // the wander fades at the ends - the first step is already tighter
+    const mid = pts[Math.floor(pts.length / 2)];
+    assert.ok(Math.abs(mid[1]) > 0, 'the path wanders in the middle');
+});
+
+test('walkedPath: an SVG path from place to place', () => {
+    const d = walkedPath(0, 0, 100, 50, 7, 12, 8);
+    assert.match(d, /^M0 0Q/);
+    assert.match(d, /L100 50$/);
+    assert.ok(d.includes('Q'), 'the walk bends between its steps');
+});
+
+test('worldMatrix: the transform carries the exact scale the land is drawn at', () => {
+    const m = worldMatrix({ tx: -237.4321, ty: 88.888, s: 0.437 });
+    const s = Number(/scale\(([\d.]+)\)/.exec(m)[1]);
+    const t = /translate\(([\d.-]+)px,([\d.-]+)px\)/.exec(m);
+    assert.ok(Math.abs(s - 0.437) < 1e-4, `the scale is the view's to 4 decimals: ${s}`);
+    assert.ok(Math.abs(Number(t[1]) - -237.4321) < 0.011, 'tx survives');
+    assert.ok(Math.abs(Number(t[2]) - 88.888) < 0.011, 'ty survives');
+    // a rounded scale would slide the chart off the land at any odd zoom
+    assert.notEqual(m, 'translate(-237.4px,88.9px) scale(0.4)');
+    // a broken view must degrade, never freeze the map at translate(NaN NaN)
+    assert.ok(!worldMatrix({ tx: NaN, ty: NaN, s: 0 }).includes('NaN'));
+    assert.ok(!worldMatrix({ tx: 5 }).includes('NaN'));
+});
+
+test('trailWalks: one journey, one walk everywhere', () => {
+    const items = {
+        a: { n: { id: 'a' }, ax: 0, ay: 0 },
+        b: { n: { id: 'b' }, ax: 100, ay: 0 },
+    };
+    const pointFor = id => items[id] || null;
+    const leg = { a: 'a', b: 'b', key: 'a|b', dir: ['a', 'b'], count: 1 };
+    const [w] = trailWalks([leg], pointFor);
+    assert.ok(w, 'the walk resolves');
+    assert.deepEqual(w.pts[0], [0, 0], 'lands exactly on the first place');
+    assert.deepEqual(w.pts[w.pts.length - 1], [100, 0], 'lands exactly on the second');
+    assert.match(w.d, /^M0 0/);
+    const [again] = trailWalks([leg], pointFor);
+    assert.deepEqual(again.pts, w.pts, 'seeded: the same journey walks the same way');
+    assert.equal(trailWalks([{ a: 'x', b: 'y', key: 'x|y', dir: ['x', 'y'] }], pointFor).length, 0,
+        'ends that left the map are skipped, not fatal');
+});
+
+test('trailWalks: repeat journeys bow apart, never on top of each other', () => {
+    const items = {
+        a: { n: { id: 'a' }, ax: 0, ay: 0 },
+        b: { n: { id: 'b' }, ax: 100, ay: 0 },
+    };
+    const pointFor = id => items[id] || null;
+    const legs = [1, 2].map(count => ({ a: 'a', b: 'b', key: 'a|b', dir: ['a', 'b'], count }));
+    const walks = trailWalks(legs, pointFor);
+    assert.equal(walks.length, 2);
+    assert.notDeepEqual(walks[0].pts, walks[1].pts, 'the second walk bows the other way');
+    for (const w of walks) {
+        assert.deepEqual(w.pts[0], [0, 0], 'still lands on its places');
+        assert.deepEqual(w.pts[w.pts.length - 1], [100, 0], 'still lands on its places');
+    }
+});
+
+test('walkSegments: samples the exact curve the dotted trail draws', () => {
+    const pts = walkedPoints(0, 0, 100, 0, 42, 10, 4);
+    const seg = walkSegments(pts, 4);
+    assert.deepEqual(seg[0], [0, 0], 'starts on the place');
+    assert.deepEqual(seg[seg.length - 1], [100, 0], 'lands on the place');
+    assert.ok(seg.length > pts.length, 'more samples than the walk itself');
+    for (const [x, y] of seg) {
+        assert.ok(x >= -1 && x <= 101 && Math.abs(y) <= 12, `the curve never escapes the walk: ${x},${y}`);
+    }
+    assert.deepEqual(walkSegments(pts, 4), seg, 'deterministic');
+});
+
+test('layoutAtlas hubs: a journey lands on a real pin even at a parent place', () => {
+    const base = { date: '', time: '', hour: null, weather: '', locationTag: '', present: [], last: false };
+    const observations = [
+        { ...base, chain: ['City', 'Station', 'Wing', 'Room'], at: { msgIndex: 0, tagIndex: 0 }, last: true },
+        { ...base, chain: ['City', 'Station'], at: { msgIndex: 1, tagIndex: 0 }, last: true },
+    ];
+    const atlas = buildAtlas(observations);
+    const derived = deriveLegs(atlas);
+    const landings = new Set();
+    for (const leg of derived.legs) {
+        landings.add(leg.a);
+        landings.add(leg.b);
+        for (const id of leg.dir || []) landings.add(id);
+    }
+    const layout = layoutAtlas(atlas, { depth: 99, landings });
+    const byName = name => Object.values(atlas.nodes).find(n => n.name === name);
+    const stationId = byName('Station').id;
+    const hub = layout.items[`hub:${stationId}`];
+    assert.ok(hub, 'the expanded place the journey reached gets its own pin');
+    assert.equal(hub.pin, true);
+    assert.equal(layout.items[stationId].pin, false, 'the blob itself is still the blob');
+    assert.equal(layout.anchor(stationId), hub, 'anchor lands on the hub, not the packing centre');
+    const blob = layout.items[stationId];
+    assert.ok(Math.hypot(hub.ax - blob.ax, hub.ay - blob.ay) < blob.r, 'the hub sits inside the blob');
+    for (const kid of blob.kids) {
+        if (kid === hub) continue;
+        assert.ok(Math.hypot(hub.ax - kid.ax, hub.ay - kid.ay) > kid.r, 'and clear of every child');
+    }
+    assert.equal(layout.anchor(byName('Room').id), layout.items[byName('Room').id], 'leaf pins land on themselves');
+    const again = layoutAtlas(atlas, { depth: 99, landings });
+    assert.deepEqual([again.items[`hub:${stationId}`].ax, again.items[`hub:${stationId}`].ay], [hub.ax, hub.ay],
+        'same story, same hub - the layout stays put');
+});
+
+test('layoutAtlas hubs: only where the story stood, passed or journeyed', () => {
+    const base = { date: '', time: '', hour: null, weather: '', locationTag: '', present: [], last: false };
+    const observations = [
+        { ...base, chain: ['City', 'Station', 'Wing', 'Room'], at: { msgIndex: 0, tagIndex: 0 }, last: true },
+    ];
+    const atlas = buildAtlas(observations);
+    const layout = layoutAtlas(atlas, { depth: 99, landings: new Set() });
+    const stationId = Object.values(atlas.nodes).find(n => n.name === 'Station').id;
+    assert.equal(layout.items[`hub:${stationId}`], undefined, 'a parent the story never stood in keeps no pin');
 });

@@ -16,7 +16,8 @@
  *
  * The pure parts (stamps, deciding, asking, parsing) live in backgrounds.js
  * and the SillyTavern calls in st.js; this file is the choreography between
- * them. Jobs run one at a time in order, a newer job for the same reply
+ * them. The watcher's LLM call rides its own door (connections.js - the
+ * Background Agent on the Connections tab). Jobs run one at a time in order, a newer job for the same reply
  * replaces the older one, and a chat change cancels everything. Failures come
  * back as statuses the UI may show; success is quiet apart from the stage
  * notices.
@@ -24,20 +25,35 @@
 
 import {
     aliasLocation,
+    brushTargetIndex,
+    buildTransportRequest,
     buildWatcherRequest,
+    collapseTransports,
     compileBgPrompt,
     decide,
+    decideTransport,
     fallbackLocationPrompt,
+    fallbackTransportPrompt,
+    knownVehicles,
+    locationKey,
     noteBaseline,
     parseWatcherReply,
+    placeNamesLikelySame,
+    placeShortName,
     planResolution,
+    pruneStore,
     recoverCurrentKey,
+    reconcileRecordPlace,
     resolveRecordId,
+    resolveWatcherClaim,
     resolveStampId,
     resolveStampRecord,
     restorePlan,
+    setStamp,
     stampOf,
     storeRecord,
+    parkTransport,
+    transportOf,
     LANDSCAPE_SIZE,
 } from './backgrounds.js';
 import {
@@ -47,7 +63,6 @@ import {
     currentChatId,
     errorText,
     forceSetBackground,
-    generateRaw,
     imagine,
     imageGenerationStatus,
     on,
@@ -59,9 +74,16 @@ import {
     unlockBackground,
 } from './st.js';
 import { bgAutoOn, bgImagesOn, settings } from './settings.js';
+import { generateOn } from './connections.js';
 import { resolveScene } from './scene.js';
 
 const LOG = '[Meziverse] bg';
+
+// A template is a last resort. Say why, and show the raw watcher reply, so a
+// chain-shaped prompt or a truncated JSON can be diagnosed from one log line.
+function warnTemplate(state, reason, raw) {
+    console.warn(`${LOG} template fallback`, { state, reason, raw });
+}
 
 // The master switch: the scene being open. Everything the chain does - every
 // watcher call, every draw, every metadata write - stays inside the extension
@@ -162,6 +184,9 @@ export function initBackgrounds({ isOpen } = {}) {
         cancelBackgroundWork();
         resetBackgroundPacing();
         setShownTurn(null);
+        // The parking lot folds legacy per-chain interiors to one per
+        // vehicle before anything reads them.
+        if (collapseTransports(bgStore(), chatMessages())) saveChatMetadata();
         recoverCurrentKey(bgStore(), customBackground());
     });
 
@@ -178,7 +203,28 @@ export function initBackgrounds({ isOpen } = {}) {
 
     on('MESSAGE_EDITED', mesId => {
         if (!uiIsOpen()) return;
-        requestBackground({ index: Number(mesId), refresh: true }).catch?.(error => {
+        const index = Number(mesId);
+
+        // A re-spelled location keeps its picture: the record the reply
+        // points at is renamed and re-keyed to the edited name, so the scene
+        // tag and the library never drift apart. A reply whose place really
+        // changed (another spot entirely) falls through to the ordinary
+        // re-resolution below - its old picture does not fit the new place.
+        const messages = chatMessages();
+        const message = messages[index];
+        if (message && !message.is_user) {
+            const own = stampOf(message, Number(message.swipe_id ?? 0));
+            const place = resolveScene(messages, index, { persona: personaName() })?.scene?.placeFull || '';
+            const record = own ? bgStore().records?.[own] : null;
+            if (record && place && placeNamesLikelySame(place, record.place)) {
+                reconcileRecordPlace(bgStore(), own, place);
+                saveChatMetadata();
+                void syncShownBackground();
+                return;
+            }
+        }
+
+        requestBackground({ index, refresh: true }).catch?.(error => {
             console.warn(`${LOG} chain failed`, error);
         });
     });
@@ -206,6 +252,7 @@ export function initBackgrounds({ isOpen } = {}) {
 export async function uiOpened() {
     cancelBackgroundWork();
     resetBackgroundPacing();
+    if (collapseTransports(bgStore(), chatMessages())) saveChatMetadata();
     recoverCurrentKey(bgStore(), customBackground());
 
     try {
@@ -248,38 +295,36 @@ function lastMessageIndex() {
 }
 
 /**
- * The brush button: a fresh image for the place the shown turn carries -
- * the nearest reply at or before it that owns a picture. The response keeps
- * the new image (the place's record is redrawn in place, so the retry cleans
- * the place up everywhere it appears).
+ * The brush button: a fresh image for the place the shown turn carries. The
+ * response it was clicked on keeps the new image (the place's record is
+ * redrawn in place, so the retry cleans the place up everywhere it recurs).
+ * The shown turn arrives from the pane at click time - `at` - so no stale
+ * reading of "shown" can ever send the brush to the chat's end; only a click
+ * with no shown turn at all falls back to one.
  *
+ * @param {number|null} [at] the shown turn's index, straight from the pane
  * @returns {Promise<{status:string, record?:object, error?:string}>}
  */
-export async function forceBackground() {
+export async function forceBackground(at = null) {
     const messages = chatMessages();
     if (!currentChatId() || !messages.length) {
         return { status: 'unavailable', error: 'Open a chat first.' };
     }
 
-    const index = brushTargetIndex(messages);
+    const index = brushTargetIndex(messages, Number.isInteger(at) ? at : shownTarget());
     const swipeId = Number(messages[index]?.swipe_id ?? 0);
     return requestBackground({ index, swipeId, force: true });
 }
 
 /**
- * The reply the brush redraws: the owner of the shown turn's picture, else
- * the nearest reply at or before it, else the chat's end. User turns own no
- * picture, so the brush never stamps one.
+ * The branch button's cleanup: the branched chat keeps only the library its
+ * own messages refer to - the pictures that rode along from the parent but
+ * belong to replies the branch never had leave the library (their image
+ * files stay in SillyTavern's shared gallery). Ids are never recycled.
  */
-function brushTargetIndex(messages) {
-    const at = Math.min(shownTarget(), messages.length - 1);
-    const hit = resolveStampId(messages, at);
-    if (hit) return hit.index;
-
-    for (let i = at; i >= 0; i -= 1) {
-        if (!messages[i]?.is_user) return i;
-    }
-    return Math.max(0, messages.length - 1);
+export function pruneBranch() {
+    const store = bgStore();
+    if (pruneStore(store, chatMessages())) saveChatMetadata();
 }
 
 /**
@@ -397,9 +442,13 @@ async function runTarget({ index, swipeId, force, refresh, my, signal }) {
 
     // Where this reply is: the scene governing ITS turn (the last usable one
     // at or before it), never the chat's end. Any preset can carry the tag -
-    // without one the reply falls to the plain-prose watcher below.
+    // without one the reply falls to the plain-prose watcher below. A ride
+    // (En Route in the chain) is decided differently: the vehicle's parked
+    // interior answers it, by code, and the watcher is never asked whether a
+    // ride changed.
     const scene = resolveScene(messages, index, { persona })?.scene || null;
     const place = scene?.placeFull || '';
+    const ride = scene ? transportOf(place, { vehicles: knownVehicles(store) }) : null;
 
     const carried = own ?? resolveStampId(messages, index)?.id ?? null;
     const baseline = (carried && store.records[carried]) || null;
@@ -413,7 +462,9 @@ async function runTarget({ index, swipeId, force, refresh, my, signal }) {
         console.warn(`${LOG} reply ${index} carries no scene tag; the plain-prose fallback takes it`);
         globalThis.toastr?.warning?.('A reply carried no scene tag \u2014 the plain-prose fallback is handling it.', '', { timeOut: 6000 });
     }
-    const step = !force && scene ? decide(store, place, { baseline }) : null;
+    const step = !force && scene
+        ? (ride ? decideTransport(store, ride, { baseline }) : decide(store, place, { baseline }))
+        : null;
 
     const plan = planResolution({ step, force, counter: repliesSinceWatch, every: settings().bgEveryN });
     repliesSinceWatch = plan.counter;
@@ -436,6 +487,9 @@ async function runTarget({ index, swipeId, force, refresh, my, signal }) {
         return { status: 'unchanged', record: baseline || undefined };
     }
 
+    if (ride) {
+        return runTransportChain({ store, messages, index, swipeId, ride, scene, baseline, persona, force, my, signal });
+    }
     return runWatcherChain({ store, messages, index, swipeId, place, scene, tagged: !!scene, baseline, persona, force, my, signal });
 }
 
@@ -445,7 +499,7 @@ async function runTarget({ index, swipeId, force, refresh, my, signal }) {
  * brings back a cached image, "new" draws one.
  */
 async function runWatcherChain({ store, messages, index, swipeId, place, scene, tagged, baseline, persona, force, my, signal }) {
-    const request = buildWatcherRequest({
+    const args = {
         store,
         messages,
         tagged,
@@ -454,105 +508,225 @@ async function runWatcherChain({ store, messages, index, swipeId, place, scene, 
         force,
         systemCore: tagged ? settings().bgPromptOn : settings().bgPromptOff,
         current: baseline,
-    });
+    };
+    const request = buildWatcherRequest(args);
     lastRequest = { systemPrompt: request.systemPrompt, prompt: request.prompt, at: Date.now() };
 
     console.debug(`${LOG} asking the watcher`, { index, place, force });
 
     const plain = () => fallbackLocationPrompt(scene || place);
     const thinking = stage('Envisioning the location\u2026');
-    let answer = null;
+    let target = place || 'the story';
+    let raw = '';
     let failure = null;
+    let outcome = null;
+    let reason = '';
     try {
-        const reply = await generateRaw({
-            prompt: request.prompt,
-            systemPrompt: request.systemPrompt,
-            // No jsonSchema: some connections reject structured output
-            // outright (422 Unprocessable Entity), and nothing here needs
-            // it - parseWatcherReply reads the JSON out of the answer text,
-            // plain-text protocol tolerated, same as the music DJ.
-        });
+        // The one ride: the Background Agent's own connection (whatever the
+        // Connections tab has chosen), the same `{ok, text, error}` back
+        // whatever the door. No jsonSchema: some connections reject
+        // structured output outright (422 Unprocessable Entity), and nothing
+        // here needs it - parseWatcherReply reads the JSON out of the answer
+        // text, plain-text protocol tolerated, same as the music DJ.
+        // A rejected claim or an empty prompt earns exactly one forced re-ask
+        // before the template; the second request carries WATCHER_FORCE.
+        for (let attempt = 1; attempt <= 2; attempt += 1) {
+            const ask = attempt === 2 ? buildWatcherRequest({ ...args, force: true }) : request;
+            if (attempt === 2) lastRequest = { systemPrompt: ask.systemPrompt, prompt: ask.prompt, at: Date.now() };
 
-        if (my !== chainSeq) return { status: 'superseded' };
+            const reply = await generateOn('backgroundAgent', {
+                prompt: ask.prompt,
+                systemPrompt: ask.systemPrompt,
+            });
 
-        answer = reply.ok ? parseWatcherReply(reply.text) : null;
-        if (!answer) {
-            // The watcher failed. A tagged reply still knows its place from
-            // the tags and draws from the template; without tags there is
-            // nothing to fall back on.
-            if (!place) {
+            if (my !== chainSeq) return { status: 'superseded' };
+
+            raw = reply.text;
+            if (!reply.ok) {
                 failure = reply.error || 'The watcher call failed.';
-            } else {
-                answer = { state: 'new', knownId: null, place, prompt: plain() };
+                reason = 'call failed';
+                continue;
             }
-        }
 
-        // The brush must draw something, and "same" with nothing carried in
-        // has nothing to keep - both draw fresh.
-        if (answer && (force || (answer.state === 'same' && !baseline)) && answer.state !== 'new') {
-            answer = {
-                state: 'new',
-                knownId: null,
-                place: answer.place || place,
-                prompt: answer.prompt || plain(),
-            };
+            const parsed = parseWatcherReply(reply.text);
+            target = place || parsed?.place || firstPhrase(parsed?.prompt) || target;
+            outcome = resolveWatcherClaim({ store, answer: parsed, target, baseline, force });
+            if (outcome.action !== 'retry') {
+                failure = null;
+                break;
+            }
+            reason = outcome.reason || 'unparsable';
         }
     } finally {
         thinking();
     }
 
-    if (failure) return { status: 'error', error: failure };
+    if (my !== chainSeq) return { status: 'superseded' };
 
-    console.debug(`${LOG} watcher answered`, answer);
+    // A failed call with no tags has nothing to fall back on. A tagged reply
+    // still knows its place, so it goes on to the sentence template.
+    if (failure && !place && !outcome) return { status: 'error', error: failure };
 
-    // The tag knows the place; the plain-prose hand leans on the watcher's
-    // own naming, and only a nameless answer falls back to its first phrase.
-    const target = place || answer.place || firstPhrase(answer.prompt) || 'the story';
+    if (!outcome) outcome = { action: 'draw', id: null, prompt: '', reason: reason || 'unparsable' };
+    console.debug(`${LOG} watcher answered`, outcome);
 
-    if (answer.state === 'same') {
+    if (outcome.action === 'same') {
         // The same place, spelled differently: fold the spelling onto the
         // picture the reply carried, so the next skip-gate compares equal.
-        if (target && baseline) aliasLocation(store, target, baseline.id);
+        if (target && baseline) aliasLocation(store, target, outcome.id || baseline.id);
         stampLanded(index, swipeId, baseline?.id);
         return { status: 'unchanged', record: baseline || undefined };
     }
 
-    if (answer.state === 'known') {
-        const id = resolveRecordId(store, answer.knownId);
+    if (outcome.action === 'known') {
+        const id = resolveRecordId(store, outcome.id);
         const record = id ? aliasLocation(store, target || store.records[id].place, id) : null;
         if (record) {
             stampLanded(index, swipeId, record.id);
-            globalThis.toastr?.success?.(`Background set: ${record.place}`);
+            globalThis.toastr?.success?.(`Background set: ${placeShortName(record.place)}`);
             return { status: 'cached', record };
         }
-        // A stale id (hand-edited or pruned chat data): draw fresh instead,
-        // from the watcher's own description when it wrote one.
+        // A stale id (hand-edited or pruned chat data): draw fresh instead.
+        warnTemplate('known', 'stale claim', raw);
     }
+
+    // Nothing but a real picture description may reach the image model. The
+    // template is a sentence now, never the reversed location chain.
+    const description = outcome.prompt || plain();
+    if (!outcome.prompt) warnTemplate('new', outcome.reason || reason, raw);
 
     return generateBackground({
         store,
         index,
         swipeId,
         place: target,
-        description: answer.prompt || plain(),
+        description,
         force,
         my,
         signal,
     });
 }
 
-/** Draws one image for a reply's place and makes it that reply's picture. */
-async function generateBackground({ store, index, swipeId, place, description, force, my, signal }) {
+/**
+ * The ride's watcher: asked only about vehicles and spaces the parking lot
+ * has never seen (or a spelling drift it must recognise) - a parked interior
+ * answers without a call at all. The lot is the only menu, "known" parks the
+ * variant's name onto the interior it matched, "new" draws the interior once
+ * and parks it, and "same" is never trusted: a reply boarding from a
+ * location must never inherit the place it left.
+ */
+async function runTransportChain({ store, messages, index, swipeId, ride, scene, baseline, persona, force, my, signal }) {
+    const args = {
+        store,
+        messages,
+        at: index,
+        persona,
+        vehicle: ride.vehicle,
+        space: ride.space,
+        place: scene?.placeFull || '',
+        force,
+        systemCore: settings().bgPromptTransport,
+    };
+    const request = buildTransportRequest(args);
+    lastRequest = { systemPrompt: request.systemPrompt, prompt: request.prompt, at: Date.now() };
+
+    const plain = () => fallbackTransportPrompt(scene || `En Route | ${ride.vehicle}${ride.space ? ` | ${ride.space}` : ''}`, ride);
+    const thinking = stage(`Envisioning ${placeShortName(ride.space || ride.vehicle)}\u2026`);
+    // A ride's identity comes from the tag, never from the watcher's state
+    // word: this hand has no "same", and a reply boarding from a place must
+    // never inherit the picture it left.
+    const target = ride.space || ride.vehicle || 'the ride';
+    let raw = '';
+    let failure = null;
+    let outcome = null;
+    let reason = '';
+    try {
+        // Like the location hand: one forced re-ask for a rejected claim or
+        // an empty description, then the sentence template. The second ask
+        // carries WATCHER_TRANSPORT_FORCE.
+        for (let attempt = 1; attempt <= 2; attempt += 1) {
+            const ask = attempt === 2 ? buildTransportRequest({ ...args, force: true }) : request;
+            if (attempt === 2) lastRequest = { systemPrompt: ask.systemPrompt, prompt: ask.prompt, at: Date.now() };
+
+            const reply = await generateOn('backgroundAgent', {
+                prompt: ask.prompt,
+                systemPrompt: ask.systemPrompt,
+            });
+
+            if (my !== chainSeq) return { status: 'superseded' };
+
+            raw = reply.text;
+            if (!reply.ok) {
+                failure = reply.error || 'The watcher call failed.';
+                reason = 'call failed';
+                continue;
+            }
+
+            const parsed = parseWatcherReply(reply.text);
+            outcome = resolveWatcherClaim({ store, answer: parsed, target, baseline, force, kind: 'transport' });
+            if (outcome.action !== 'retry') {
+                failure = null;
+                break;
+            }
+            reason = outcome.reason || 'unparsable';
+        }
+    } finally {
+        thinking();
+    }
+
+    if (my !== chainSeq) return { status: 'superseded' };
+
+    if (failure && !outcome) return { status: 'error', error: failure };
+    if (!outcome) outcome = { action: 'draw', id: null, prompt: '', reason: reason || 'unparsable' };
+    console.debug(`${LOG} ride watcher answered`, outcome);
+
+    if (outcome.action === 'known') {
+        const id = resolveRecordId(store, outcome.id);
+        const record = id ? store.records[id] : null;
+        if (record) {
+            // The spelling drift parks the variant's name onto the interior
+            // it matched - the same record under one more name - so the next
+            // ride needs no call at all.
+            const variantKey = ride.spaceKey;
+            if (variantKey) store.transports[variantKey] = record.id;
+            stampLanded(index, swipeId, record.id);
+            globalThis.toastr?.success?.(`Background set: ${placeShortName(record.place)}`);
+            return { status: 'cached', record };
+        }
+        warnTemplate('known', 'stale claim', raw);
+    }
+
+    const description = outcome.prompt || plain();
+    if (!outcome.prompt) warnTemplate('new', outcome.reason || reason, raw);
+
+    return generateBackground({
+        store,
+        index,
+        swipeId,
+        place: scene?.placeFull || ride.vehicle,
+        description,
+        force,
+        my,
+        signal,
+        ride,
+    });
+}
+
+/** Draws one image for a reply's place - or its ride's interior - and makes it that reply's picture. */
+async function generateBackground({ store, index, swipeId, place, description, force, my, signal, ride = null }) {
     const ready = imageGenerationStatus();
     if (!ready.ok) return { status: 'unavailable', error: ready.text };
 
     const { bgStyle, bgNegative, bgSize } = settings();
-    const prompt = compileBgPrompt(description, bgStyle);
+    const clean = String(description ?? '').trim();
+    const prompt = compileBgPrompt(clean, bgStyle);
     const size = bgSize === 'landscape' ? LANDSCAPE_SIZE : null;
 
     console.debug(`${LOG} drawing`, { place, prompt });
 
-    const painting = stage(place ? `Painting ${place}\u2026` : 'Painting the location\u2026');
+    const painting = stage(ride
+        ? `Painting ${placeShortName(ride.space || ride.vehicle)} interior\u2026`
+        : place ? `Painting ${placeShortName(place)}\u2026` : 'Painting the location\u2026');
     let result;
     try {
         result = await imagine({
@@ -570,21 +744,70 @@ async function generateBackground({ store, index, swipeId, place, description, f
     if (my !== chainSeq) return { status: 'superseded' };
 
     // `overwrite` is the brush's "replace it" - the place has one canonical
-    // record and the retry redraws it everywhere it appears, newest wins.
+    // record and the retry redraws it everywhere it recurs, newest wins. The
+    // record keeps the description WITHOUT the style suffix: the style rides
+    // in at draw time, so the library reads clean. When the place's old
+    // record was a fold (shared with other places) the fresh picture takes a
+    // record of its own and this place's replies follow it. A ride parks in
+    // the lot instead: one record per vehicle-and-space, replaced IN PLACE,
+    // so every ride wearing that interior repaints together.
+    if (ride) {
+        const record = parkTransport(store, {
+            vehicle: ride.vehicle,
+            space: ride.space,
+            place,
+            prompt: clean,
+            path: result.path,
+            overwrite: true,
+        });
+        if (!record) return { status: 'error', error: 'The background could not be remembered.' };
+
+        stampLanded(index, swipeId, record.id);
+        console.debug(`${LOG} interior parked`, { vehicle: ride.vehicle, space: ride.space, path: result.path });
+        globalThis.toastr?.success?.(`Background set: ${placeShortName(ride.space || ride.vehicle)} interior`);
+        return { status: 'generated', record };
+    }
+
+    const key = locationKey(place);
+    const priorId = store?.keys?.[key] || null;
     const record = storeRecord(store, {
         key: place,
         place,
-        prompt,
+        prompt: clean,
         path: result.path,
         overwrite: !!force,
     });
     if (!record) return { status: 'error', error: 'The background could not be remembered.' };
+    if (priorId && priorId !== record.id) retargetStamps(priorId, record, key);
 
     stampLanded(index, swipeId, record.id);
     console.debug(`${LOG} background set`, { place, path: result.path });
-    globalThis.toastr?.success?.(place ? `Background set: ${place}` : 'Background set');
+    globalThis.toastr?.success?.(place ? `Background set: ${placeShortName(place)}` : 'Background set');
 
     return { status: 'generated', record };
+}
+
+/**
+ * The fresh picture's half of the fold healing: every reply of THIS place
+ * still pointing at the displaced record follows the fresh picture - replies
+ * of other places keep the record they knew, folds dying one brush at a time.
+ */
+function retargetStamps(priorId, record, key) {
+    const messages = chatMessages();
+    const persona = personaName();
+
+    for (let index = 0; index < messages.length; index += 1) {
+        const message = messages[index];
+        if (!message || message.is_user) continue;
+        if (locationKey(resolveScene(messages, index, { persona })?.scene?.placeFull || '') !== key) continue;
+
+        const variants = Math.max(1, Array.isArray(message.swipe_info) ? message.swipe_info.length : 1);
+        for (let swipeId = 0; swipeId < variants; swipeId += 1) {
+            if (stampOf(message, swipeId) === priorId) setStamp(message, swipeId, record.id);
+        }
+    }
+
+    saveChatMetadata();
 }
 
 /**
@@ -619,10 +842,13 @@ export async function syncShownBackground() {
         return { status: 'cached', record };
     }
 
-    // No history at or before here: the cached picture of the shown place is
-    // the best guess - still never a generation.
-    const place = resolveScene(messages, index, { persona: personaName() })?.scene?.placeFull || '';
-    const step = decide(store, place, { baseline: null });
+    // No history at or before here: the cached picture of the shown place -
+    // or the shown ride's parked interior - is the best guess, still never a
+    // generation.
+    const scene = resolveScene(messages, index, { persona: personaName() })?.scene || null;
+    const place = scene?.placeFull || '';
+    const ride = scene ? transportOf(place, { vehicles: knownVehicles(store) }) : null;
+    const step = ride ? decideTransport(store, ride, { baseline: null }) : decide(store, place, { baseline: null });
     if (step.action === 'apply' && step.record) {
         await showRecord(store, step.record);
         return { status: 'cached', record: step.record };

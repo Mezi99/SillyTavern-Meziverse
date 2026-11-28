@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { parseTags } from '../src/tags.js';
 import {
     INDOOR_EFFECTS,
+    assignBandSides,
     clockHour,
     describeScene,
     describeScenes,
@@ -15,11 +16,14 @@ import {
     indoorPlan,
     indoorSide,
     initials,
+    isExpressionLabel,
     isUsableScene,
     locationTagValue,
     parseClock,
     resolveScene,
     sceneAt,
+    seenNameCounts,
+    seenNames,
     splitDate,
     splitLocation,
     splitPresent,
@@ -356,6 +360,54 @@ test('describeSpeech refuses half tags and other tags', () => {
     assert.equal(describeSpeech(null), null);
 });
 
+test('describeSpeech keeps tone free text and expression a sprite label', () => {
+    const speech = describeSpeech(tag('<speech character="Damien" tone="low, certain" expression="approval">"Done."</speech>'));
+    assert.equal(speech.tone, 'low, certain');
+    assert.equal(speech.expression, 'approval');
+
+    const emotion = describeSpeech(tag('<speech character="Damien" tone="harder" emotion="annoyance">"Now."</speech>'));
+    assert.equal(emotion.expression, 'annoyance', 'emotion is an accepted spelling');
+
+    const none = describeSpeech(tag('<speech character="Damien">"Quiet."</speech>'));
+    assert.equal(none.tone, '');
+    assert.equal(none.expression, '');
+});
+
+test('describeSpeech bridges the legacy mood field by its value', () => {
+    const label = describeSpeech(tag('<speech character="Mara" tone="cold" mood="grief">"Oh."</speech>'));
+    assert.equal(label.expression, 'grief', 'a label in mood reads as the expression');
+    assert.equal(label.tone, 'cold', 'the free-text tone is untouched');
+
+    const delivery = describeSpeech(tag('<speech character="Mara" mood="softly, through tears">"Oh."</speech>'));
+    assert.equal(delivery.tone, 'softly, through tears', 'not a label: mood stays a tone fallback');
+    assert.equal(delivery.expression, '');
+
+    const both = describeSpeech(tag('<speech character="Mara" expression="joy" mood="grief">"Oh."</speech>'));
+    assert.equal(both.expression, 'joy', 'expression wins over mood');
+
+    const order = describeSpeech(tag('<speech mood="grief" character="Mara" tone="flat">"Oh."</speech>'));
+    assert.equal(order.expression, 'grief');
+    assert.equal(order.tone, 'flat', 'attribute order never decides a field');
+});
+
+test('isExpressionLabel knows the 28 and nothing else', () => {
+    assert.equal(isExpressionLabel('approval'), true);
+    assert.equal(isExpressionLabel('JOY'), true);
+    assert.equal(isExpressionLabel('softly'), false);
+    assert.equal(isExpressionLabel(''), false);
+    assert.equal(isExpressionLabel(null), false);
+});
+
+test('assignBandSides: first speaker left, second right, stable per reply', () => {
+    const sides = assignBandSides(['Jae', 'Damien', 'Jae', 'Akira', 'Damien']);
+    assert.equal(sides.get('jae'), '');
+    assert.equal(sides.get('damien'), 'is-r');
+    assert.equal(sides.get('akira'), '', 'a third speaker returns left');
+    assert.equal(sides.size, 3, 'a character keeps one side for the whole reply');
+
+    assert.deepEqual([...assignBandSides([]).keys()], []);
+});
+
 test('describeSpeeches gathers a message in order, cached', () => {
     const message = {
         mes: 'She smiled. <speech character="Mike" tone="wry">"Of course."</speech> Then '
@@ -375,4 +427,38 @@ test('describeSpeeches gathers a message in order, cached', () => {
 
     assert.deepEqual(describeSpeeches(null), []);
     assert.deepEqual(describeSpeeches('a string'), []);
+});
+
+test('seenNames: every name any scene ever carried, first-seen order', () => {
+    const messages = [
+        { mes: '<scene present="Mara Vane, Kai" />' },
+        { mes: 'plain prose, no tags at all' },
+        { mes: '<scene present="kai, Sol" />' },
+    ];
+    assert.deepEqual(seenNames(messages), ['Mara Vane', 'Kai', 'Sol']);
+});
+
+test('seenNames: the persona never counts, and neither does nothing', () => {
+    assert.deepEqual(seenNames([{ mes: '<scene present="Mara, Akira" />' }], 'Akira'), ['Mara']);
+    assert.deepEqual(seenNames(null), []);
+    assert.deepEqual(seenNames([{ mes: 'no scenes here' }]), []);
+});
+
+test('seenNameCounts: most-seen first, once per turn however many tags', () => {
+    const messages = [
+        { mes: '<scene present="Mara, Kai" /><scene present="Mara" />' },
+        { mes: '<scene present="kai, Sol" />' },
+        { mes: 'plain prose, no tags at all' },
+        { mes: '<scene present="Kai" />' },
+    ];
+    assert.deepEqual(seenNameCounts(messages), [
+        { name: 'Kai', count: 3 },
+        { name: 'Mara', count: 1 },
+        { name: 'Sol', count: 1 },
+    ]);
+});
+
+test('seenNameCounts: the persona never counts, and neither does nothing', () => {
+    assert.deepEqual(seenNameCounts([{ mes: '<scene present="Mara, Akira" />' }], 'Akira'), [{ name: 'Mara', count: 1 }]);
+    assert.deepEqual(seenNameCounts(null), []);
 });

@@ -1,5 +1,231 @@
 # Meziverse — version log
 
+## 2.11.4 - 2026-11-27
+
+Background changes now crossfade smoothly instead of dipping through the frame's own colour.
+
+### Real crossfade
+- Two stacked `.mz-bgstage` slots hold one picture each. The incoming picture is decoded first, then its slot fades in over the still fully opaque outgoing slot (800ms), so the blend never darkens mid-swap and an undecoded image can never pop in. When the fade ends the old slot is cleared and the roles swap, so only one image is held.
+- `--mz-st-bg` and `.is-bg-st` now live on the slot; the `.mz-bg` / `.mz-bgsoft` layers inside still read `background-image: var(--mz-st-bg)`, so memory mode's filter/scale rules apply to both stages during the fade.
+- A swap arriving mid-fade queues only the latest, so a fast turn shuffle never lands a stale picture or pops mid-fade. First paint, chat switches and background-source changes paint the front slot directly with ST's current background (or ST's default) - no fade from nothing, and the new-chat fallback is unchanged.
+- Reduced motion (setting or OS) sets `--mz-bg-xfade: 0ms`; JS reads the same token and swaps instantly. A fallback timer covers hidden tabs that skip `transitionend`.
+
+### Notes
+- `manifest.json` matches; the synthetic suite stands at 366 tests. Landed on `main` from `Background_Module`.
+
+## 2.11.3 - 2026-11-27
+
+Background changes now arrive on a short fade instead of appearing all at once.
+
+### Scene fade
+- `FORCE_SET_BACKGROUND` (generated changes and read-only turn shuffles alike) fades the scene wrapper out for 120ms, writes the new `--mz-st-bg` while the scene is hidden, then fades it in for 180ms. The swap timer starts from the wrapper's opacity `transitionstart`, so ST's blocking event emit can't skip the fade-out; a swap landing mid-fade starts its timer at once. The parent layers keep their `background-image: var(--mz-st-bg)`; only the wrapper's opacity moves, leaving memory mode's filter/opacity/transform behavior on the layers alone.
+- Rapid swaps retire the pending paint and restart the fade from the current opacity, so shuffling through turns with different backgrounds never lands a stale image. Reduced motion (setting or OS) makes the swap instant.
+- The authored-url guards, inline-only `#bg1` probe and "unusable stranger keeps the last good picture" rule are unchanged. No response-length or watcher plumbing changed.
+
+### Notes
+- `manifest.json` matches; the synthetic suite stands at 366 tests. Landed on `Background_Module`.
+
+## 2.11.2 - 2026-11-27
+
+The background watcher asks for prose and decides from ids, so a model that writes the right place in the wrong shape can no longer paint a location chain or fold two places onto one picture.
+
+### Prose-first prompts and id-first claims
+- The three background cores (`bgPromptOn`, `bgPromptOff`, `bgPromptTransport`) are rewritten as 2-4 sentence, 55-90 word establishing-shot briefs: one exact camera position, 4-5 concrete physical objects across the shot, the light source last, an empty place as subject, no vague quality words and no verbatim chains. Saved copies of older defaults follow the default forward (`PROMPT_DEFAULT_REFRESH`); hand-edited cores are never touched. The live ST settings were reset to these defaults (style shortened to `Anime visual novel background art, soft cinematic lighting`; the negative prompt was left as-is).
+- `<currentBackground>` prints `id: bg_n` and its entry in `<knownBackgrounds>` is marked `(on screen)`. The JSON format and the id rule are appended to the system prompt **by code**: the model copies an id and `resolveWatcherClaim` decides `same` / `known` / `draw` from it, trusting the state word only for the old plain-text protocol. A stale id or unsupported claim is checked by name first (`findRecordByName`, with spelling drift and the place/transport pools kept apart), then earns one forced re-ask with `WATCHER_FORCE` / `WATCHER_TRANSPORT_FORCE`.
+- `parseWatcherReply` refuses bare chains, truncated JSON that starts with `{`, short refusals and chain-shaped JSON prompts, while still reading the JSON object, `SAME`, `KNOWN <id>`, `NEW` and bare descriptions. `looksLikeChain` is the last gate before anything reaches the image model.
+- Both hands get at most one forced re-ask per chain. If the second answer still carries no usable description, the last resort is a sentence (`fallbackLocationPrompt` / `fallbackTransportPrompt`) - spot first, its plain-world after it, weather and a day-part for the light - never the reversed location chain. Every fallback logs `[Meziverse] bg template fallback` with the state, reason and raw reply.
+- No `responseLength` was added to the watcher calls; `generateOn` / `connections.js` response-length plumbing is unchanged.
+
+### Notes
+- `manifest.json` matches; the synthetic suite stands at 366 tests. The code landed on `Background_Module` as `d2ca5ae`; this section closes out its docs/version.
+
+## 2.11.1 - 2026-11-21
+
+The designer's polish round: the immersive band splits into its two layouts, and the poster grows a second door - the one that joins a story's new name to a character already saved.
+
+### Immersive A and B
+- **Dialogue faces** wears four wardrobes now - Off · Simple · **Immersive A** · **Immersive B** - switchable live from Settings → Features. A hugs its words: the box is as wide as its line, clamped 430-880px, flush to the speaker's side. B is one centred measure - 820px, every box alike, only the avatar swapping sides. Everything else about the band stands unchanged (the wash box, the hairlines, the sprite in front at 96/18, story-size words), and phones stay full-width at 600px. A stored `immersive` migrates to Immersive A - on the read and on the store.
+
+### Use an existing character - the alias door
+- The poster's library menu grows **"Use an existing character…"** beside "Add as new character…". It opens the library on a trip: a banner names the name ("Give "Silas" to a character - open their page and press Add."), and opening any character's page lands on their **Aliases tab with the name already in the input** and one button to land it. So the story's new Silas answers to the Valentin already saved - same sprites, same face, no new character to draw. The trip ends when the name lands, when the banner's × is pressed, or when the window closes.
+- A brand-new name gets the same menu now instead of the silent one-click save - its two saves deserve a choice - and "Add as new character…" still promotes the chat's portrait into the sheet.
+- **An alias redraws the cast strip the moment it lands** (and the moment one is removed): posters wearing the name flip to the character's face with no other trigger.
+
+### Small polish
+- The Character Library icon is two busts wherever it shows - the old books read as the map icon at small sizes.
+
+### Notes
+- `manifest.json` matches; the synthetic suite stands at 361 tests. Merged to `main` as v2.11.1.
+
+## 2.11.0 - 2026-11-20
+
+The avatar module: the characters get a library of their own — who a name is, what they look like — and then the sprites come downstairs, into the narration itself.
+
+### Part 1 · The Character Library opens
+- A new window — the top-bar library pill, or a poster's own door — with shelves reading **In the scene → Seen · not saved → Library**, a coverage card per face (CORE n/8 — what the stage falls back on — said inline), and a character page: the stage on one side, the expression board on the other, behind two tabs — **Expressions | Aliases**. Drag it by its header, pull the corner to resize, press outside to close — and it remembers where you left it.
+- Saving is always explicit: a name seen in the story never saves itself. Drop a picture on a slot, use a poster's **Add to library**, or type a name and a photo into the new-character sheet — one step either way.
+
+### One name, one character
+- A record's name is its ID — the full name that keeps two Mikes two records — while scene tags keep saying the one-word name ("Mike", never "Mike Chan"). **Aliases** are "other names the AI might use for this character (a revealed full name "Sarah Greenfield" for "Sarah", a nickname, or a title)" — pills on the Aliases tab; names print as written while faces resolve to the character.
+- Ambiguity is a door, never a guess: when two records answer to one name the poster asks which — the current pick checked, with **Don't use the library**, **Add as new character…** and **Open page** beside it — and remembers the answer for this chat. Names resolving to one character share one poster on the strip.
+
+### Engaged faces win
+- A character the library owns wears library images everywhere; the chat-file avatar is theirs again the second you disengage (the current face is copied over), and re-engaging promotes the poster's picture back to the default and fills the `neutral` slot. An engaged portrait cannot be replaced from the poster — the camera hides until you disengage.
+
+### The wardrobe work
+- **Rename** carries the sprites to the new name — a clean break, aliases are separate — and a taken name stops with a shortcut to rename the existing one first. **Duplicate** copies the sprites and shares the portrait. **Delete** keeps its two-step nerve and asks "Delete sprites too?".
+- Hover any expression for **Replace / Delete** (touch keeps them visible; delete needs arming); the buttons lost their bold, and shelves, stage and board all read the one house style.
+
+### One image, one sprite
+- The picture promoted into the library fills the `neutral` expression slot too — the easy way to save a character with a single image — and never clobbers a real expression set's neutral. The default-image preview fills its plate like the posters and cards now (a landscape source no longer floats small), while a looked-at sprite still shows whole.
+
+### Part 2 · Expressions in the narration
+- **Dialogue faces** — three wardrobes for a spoken line, behind one switch: **Off** (today's quiet bubble, no face), **Simple** (a round face in the bubble's gutter — the default) and **Immersive** (a full dialogue band per line, speakers alternating sides, the sprite standing in front of the band). The **Avatars** switch stays the master: off turns every face off, and the library's top-bar button is never gated. A speaker with no picture at all keeps the furniture — the monogram circle, or a text-only band with a thin accent edge.
+- **The face follows the expression.** Every line's `expression` picks its sprite through one pure chain — the exact label, its nearest core family (a static table: annoyance→anger, embarrassment→nervousness→fear, caring→love→joy…), the `neutral` slot, then the default image. No calls, no waiting: sprite folders are prefetched and cached. A character outside the library wears their chat-file face for every expression.
+- **Tone and expression, finally separate.** `tone` stays free text delivery ("low, certain") and `expression` carries the 28-label sprite vocabulary. Old tags keep their meaning: a `mood` that is a label reads as the expression, anything else stays a tone. And attribute order no longer decides any field.
+- **"Frame the face"** — a draggable square over the default image with live previews (speech bubble, small, expression board) and the same frame on the character's sprites. One frame per character covers the portrait and every sprite; "Find automatically" guesses it from the art's own transparency. No face-detection library — they are weak on illustrated art.
+- **Light sprites, intact art.** A sprite upload shrinks to 1024px and re-encodes WebP with its transparency — a set runs to dozens of files — while art already small and WebP stays byte-for-byte as it was made.
+- **Posters wear the line.** Each poster shows that character's latest line's expression in the reply (neutral when they have not spoken), updating as each speech tag completes. Cut-out sprite art stands free on the strip; a photo keeps the cover crop.
+
+
+### The polish round - the faces settle in
+- The simple-mode circle grew to 50px, measured against the type itself: it starts at the name label and ends exactly where a one-line dialogue ends, so the face and the first line of words stand on the same floor.
+- The immersive band became the old murder-mystery dialogue box (the designer's review, tuned with the owner): a wash box with hairlines top and bottom and the accent strongest at the speaker's side, the sprite standing in front of it - a compact 96px square (88px under 600px), stuck flush to the box's side, its head rising 18px above the box at minimum dialogue and the box growing around it as the words grow. The window's far edge eases into the wash over 14px, so a cropped figure reads as tied in, never sliced. Fonts stay story-size in all three modes.
+- "Frame the face" previews tell the truth now: the Expression board shows exactly the square that was dragged (head and chest filling the window, no empty sky), the sprite chips share the one crop rule with the story, and dragging the square no longer skews the previews (the image's aspect survives every repaint).
+### Notes
+- `manifest.json` matches; the synthetic suite stands at 352 tests. Merged to `main` as v2.11.0.
+
+## 2.10.0 - 2026-11-18
+
+The map becomes a place: the story's land painted under the chart - and one grammar that tells a land place from a car on the road.
+
+### The terrain land
+- The **Terrain** look paints the story's land under the same chart: hills and forests, water with its caustics, town lights where the places are, the roads the journeys walk - all computed in one shader from the designer's own mockup (the town field, the road field and the fog's pin loop verbatim), all fed by the story's places, pictures and weather. **Zero LLM calls**: the terrain is aesthetic only, and any failure - no WebGL, a lost context, an unreadable record - falls back to the plain Flat chart and stays there.
+- The record is chat-scoped plain JSON (`chatMetadata.meziverse.terrain`): region colours sampled from the drawn backgrounds, land ratios read from the region's texts, one climate hint from the weather seen - hand-editable, and anything hand-written is validated before it is believed. **The land keeps its own colours**: the theme no longer washes the terrain, the outlines, rings and lines are tints of the land's own palette, and the theme accent is reserved for state (now, selection, flags, chips). The water keeps its teal in any climate.
+- Fog that thins around the map's own pins, drift over land and water (**Drifting fog and water**, on by default), a sky that follows the story's hours and seen weather, and sharpness where it counts: full resolution at rest, soft only while the hand moves, the pixel budget a slider (4Mpx at High) with a session-only step-down on slow GPUs. Terrain / Flat ride the map's chips, and **Flat is Flat** - no paths, no veil, the Fog button disabled.
+
+### The map's grammar: land and road
+- One response draws its **last** scene tag in full; the tags before it are passed through - and that one grammar speaks two languages. **Land speaks in nodes**: a picture pin where a response stopped, a small empty node for a new passed-through place, a path straight through one already on the map. A land node draws only where a scene tag stood - so a place the story only ever drove through has no node until someone gets off the car.
+- **The road speaks in vehicle marks**: a bigger car (dotted ring when past, the live one keeping its ping) where a scene was narrated as the response's last tag, small spots where the car merely passed - each carrying the **place's** name in the blob it crossed, labels staggered so they never collide. The map names no vehicles and counts no scenes; clicking a mark opens the vehicle and its turns in the rail. The unlabeled "map icon" nodes at crossings are gone - the marks stand exactly on the trail.
+- **Vehicles are entities with interiors**: an icon (no photo face, no name label) wearing a count of the places aboard - the badge a door straight into the vehicle's inner map, the icon opening the card. One walk everywhere - the trail, the shader's roads and the journey legs read the same settled points - and one line matrix in both looks: land journeys continuous, rides dotted (in Terrain the lit path carries the walk; in Flat the line itself).
+- Round after round of feel work landed with it: marks that select the ship and its turns, hub labels and doubled lines gone, the click-through disc fix, land journeys as the lit path, "Ink" renamed **Terrain**, and the whole mark/pin/label voice unified - one place, one voice.
+
+### Sturdier under long stories
+- The layout **never loses a place**: a pack that cannot fit a huge world now stands the leftover beyond the cluster's edge instead of silently dropping it - the bug that froze whole charts at `translate(NaN NaN)` on maps with very large territories (100+ message stories). The view is guarded finite all the way down, so a bad value can never take the map down again.
+
+### Notes
+- `manifest.json` matches; the synthetic suite stands at 318 tests.
+
+## 2.9.7 - 2026-11-15
+
+The settings sheet learns to breathe - and the top bar keeps three quiet toggles within reach.
+
+### Cards, not folds
+- Every group is now a title line (icon, name - and for Backgrounds, Music and Map the master switch) above one always-open card of rows. No more column of closed headers to open one by one: the whole sheet reads at a glance.
+- The old folds merge where they belonged together. Avatars, Speech bubbles, Weather and Indoor become one **Stage** card; Theme and Background become **Look**; Transparency, Blur, Text size, Font, Prose colors, Scene header and **Reset pane height** (gone from the footer) become **Reading pane**; Scale and Reduced motion become **Interface**. With the footer gone, the scroll area gains its height.
+- The master switches ride their title lines: switching Backgrounds, Music or Map off steps the whole card aside - title line stays, controls never disabled. The Meziverse mode master keeps its one-line card.
+
+### Label, control, and one quiet dot
+- Rows are one rhythm: 46px, label left, control right, hairline between. The helper sentences are gone - where a row needs a hint it wears a small **i** dot carrying one short sentence, shown on hover, on tap and on keyboard focus (the tap path is real, not hover-only CSS).
+- Prompts, the YouTube key and the "Last request" dumps step behind one quiet fold per card - **Prompts** and **Key & prompt** - closed by default, each standing alone so two sets can be compared. The Transport-interior prompt stays beside its siblings. Actions ("Draw one now", "Open map") sit in a foot strip; the Connections foot carries the test answer beside [Send test call].
+- The eight tracker entries are a 2-column tile grid. Each connection agent is one card: a full-width source segmented control (Current API / Profile / Custom), only the fields that source needs, and its own foot.
+- Tabs wear icons (gear, sparkle, plug, layers); the "Meziverse mode" tab reads **Mode**. Copy is trimmed throughout: labels alone, options shortened (Quiet / Rule / Date / Simple), stepper values wear their units ("1 reply", "3 replies").
+
+### Quick toggles in the top bar
+- The single "Auto BG" pill grows into a trio of quiet icon pills beside the wordmark: **Backgrounds** (the old pill, renamed), **Music** (the same switch as Story requests) and **Map** (the feature's master), each wearing its settings card's icon and its name in a tooltip. They are the settings' own switches - toggling one lights the other place up at once - so gameplay can flip them without opening the sheet. The Backgrounds and Music pills step aside when their feature's master is off; the Map pill never does, since it is that master.
+- Below 560px the trio steps away and settings hold the same switches - which also ends the old pill's habit of crowding the chat title on phones.
+
+### Notes
+- `manifest.json` matches; the synthetic suite stands at 287 tests.
+
+## 2.9.6 - 2026-11-14
+
+The parking lot opens — and the map learns to travel.
+
+### Rides are decided by code, never by the LLM
+- A chain carrying **En Route** at any level is a ride; the level after it names the vehicle, and the levels after THAT are **spaces aboard it** ("... | En Route | CV-7742 Shuttle | Bunk Room") — a cockpit is not a cabin. One interior per vehicle-and-space lives in the parking lot, whatever the travel chain spelled: found = shown with **no call at all**; missed = one watcher call whose only menu is **PARKING LOT (TRANSPORT INTERIORS)** and whose fixed, code-appended rule demands that interior ("it must never change wherever the vehicle travels"). A bare parked chain stays a normal location (the docking bay draws its own scene); a parked chain naming a space aboard shares the moving room's picture — same room, same picture. "same" is never trusted on a ride; "known" parks the spelling variant onto the interior it matched; the brush repaints the interior **in place**, so every ride wearing it repaints together.
+- **Legacy chats fold at load**: the per-chain interiors of old chats become one per vehicle-and-space (the newest wins, stale ones leave the library, stamps follow, every ride reply wears its exact interior) and ride chain keys leave the location library for good. The **branch button prunes the library** to the branched chat's own references — every swipe variant counted — while image files stay in SillyTavern's shared gallery.
+
+### The watcher grows a third mouth
+- Settings › Backgrounds now holds **Watcher prompt · Transport interior** — editable, with Restore default — beside Scene tags and Plain prose. The interior rule and the answer format are appended by code and cannot be edited away, and a saved core still holding the old default follows the new one automatically.
+
+### The map: the ship as a traveler
+- **The board rule.** A named space after the vehicle is *aboard* it: journeys, "now" and transit all resolve to the vehicle — never the room, which stays a place of its own for cards, turns and pictures. This is also what un-glitched the travel lines — rooms aboard a moving ship used to read as ordinary places, and every journey touching them died on arrival.
+- **The trail follows the story.** A reply's own scene tags are its movement: the journey segments through **every level the ship crossed** ("Landing Pad → Mara's Rest → Corporate Space → Kessel Drift → Docking Bay 7"), each segment a journey in the cards with its turn, and the icon follows the trip to its arrival — the ship parks at the berth its last leg closed on. Route context above En Route is placed as soft evidence (visited, never a stop — the "passed through" dots), so the blobs appear as the ship crosses them and merge with the places it later stops at.
+- **The trail's stops carry the turns.** Where responses caught the ship under way, a small vehicle icon — about half the live one — marks the spot ("Corporate Space · 2×"), and clicking it opens that place's card with those turns. One full-size icon shows where the vehicle is now: its picture, a room count and **Look inside** when it has rooms aboard; a plain glyph disc when it has not. The mid-leg glyphs are gone — journeys are dotted lines.
+- **The deck.** Click-pair a ship on the map (or the card's Look inside) to see only its rooms, each its own painted picture; the bar, Esc, or zooming out past the fit returns to the world. Shuffling vehicles below decks swaps the deck; picking a place on the ground steps back out.
+
+### The map listens again
+- Pointer capture was swallowing every chart click's hit-test — pins, stop icons and ships all looked unclickable. Clicks now reach the right rail everywhere, the card's Seen listing the turns and the chain reading the place's own. The card column is **reserved**, so the chart never slides when a card opens — which is also what killed double-clicks — and any stage resize keeps the view's center. Zoom reaches 6, long labels fold over two rows, and the packing breathes (wider gaps and pads) now that passed places want their space.
+
+### Notes
+- `manifest.json` matches; the synthetic suite stands at 287 tests.
+
+## 2.9.5 - 2026-11-13
+
+The pictures stop sharing beds - and the library learns to speak plainly.
+
+### One place, one picture - and never two places, one picture
+- A watcher answer of "same" or "known" claims two names are one spot. That claim is now **verified before anything folds**: names must look like variants of one place (numbers decide - "Corridor C-12" is never "Corridor C-9"; "Landing Pad" shares nothing with "Kaffe Station"; "Pier 9", "Pier No9" and "the ninth pier" are one pier). A careless answer used to merge two rooms onto one record forever, and the next brush then repainted both - "the last picture overwrites all previous". A rejected claim draws the new place its own picture instead.
+- The **brush repaints the response it was clicked on** - the shown reply, read from the pane at click time, never the chat's end behind the reader's back - and the place's picture is replaced everywhere that place recurs. A record still shared by several places (old fold) is never overwritten: the fresh picture takes the brushed key and that place's replies follow it, so old chats heal one brush at a time.
+- Shuffle-back keeps every reply's own picture: verified live, turn by turn.
+
+### Location edits keep the books
+- Editing a scene tag's location (the ribbon's level rows) now **renames and re-keys the record that reply points at**, picture kept - the tag and the library never drift apart. Adding or deleting a chain level is the same place; naming a genuinely different place falls through to the ordinary re-resolution (the cached picture of the new place, or a fresh draw). Works for chains of any length - 4, 5, 6 parts, the leaf is always the place.
+
+### The watcher's question, tidied
+- Every block of the request wears its own tags (`<currentBackground>`, `<knownBackgrounds>`, `<recentPlaces>`, `<latestStory>`) - look-alikes in story text are scrubbed, so the layout can't be spoofed - and every place reads **`short name [World location: chain]`** with the leaf first and the image description behind an explicit **`Description:`** marker. The library's title reads KNOWN BACKGROUNDS (IMAGE LIBRARY). The context is unchanged: environment-only, one reply, the same question every call.
+- The **image prompt** the fallback template writes speaks image-model now: the spot first, its world as plain words (never a pipe chain), the weather and a day-part for the light (never "Friday, March 16, 2347 09:58"). Records keep the description **raw** - the style suffix rides in at draw time - so the library reads clean.
+- Notices name the leaf: "Painting Junction 7-B...", never the whole chain.
+
+### Notes
+- `manifest.json` matches; the synthetic suite stands at 276 tests.
+
+## 2.9.4 - 2026-11-13
+
+The scene ribbon gets its wardrobes — and its own pen.
+
+### Four scene header styles
+- Settings > **General** > Scene header picks how every `<scene>` ribbon reads in the reading pane: **Quiet** (the new default), **Chapter rule**, **Date-first**, and **Simple** — the first band Meziverse ever drew. One set of fields, four wardrobes; the log keeps its own compact band whatever the choice, and the segment shows the pressed style.
+- **Weather follows the tag**, never the free text: a 24×24 stroke glyph per `weatherTag` state in every style (unknown or missing draws nothing; **Clear** reads as the sun by day, the crescent at night), with the free-text weather printing beside it. The date-first row gains clock and people glyphs from the same hand.
+- All type rides the interface scale; the date-first headline, the location chain (11px everywhere) and the clocks were sized down for a tighter ribbon. Text sits on a **soft dark-grey scrim** (not black — that glared on bright backgrounds) with dimmer-white secondary text instead of grey, so the header holds on any stamped background.
+
+### The ribbon edits its own place
+- A **pencil** in every ribbon's seat (reading pane only) turns that ribbon into an editor: the location breadcrumb becomes one input per level — add, remove, Enter steps through, Esc discards — while the date, time, weather and cast stay as the tag wrote them. Save / Cancel replace the pencil; nothing is written until Save.
+- Saving rewrites **only the `location` attribute inside that one scene tag** — prose, trackers and every other tag stay byte for byte — and the write goes through **SillyTavern's own editor**, so ST saves and re-renders while the map and the background chain re-derive from the corrected place by themselves. The message editor and the scene editor stand down for each other.
+
+### Notes
+- `manifest.json` matches; the synthetic suite stands at 272 tests.
+
+## 2.9.3 - 2026-11-12
+
+The narration pane hears the model think — and grows ST's own hands.
+
+### The reasoning block
+- When the model shows its thinking, the pane can show it too: an **ST-style expandable above the prose** — the formatted body, "Thought for …" / "Thinking…" / "Reasoning" labels — arriving **collapsed**, click to open. One pane-wide open/closed state is kept across turn steps and streaming redraws.
+- The **head toggle** sits left of the card name (neutral glyph — not theme-coloured) and is **on by default**; with it off the pane reads exactly as before.
+- The read is read-only and ST-true: `extra.reasoning_display_text ?? extra.reasoning`, per swipe from `swipe_info[swipe_id].extra`, with the inline `think` body as a streaming-safe fallback. **The log drawer never shows reasoning.**
+
+### ST's own glyphs
+- The ST-mirror buttons wear **SillyTavern's exact FontAwesome glyphs**, all 11px, the theme's colours through `currentColor`: copy, branch (pane head and log drawer), eye — flipping exclude/include like ST — pencil, the edit bar ✓ / 🗑 / ✕, swipe chevrons, the composer's menu / impersonate / continue, and send · stop (`fa-paper-plane` → `fa-circle-stop`).
+- The **brush moved out of the brand bar** into the narration pane head, right of the card name — ST's `fa-paintbrush`, same wiring and behavior (the background watcher is untouched).
+
+### Notes
+- Composer textarea padding tightened to 5px so it sits with the smaller icons.
+- `manifest.json` matches; the synthetic suite stands at 265 tests.
+
+## 2.9.2 - 2026-11-12
+
+The background watcher picks its own door.
+
+### The Background Agent
+- Settings > Connections gains a **Background Agent** section, above the Music Agent - the same component and the same engine: the **current ST API** (the default - nothing changes), any of SillyTavern's **Connection Manager profiles**, or a **custom OpenAI-compatible endpoint** (URL, key, model). A **Test** button sends one tiny call through the chosen door and answers inline.
+- The background watcher's one LLM call rides that door now - the auto watcher and the brush alike. The question it asks, the skip-gate, the pace and the template fallback are exactly as they were; only the door is chosen.
+- The image side is untouched: drawing keeps riding ST Image Generation. The map agent joins the tab in its own batch.
+
+### Notes
+- The Background Module keeps developing on its own `Background_Module` branch, kept alive for the next batches; `manifest.json` matches. The synthetic suite stands at 260 tests.
+
 ## 2.9.1 - 2026-11-11
 
 The player gets its design, and the watchers get their own doors.

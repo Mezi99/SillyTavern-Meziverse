@@ -7,33 +7,36 @@
  */
 
 import { chatMessages, currentChatId, errorText, imageGenerationStatus, on, sendUserMessage, stopGeneration, clickComposerControl, clickOptionsMenu, hasParentChat, stComposer, stDefaultBackground } from './st.js';
-import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, bgImagesOn, weatherFxOn, indoorFxOn, speechFxOn, musicOn, musicAutoOn, musicDjOn, musicKey, musicPickMode, mapOn, mapMiniOn, DEV_EXTRAS } from './settings.js';
+import { settings, saveSettings, avatarsOn, entryOn, modeOn, bgAutoOn, bgImagesOn, weatherFxOn, indoorFxOn, sceneHeaderStyle, speechFxOn, dialogueFaceMode, musicOn, musicAutoOn, musicDjOn, musicKey, musicPickMode, mapOn, mapMiniOn, DEV_EXTRAS } from './settings.js';
 import { DEFAULT_DJ_PROMPT, getLastDjRequest } from './musicdj.js';
 import {
     forceBackground,
     getLastWatcherRequest,
+    pruneBranch,
     setShownTurn,
     syncShownBackground,
     uiClosed,
     uiOpened,
 } from './bgchain.js';
-import { DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_OFF, sceneUrl, isNoPicture } from './backgrounds.js';
-import { injectSprite } from './icons.js';
+import { DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_OFF, DEFAULT_BG_TRANSPORT_PROMPT, sceneUrl, isNoPicture } from './backgrounds.js';
+import { faHtml, injectSprite } from './icons.js';
 import { createTranscript } from './transcript.js';
-import { mountCast, refreshCastSizing, renderCast, renderThoughts, renderTells, clearCascade, redrawCast } from './cast.js';
+import { mountCast, refreshCastSizing, renderCast, renderThoughts, renderTells, clearCascade, redrawCast, setCastExpressions } from './cast.js';
 import { resolveLedger } from './ledger.js';
 import { parseMessage } from './tags.js';
-import { weatherPlan, indoorPlan } from './scene.js';
+import { weatherPlan, indoorPlan, describeSpeeches } from './scene.js';
 import { placeHtml } from './prose.js';
 import { mountCues, closeMemory } from './cues.js';
 import { closeFloats } from './floats.js';
 import { mountMusic, musicUiClosed, musicUiOpened, refreshMusic } from './music.js';
 import { mountConnections } from './connections.js';
-import { mountMap, mapUiClosed, mapUiOpened, refreshMap, isMapWinOpen, openMapWin, closeMapWin } from './map.js';
+import { mountMap, mapUiClosed, mapUiOpened, refreshMap, isMapWinOpen, openMapWin, closeMapWin, terrainRecordView, writeTerrainRecord, reseedTerrainRecord, rederiveTerrainRecord } from './map.js';
+import { closeLibrary, isLibraryOpen, libraryUiClosed, mountLibrary, openLibrary, primeSprites, refreshLibrary } from './library.js';
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr, notify } from './notify.js';
 
-const VERSION = '2.9.1';
+const VERSION = '2.11.4';
+
 const PANE_DEFAULT = 300;
 const LOG_W_DEFAULT = 720;
 const LOG_H_SHARE = 0.7;
@@ -65,13 +68,15 @@ const svg = name => `<svg class="ico" aria-hidden="true"><use href="#mz-i-${name
 
 const FRAME_HTML = `
 <div class="mz-frame" role="dialog" aria-modal="true" aria-label="Meziverse">
-    <div class="mz-bg" aria-hidden="true"></div>
-    <div class="mz-bgsoft" aria-hidden="true"></div>
+    <div class="mz-bgstack" aria-hidden="true">
+        <div class="mz-bgstage is-top" data-slot="a"><div class="mz-bg"></div><div class="mz-bgsoft"></div></div>
+        <div class="mz-bgstage" data-slot="b"><div class="mz-bg"></div><div class="mz-bgsoft"></div></div>
+    </div>
     <div class="mz-weather" aria-hidden="true"></div>
     <div class="mz-scrim" aria-hidden="true"></div>
 
     <header class="mz-header">
-        <div class="mz-brand"><b>Meziverse</b><small class="mz-version">v${VERSION}</small><button class="mz-mode mz-bgauto" type="button" role="switch" aria-checked="false" title="Backgrounds follow the story" aria-label="Automatic location backgrounds" data-mz-action="bg-auto"><i aria-hidden="true"></i><span data-mz="bg-auto-label">Auto BG: Off</span></button><button class="mz-ibtn mz-brush" type="button" title="Draw a background for this place" aria-label="Draw a background for this place" data-mz-action="bg-generate">${svg('brush')}</button></div>
+        <div class="mz-brand"><b>Meziverse</b><small class="mz-version">v${VERSION}</small><span class="mz-hair mz-quick-hair" aria-hidden="true"></span><div class="mz-autoquick" role="group" aria-label="Quick toggles"><button class="mz-qpill mz-bgauto" type="button" role="switch" aria-checked="false" title="Backgrounds follow the story" aria-label="Backgrounds follow the story" data-mz-action="bg-auto">${svg('image')}</button><button class="mz-qpill mz-musicauto" type="button" role="switch" aria-checked="true" title="Music from story requests" aria-label="Music from story requests" data-mz-action="music-auto">${svg('music')}</button><button class="mz-qpill" type="button" role="switch" aria-checked="true" title="Map on or off" aria-label="Map" data-mz-action="map">${svg('map')}</button><button class="mz-qpill" type="button" title="Character Library" aria-label="Character Library" data-mz-action="library-open">${svg('library')}</button></div></div>
         <div class="mz-chatname" data-mz="chatname"><b class="is-empty">No chat open</b></div>
         <div class="mz-header-tools">
             <div class="mz-music-slot" data-mz="music-slot"></div>
@@ -112,7 +117,11 @@ const FRAME_HTML = `
     <section class="mz-dlg" aria-label="Reading pane">
         <div class="mz-grip" role="separator" aria-orientation="horizontal" aria-label="Resize reading pane" tabindex="0"></div>
         <header class="mz-dlg-head">
-            <span class="mz-speaker" data-mz="speaker"></span>
+            <button class="mz-ibtn mz-reasonbtn" type="button" title="Hide reasoning from the pane" aria-label="Hide reasoning from the pane" aria-pressed="true" data-mz-action="toggle-reasoning">${svg('thought')}</button>
+            <span class="mz-dlg-who">
+                <span class="mz-speaker" data-mz="speaker"></span>
+                <button class="mz-ibtn mz-brush" type="button" title="Draw a background for this place" aria-label="Draw a background for this place" data-mz-action="bg-generate">${faHtml('fa-solid fa-paintbrush')}</button>
+            </span>
             <span class="mz-dlg-nav">
                 <button class="mz-ibtn" type="button" title="Previous turn" aria-label="Previous turn" data-mz-action="prev">${svg('prev')}</button>
                 <span class="mz-dlg-meta" data-mz="meta"></span>
@@ -120,15 +129,15 @@ const FRAME_HTML = `
                 <button class="mz-ibtn" type="button" title="Latest turn" aria-label="Latest turn" data-mz-action="latest">${svg('latest')}</button>
             </span>
             <span class="mz-dlg-actions">
-                <button class="mz-ibtn" type="button" title="Copy" aria-label="Copy" data-mz-action="copy">${svg('copy')}</button>
-                <button class="mz-ibtn" type="button" title="Branch from this turn" aria-label="Branch from this turn" data-mz-action="branch">${svg('branch')}</button>
-                <button class="mz-ibtn" type="button" title="Exclude message from prompts" aria-label="Exclude message from prompts" data-mz-action="toggle-prompt">${svg('eye')}</button>
-                <button class="mz-ibtn" type="button" title="Edit this turn" aria-label="Edit this turn" data-mz-action="edit">${svg('pencil')}</button>
+                <button class="mz-ibtn" type="button" title="Copy" aria-label="Copy" data-mz-action="copy">${faHtml('fa-solid fa-copy')}</button>
+                <button class="mz-ibtn" type="button" title="Branch from this turn" aria-label="Branch from this turn" data-mz-action="branch">${faHtml('fa-regular fa-code-branch')}</button>
+                <button class="mz-ibtn" type="button" title="Exclude message from prompts" aria-label="Exclude message from prompts" data-mz-action="toggle-prompt">${faHtml('fa-solid fa-eye')}</button>
+                <button class="mz-ibtn" type="button" title="Edit this turn" aria-label="Edit this turn" data-mz-action="edit">${faHtml('fa-solid fa-pencil')}</button>
             </span>
             <span class="mz-dlg-actions mz-dlg-editbar" hidden>
-                <button class="mz-ibtn" type="button" title="Accept changes" aria-label="Accept changes" data-mz-action="edit-accept">${svg('check')}</button>
-                <button class="mz-ibtn" type="button" title="Delete message" aria-label="Delete message" data-mz-action="edit-delete">${svg('trash')}</button>
-                <button class="mz-ibtn" type="button" title="Discard changes" aria-label="Discard changes" data-mz-action="edit-cancel">${svg('close')}</button>
+                <button class="mz-ibtn" type="button" title="Accept changes" aria-label="Accept changes" data-mz-action="edit-accept">${faHtml('fa-solid fa-check')}</button>
+                <button class="mz-ibtn" type="button" title="Delete message" aria-label="Delete message" data-mz-action="edit-delete">${faHtml('fa-solid fa-trash-can')}</button>
+                <button class="mz-ibtn" type="button" title="Discard changes" aria-label="Discard changes" data-mz-action="edit-cancel">${faHtml('fa-solid fa-xmark')}</button>
             </span>
         </header>
         <div class="mz-prose" data-mz="prose">
@@ -136,23 +145,23 @@ const FRAME_HTML = `
         </div>
         <textarea class="mz-edit" data-mz="edit" hidden spellcheck="true" aria-label="Edit this turn"></textarea>
         <div class="mz-swipebar" data-mz="swipebar" hidden>
-            <button class="mz-swipebtn" type="button" title="Previous swipe" aria-label="Previous swipe" data-mz-action="swipe-prev">${svg('prev')}</button>
+            <button class="mz-swipebtn" type="button" title="Previous swipe" aria-label="Previous swipe" data-mz-action="swipe-prev">${faHtml('fa-solid fa-chevron-left')}</button>
             <span class="mz-swipe-count" data-mz="swipe-count"></span>
-            <button class="mz-swipebtn" type="button" title="Next swipe" aria-label="Next swipe" data-mz-action="swipe-next">${svg('next')}</button>
+            <button class="mz-swipebtn" type="button" title="Next swipe" aria-label="Next swipe" data-mz-action="swipe-next">${faHtml('fa-solid fa-chevron-right')}</button>
         </div>
         <div class="mz-composer">
             <div class="mz-composer-box">
-                <button class="mz-ibtn mz-menu-btn" type="button" title="Chat options" aria-label="Chat options" aria-haspopup="true" aria-expanded="false" data-mz-action="menu">${svg('menu')}</button>
+                <button class="mz-ibtn mz-menu-btn" type="button" title="Chat options" aria-label="Chat options" aria-haspopup="true" aria-expanded="false" data-mz-action="menu">${faHtml('fa-solid fa-bars')}</button>
                 <div class="mz-menu" role="menu" aria-label="Chat options" hidden>
-                    <button class="mz-menu-item" type="button" role="menuitem" data-mz-action="new-chat">${svg('chat-new')}<span>Start new chat</span></button>
-                    <button class="mz-menu-item" type="button" role="menuitem" data-mz-action="back-to-parent">${svg('chat-parent')}<span>Back to parent chat</span></button>
+                    <button class="mz-menu-item" type="button" role="menuitem" data-mz-action="new-chat">${faHtml('fa-solid fa-comments')}<span>Start new chat</span></button>
+                    <button class="mz-menu-item" type="button" role="menuitem" data-mz-action="back-to-parent">${faHtml('fa-solid fa-left-long')}<span>Back to parent chat</span></button>
                 </div>
                 <textarea class="mz-input" data-mz="input" rows="1" placeholder="Write your line\u2026" autocomplete="off" spellcheck="true" aria-label="Your line"></textarea>
             </div>
             <span class="mz-composer-tools">
-                <button class="mz-ibtn mz-sendbtn" type="button" title="Impersonate" aria-label="Impersonate" data-mz-action="impersonate">${svg('impersonate')}</button>
-                <button class="mz-ibtn mz-sendbtn" type="button" title="Continue" aria-label="Continue" data-mz-action="continue">${svg('continue')}</button>
-                <button class="mz-ibtn mz-sendbtn" type="button" title="Send" aria-label="Send" data-mz-action="send">${svg('send')}</button>
+                <button class="mz-ibtn mz-sendbtn" type="button" title="Impersonate" aria-label="Impersonate" data-mz-action="impersonate">${faHtml('fa-solid fa-user-secret')}</button>
+                <button class="mz-ibtn mz-sendbtn" type="button" title="Continue" aria-label="Continue" data-mz-action="continue">${faHtml('fa-solid fa-arrow-right')}</button>
+                <button class="mz-ibtn mz-sendbtn" type="button" title="Send" aria-label="Send" data-mz-action="send">${faHtml('fa-solid fa-paper-plane')}</button>
             </span>
         </div>
     </section>
@@ -194,322 +203,360 @@ const FRAME_HTML = `
         </header>
 
         <div class="mz-seg mz-set-tabs" role="tablist" aria-label="Settings sections">
-            <button class="is-on" type="button" role="tab" aria-selected="true" data-mz-tab="general">General</button>
-            <button type="button" role="tab" aria-selected="false" data-mz-tab="image">Features</button>
-            <button type="button" role="tab" aria-selected="false" data-mz-tab="connections">Connections</button>
-            <button type="button" role="tab" aria-selected="false" data-mz-tab="mode">Meziverse mode</button>
+            <button class="is-on" type="button" role="tab" aria-selected="true" data-mz-tab="general">${svg('gear')}<span>General</span></button>
+            <button type="button" role="tab" aria-selected="false" data-mz-tab="image">${svg('spark')}<span>Features</span></button>
+            <button type="button" role="tab" aria-selected="false" data-mz-tab="connections">${svg('plug')}<span>Connections</span></button>
+            <button type="button" role="tab" aria-selected="false" data-mz-tab="mode">${svg('layers')}<span>Mode</span></button>
         </div>
 
         <div class="mz-set-scroll">
-        <div class="mz-set-group mz-set-group--fold" data-mz-pane="general">
-            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="appearance">Appearance ${svg('chevdown')}</button></h3>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Theme</b><small>Ink and one metal. Everything follows it.</small></span>
-                <div class="mz-theme-picks" role="group" aria-label="Theme">
-                    ${THEMES.map(theme => `<button class="mz-theme-pick" type="button" data-mz-pick-theme="${theme.id}"><i style="background:${theme.swatch}"></i><span>${theme.name}</span></button>`).join('\n')}
+        <div class="mz-set-group" data-mz-pane="general" data-mz-section="look">
+            <div class="mz-set-title">${svg('palette')}<h3>Look</h3></div>
+            <div class="mz-set-card">
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Theme</b></span>
+                    <div class="mz-theme-picks" role="group" aria-label="Theme">
+                        ${THEMES.map(theme => `<button class="mz-theme-pick" type="button" data-mz-pick-theme="${theme.id}"><i style="background:${theme.swatch}"></i><span>${theme.name}</span></button>`).join('\n')}
+                    </div>
                 </div>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Background</b><small>A quiet gradient, or the background SillyTavern has now.</small></span>
-                <div class="mz-seg" role="group" aria-label="Background">
-                    <button type="button" data-mz-pick-bg="none">None</button>
-                    <button type="button" data-mz-pick-bg="st">SillyTavern</button>
-                </div>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Pane transparency</b><small>How much of the background shows through the reading pane.</small></span>
-                <div class="mz-range">
-                    <input type="range" min="20" max="100" step="5" data-mz="pane-opacity" aria-label="Pane transparency">
-                    <span data-mz="pane-opacity-value">90%</span>
-                </div>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Pane blur</b><small>How sharply the background reads through the reading pane. None keeps it clean.</small></span>
-                <div class="mz-range">
-                    <input type="range" min="0" max="24" step="2" data-mz="pane-blur" aria-label="Pane blur">
-                    <span data-mz="pane-blur-value">16 px</span>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Background</b></span>
+                    <div class="mz-seg" role="group" aria-label="Background">
+                        <button type="button" data-mz-pick-bg="none">None</button>
+                        <button type="button" data-mz-pick-bg="st">SillyTavern</button>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <div class="mz-set-group mz-set-group--fold" data-mz-pane="general">
-            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="type">Type ${svg('chevdown')}</button></h3>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Interface scale</b><small>Menus, headers and buttons.</small></span>
-                <div class="mz-step">
-                    <button type="button" data-mz-step="ui" data-dir="-1" aria-label="Smaller interface">\u2212</button>
-                    <span data-mz="ui-value">100%</span>
-                    <button type="button" data-mz-step="ui" data-dir="1" aria-label="Larger interface">+</button>
+        <div class="mz-set-group" data-mz-pane="general" data-mz-section="reading-pane">
+            <div class="mz-set-title">${svg('type')}<h3>Reading pane</h3></div>
+            <div class="mz-set-card">
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Transparency</b></span>
+                    <div class="mz-range">
+                        <input type="range" min="20" max="100" step="5" data-mz="pane-opacity" aria-label="Pane transparency">
+                        <span data-mz="pane-opacity-value">90%</span>
+                    </div>
                 </div>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Narration size</b><small>The prose in the reading pane.</small></span>
-                <div class="mz-step">
-                    <button type="button" data-mz-step="narr" data-dir="-1" aria-label="Smaller narration">\u2212</button>
-                    <span data-mz="narr-value">18.5 px</span>
-                    <button type="button" data-mz-step="narr" data-dir="1" aria-label="Larger narration">+</button>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Blur</b></span>
+                    <div class="mz-range">
+                        <input type="range" min="0" max="24" step="2" data-mz="pane-blur" aria-label="Pane blur">
+                        <span data-mz="pane-blur-value">16 px</span>
+                    </div>
                 </div>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Narration font</b><small>The face the story is set in.</small></span>
-                <select class="mz-select" data-mz="font" aria-label="Narration font">
-                    <option value="theme">Theme default</option>
-                    <option value="newsreader">Newsreader</option>
-                    <option value="spectral">Spectral</option>
-                    <option value="lora">Lora</option>
-                    <option value="source-serif">Source Serif 4</option>
-                    <option value="inter">Inter</option>
-                    <option value="system">System serif</option>
-                </select>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Prose colors</b><small>Plain, speech, emphasis, strong — pane and log.</small></span>
-                <div class="mz-seg" role="group" aria-label="Prose colors">
-                    <button type="button" data-mz-pick-prose="theme">Theme</button>
-                    <button type="button" data-mz-pick-prose="st">SillyTavern</button>
-                    <button type="button" data-mz-pick-prose="custom">Custom</button>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Text size</b></span>
+                    <div class="mz-step">
+                        <button type="button" data-mz-step="narr" data-dir="-1" aria-label="Smaller narration">\u2212</button>
+                        <span data-mz="narr-value">18.5 px</span>
+                        <button type="button" data-mz-step="narr" data-dir="1" aria-label="Larger narration">+</button>
+                    </div>
                 </div>
-            </div>
-            <div class="mz-set-row mz-set-row--colors" data-mz="prose-pickers" hidden>
-                <span class="mz-set-label"><b>Pick your inks</b><small>Plain text, speech, emphasis, strong.</small></span>
-                <div class="mz-colors">
-                    <label class="mz-color"><input type="color" data-mz-color="plain" aria-label="Plain color"><span>Plain</span></label>
-                    <label class="mz-color"><input type="color" data-mz-color="q" aria-label="Speech color"><span>Speech</span></label>
-                    <label class="mz-color"><input type="color" data-mz-color="em" aria-label="Emphasis color"><span>Emphasis</span></label>
-                    <label class="mz-color"><input type="color" data-mz-color="strong" aria-label="Strong color"><span>Strong</span></label>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Font</b></span>
+                    <select class="mz-select" data-mz="font" aria-label="Narration font">
+                        <option value="theme">Theme default</option>
+                        <option value="newsreader">Newsreader</option>
+                        <option value="spectral">Spectral</option>
+                        <option value="lora">Lora</option>
+                        <option value="source-serif">Source Serif 4</option>
+                        <option value="inter">Inter</option>
+                        <option value="system">System serif</option>
+                    </select>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Prose colors</b></span>
+                    <div class="mz-seg" role="group" aria-label="Prose colors">
+                        <button type="button" data-mz-pick-prose="theme">Theme</button>
+                        <button type="button" data-mz-pick-prose="st">SillyTavern</button>
+                        <button type="button" data-mz-pick-prose="custom">Custom</button>
+                    </div>
+                </div>
+                <div class="mz-set-row mz-set-row--colors" data-mz="prose-pickers" hidden>
+                    <div class="mz-colors">
+                        <label class="mz-color"><input type="color" data-mz-color="plain" aria-label="Plain color"><span>Plain</span></label>
+                        <label class="mz-color"><input type="color" data-mz-color="q" aria-label="Speech color"><span>Speech</span></label>
+                        <label class="mz-color"><input type="color" data-mz-color="em" aria-label="Emphasis color"><span>Emphasis</span></label>
+                        <label class="mz-color"><input type="color" data-mz-color="strong" aria-label="Strong color"><span>Strong</span></label>
+                    </div>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Scene header</b></span>
+                    <div class="mz-seg" role="group" aria-label="Scene header style">
+                        <button type="button" data-mz-pick-scenehead="quiet">Quiet</button>
+                        <button type="button" data-mz-pick-scenehead="rule">Rule</button>
+                        <button type="button" data-mz-pick-scenehead="date">Date</button>
+                        <button type="button" data-mz-pick-scenehead="simple">Simple</button>
+                    </div>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Pane height</b></span>
+                    <button class="mz-btn-ghost" type="button" data-mz-action="reset-pane">Reset</button>
                 </div>
             </div>
         </div>
 
-        <div class="mz-set-group mz-set-group--fold" data-mz-pane="general">
-            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="motion">Motion ${svg('chevdown')}</button></h3>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Reduced motion</b><small>Fades and slides become instant.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="false" aria-label="Reduced motion" data-mz-action="motion"><i></i></button>
-            </div>
-        </div>
-
-        <div class="mz-set-group mz-set-group--fold" data-mz-pane="image">
-            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="avatars">Avatars ${svg('chevdown')}</button></h3>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Avatars On/Off</b><small>The cast posters above the reading pane. Off leaves the background alone on stage.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Avatars" data-mz-action="avatars"><i></i></button>
-            </div>
-        </div>
-
-        <div class="mz-set-group mz-set-group--fold" data-mz-pane="image">
-            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="backgrounds">Backgrounds ${svg('chevdown')}</button></h3>
-            <div class="mz-set-row" data-mz-bg-master>
-                <span class="mz-set-label"><b>Background images</b><small>The watcher draws scene pictures. Off: the stage shows your own SillyTavern background, and no watcher ever runs. Weather and indoor effects still play.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Background images" data-mz-action="bg-images"><i></i></button>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Follow the story</b><small>A new background when the place changes; the brush draws one on demand.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="false" aria-label="Automatic location backgrounds" data-mz-action="bg-auto"><i></i></button>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Background generation pace</b><small>Draws at most once every N AI replies. New places between draws keep the last picture.</small></span>
-                <div class="mz-step">
-                    <button type="button" data-mz-step="bg-every" data-dir="-1" aria-label="Draw less often">\u2212</button>
-                    <span data-mz="bg-every-value">1</span>
-                    <button type="button" data-mz-step="bg-every" data-dir="1" aria-label="Draw more often">+</button>
+        <div class="mz-set-group" data-mz-pane="general" data-mz-section="interface">
+            <div class="mz-set-title">${svg('sliders')}<h3>Interface</h3></div>
+            <div class="mz-set-card">
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Scale</b></span>
+                    <div class="mz-step">
+                        <button type="button" data-mz-step="ui" data-dir="-1" aria-label="Smaller interface">\u2212</button>
+                        <span data-mz="ui-value">100%</span>
+                        <button type="button" data-mz-step="ui" data-dir="1" aria-label="Larger interface">+</button>
+                    </div>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Reduced motion</b></span>
+                    <button class="mz-switch" type="button" role="switch" aria-checked="false" aria-label="Reduced motion" data-mz-action="motion"><i></i></button>
                 </div>
             </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Image size</b><small>Wide landscape, or whatever Image Generation is set to.</small></span>
-                <div class="mz-seg" role="group" aria-label="Image size">
-                    <button type="button" data-mz-pick-bgsize="landscape">Landscape</button>
-                    <button type="button" data-mz-pick-bgsize="st">Image Generation</button>
+        </div>
+
+        <div class="mz-set-group" data-mz-pane="image" data-mz-section="stage">
+            <div class="mz-set-title">${svg('spark')}<h3>Stage</h3></div>
+            <div class="mz-set-card">
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Avatars</b></span>
+                    <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Avatars" data-mz-action="avatars"><i></i></button>
                 </div>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Style</b><small>Appended to every description the watcher writes.</small></span>
-                <input class="mz-select" data-mz="bg-style" aria-label="Background style suffix">
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Negative</b><small>What the image must not contain.</small></span>
-                <input class="mz-select" data-mz="bg-negative" aria-label="Background negative prompt">
-            </div>
-            <div class="mz-set-row mz-set-row--prompt">
-                <span class="mz-set-label"><b>Watcher prompt \u00b7 Scene tags</b><small>What the watcher is asked where scene tags mark the places. The answer format is appended for you.</small></span>
-                <textarea class="mz-textarea" rows="8" data-mz="bg-prompt-on" aria-label="Watcher prompt, scene tags"></textarea>
-                <button class="mz-btn-ghost" type="button" data-mz-action="bg-prompt-on-reset">Restore default</button>
-            </div>
-            <div class="mz-set-row mz-set-row--prompt">
-                <span class="mz-set-label"><b>Watcher prompt \u00b7 Plain prose</b><small>The fallback hand, for replies without scene tags. The answer format is appended for you.</small></span>
-                <textarea class="mz-textarea" rows="8" data-mz="bg-prompt-off" aria-label="Watcher prompt, plain prose"></textarea>
-                <button class="mz-btn-ghost" type="button" data-mz-action="bg-prompt-off-reset">Restore default</button>
-            </div>
-            <div class="mz-set-row mz-set-row--prompt">
-                <span class="mz-set-label"><b>Last request</b><small>Exactly what the watcher was last asked, footers included.</small></span>
-                <button class="mz-btn-ghost" type="button" data-mz-action="bg-show-request">Show last request</button>
-                <pre class="mz-bg-request" data-mz="bg-request" hidden></pre>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Try it</b><small>Draws a fresh background for the place the story is at now.</small></span>
-                <button class="mz-btn-ghost" type="button" data-mz-action="bg-test">Draw one now</button>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Dialogue faces</b><button type="button" class="mz-hint" data-tip="How spoken lines wear faces: none, a round face by the bubble, or a dialogue band per line - A hugs the words on the speaker's side, B is one centred measure. Avatars off turns every face off." aria-label="How spoken lines wear faces: none, a round face by the bubble, or a dialogue band per line - A hugs the words on the speaker's side, B is one centred measure. Avatars off turns every face off.">i</button></span>
+                    <div class="mz-seg" role="group" aria-label="Dialogue faces">
+                        <button type="button" data-mz-pick-faces="off">Off</button>
+                        <button type="button" data-mz-pick-faces="simple">Simple</button>
+                        <button type="button" data-mz-pick-faces="immersiveA">Immersive A</button>
+                        <button type="button" data-mz-pick-faces="immersiveB">Immersive B</button>
+                    </div>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Speech bubbles</b></span>
+                    <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Speech bubbles" data-mz-action="speech-fx"><i></i></button>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Weather effects</b><button type="button" class="mz-hint" data-tip="Outdoor scenes only." aria-label="Outdoor scenes only.">i</button></span>
+                    <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Weather effects" data-mz-action="weather-fx"><i></i></button>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Indoor effects</b><button type="button" class="mz-hint" data-tip="Candlelight, hearth, window light. Indoor scenes only." aria-label="Candlelight, hearth, window light. Indoor scenes only.">i</button></span>
+                    <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Indoor effects" data-mz-action="indoor-fx"><i></i></button>
+                </div>
             </div>
         </div>
 
-        <div class="mz-set-group mz-set-group--fold" data-mz-pane="image">
-            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="weather">Weather ${svg('chevdown')}</button></h3>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Weather effects</b><small>Rain, snow, lightning and light on the background stage. Outdoors scenes only - the scene tag's weatherTag and locationTag decide.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Weather effects" data-mz-action="weather-fx"><i></i></button>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Indoor effects</b><small>The room's quiet mood - candlelight, hearth, window light, dust, lamp. Indoors scenes only; the place itself picks the mood.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Indoor effects" data-mz-action="indoor-fx"><i></i></button>
+        <div class="mz-set-group" data-mz-pane="image" data-mz-section="backgrounds">
+            <div class="mz-set-title">${svg('image')}<h3>Backgrounds</h3><span class="mz-set-sp"></span><button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Background images" data-mz-action="bg-images" data-mz-bg-master><i></i></button></div>
+            <div class="mz-set-card">
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Follow the story</b><button type="button" class="mz-hint" data-tip="A new picture when the place changes." aria-label="A new picture when the place changes.">i</button></span>
+                    <button class="mz-switch" type="button" role="switch" aria-checked="false" aria-label="Automatic location backgrounds" data-mz-action="bg-auto"><i></i></button>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Draw every</b><button type="button" class="mz-hint" data-tip="At most one picture every N AI replies." aria-label="At most one picture every N AI replies.">i</button></span>
+                    <div class="mz-step">
+                        <button type="button" data-mz-step="bg-every" data-dir="-1" aria-label="Draw less often">\u2212</button>
+                        <span data-mz="bg-every-value">1 reply</span>
+                        <button type="button" data-mz-step="bg-every" data-dir="1" aria-label="Draw more often">+</button>
+                    </div>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Size</b></span>
+                    <div class="mz-seg" role="group" aria-label="Image size">
+                        <button type="button" data-mz-pick-bgsize="landscape">Landscape</button>
+                        <button type="button" data-mz-pick-bgsize="st">Image Generation</button>
+                    </div>
+                </div>
+                <div class="mz-adv">
+                    <button type="button" class="mz-adv-head" data-mz-adv aria-expanded="false">Prompts ${svg('chevdown')}</button>
+                    <div class="mz-adv-inner">
+                        <div class="mz-adv-field">
+                            <div class="mz-adv-label"><span>Style</span></div>
+                            <input class="mz-select" data-mz="bg-style" aria-label="Background style suffix">
+                        </div>
+                        <div class="mz-adv-field">
+                            <div class="mz-adv-label"><span>Negative</span></div>
+                            <input class="mz-select" data-mz="bg-negative" aria-label="Background negative prompt">
+                        </div>
+                        <div class="mz-adv-field">
+                            <div class="mz-adv-label"><span>Scene-tag prompt</span><button class="mz-btn-ghost mz-btn-mini" type="button" data-mz-action="bg-prompt-on-reset">Restore default</button></div>
+                            <textarea class="mz-textarea" rows="5" data-mz="bg-prompt-on" aria-label="Watcher prompt, scene tags"></textarea>
+                        </div>
+                        <div class="mz-adv-field">
+                            <div class="mz-adv-label"><span>Transport-interior prompt</span><button class="mz-btn-ghost mz-btn-mini" type="button" data-mz-action="bg-prompt-transport-reset">Restore default</button></div>
+                            <textarea class="mz-textarea" rows="5" data-mz="bg-prompt-transport" aria-label="Watcher prompt, transport interior"></textarea>
+                        </div>
+                        <div class="mz-adv-field">
+                            <div class="mz-adv-label"><span>Plain-prose prompt</span><button class="mz-btn-ghost mz-btn-mini" type="button" data-mz-action="bg-prompt-off-reset">Restore default</button></div>
+                            <textarea class="mz-textarea" rows="5" data-mz="bg-prompt-off" aria-label="Watcher prompt, plain prose"></textarea>
+                        </div>
+                        <div class="mz-adv-field">
+                            <div class="mz-adv-label"><span>Last request</span><button class="mz-btn-ghost mz-btn-mini" type="button" data-mz-action="bg-show-request">Show</button></div>
+                            <pre class="mz-bg-request" data-mz="bg-request" hidden></pre>
+                        </div>
+                    </div>
+                </div>
+                <div class="mz-set-foot">
+                    <button class="mz-btn-ghost" type="button" data-mz-action="bg-test">Draw one now</button>
+                </div>
             </div>
         </div>
 
-        <div class="mz-set-group mz-set-group--fold" data-mz-pane="image">
-            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="speech">Speech ${svg('chevdown')}</button></h3>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Speech bubbles</b><small>Spoken lines wear a bubble in the reading pane - the speaker's name and picture when the cast holds one, the words, and the tone said in, quietly after. Off leaves the prose plain.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Speech bubbles" data-mz-action="speech-fx"><i></i></button>
+        <div class="mz-set-group" data-mz-pane="image" data-mz-section="music">
+            <div class="mz-set-title">${svg('music')}<h3>Music</h3><span class="mz-set-sp"></span><button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Music player" data-mz-action="music" data-mz-music-master><i></i></button></div>
+            <div class="mz-set-card">
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Story requests</b><button type="button" class="mz-hint" data-tip="A &lt;music&gt; tag in a reply starts playback." aria-label="A music tag in a reply starts playback.">i</button></span>
+                    <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Story requests" data-mz-action="music-auto"><i></i></button>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Music DJ</b><button type="button" class="mz-hint" data-tip="Picks music to match each new reply. Needs the API key." aria-label="Picks music to match each new reply. Needs the API key.">i</button></span>
+                    <button class="mz-switch" type="button" role="switch" aria-checked="false" aria-label="Music DJ" data-mz-action="music-dj"><i></i></button>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>DJ pace</b></span>
+                    <div class="mz-step">
+                        <button type="button" data-mz-step="music-dj-every" data-dir="-1" aria-label="Ask less often">\u2212</button>
+                        <span data-mz="music-dj-every-value">1 reply</span>
+                        <button type="button" data-mz-step="music-dj-every" data-dir="1" aria-label="Ask more often">+</button>
+                    </div>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Pick style</b></span>
+                    <div class="mz-seg" role="group" aria-label="Pick style">
+                        <button type="button" data-mz-pick-musicpick="orchestra">Orchestra</button>
+                        <button type="button" data-mz-pick-musicpick="songs">Songs</button>
+                    </div>
+                </div>
+                <div class="mz-adv">
+                    <button type="button" class="mz-adv-head" data-mz-adv aria-expanded="false">Key &amp; prompt ${svg('chevdown')}</button>
+                    <div class="mz-adv-inner">
+                        <div class="mz-adv-field">
+                            <div class="mz-adv-label"><span>YouTube Data API key <button type="button" class="mz-hint" data-tip="Free Google key. Restrict it by HTTP referrer to this address, or by your IP." aria-label="Free Google key. Restrict it by HTTP referrer to this address, or by your IP.">i</button></span></div>
+                            <input class="mz-select" type="password" data-mz="music-key" aria-label="YouTube Data API key" placeholder="AIza..." autocomplete="off">
+                            <div class="mz-adv-actions">
+                                <button class="mz-btn-ghost mz-btn-mini" type="button" data-mz-action="music-key-save">Save</button>
+                                <button class="mz-btn-ghost mz-btn-mini" type="button" data-mz-action="music-key-remove">Remove</button>
+                                <span class="mz-music-keystate" data-mz="music-key-state"></span>
+                            </div>
+                        </div>
+                        <div class="mz-adv-field">
+                            <div class="mz-adv-label"><span>DJ prompt</span><button class="mz-btn-ghost mz-btn-mini" type="button" data-mz-action="music-dj-prompt-reset">Restore default</button></div>
+                            <textarea class="mz-textarea" rows="5" data-mz="music-dj-prompt" aria-label="Music DJ prompt"></textarea>
+                        </div>
+                        <div class="mz-adv-field">
+                            <div class="mz-adv-label"><span>Last request</span><button class="mz-btn-ghost mz-btn-mini" type="button" data-mz-action="music-dj-show-request">Show</button></div>
+                            <pre class="mz-bg-request" data-mz="music-dj-request" hidden></pre>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <div class="mz-set-group mz-set-group--fold" data-mz-pane="image">
-            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="music">Music ${svg('chevdown')}</button></h3>
-            <div class="mz-set-row" data-mz-music-master>
-                <span class="mz-set-label"><b>Music player</b><small>The scene's soundtrack player - a compact YouTube player in the header, which undocks into a draggable card on wide screens. Off hides it whole and nothing plays.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Music player" data-mz-action="music"><i></i></button>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Story requests</b><small>A &lt;music&gt; tag in a reply starts playback when the reply lands. A link plays at once; a named song is searched with the key below.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Story requests" data-mz-action="music-auto"><i></i></button>
-            </div>
-            <div class="mz-set-row mz-set-row--prompt">
-                <span class="mz-set-label"><b>YouTube Data API key</b><small>Lets a named song be searched and played. Free key: Google Cloud Console \u25b8 enable \u201cYouTube Data API v3\u201d \u25b8 Credentials. Restrict it by HTTP referrer and allow this SillyTavern address (http://localhost:8000/*), or by your IP - never leave it open. It stays in SillyTavern's extension settings and is used from your browser.</small></span>
-                <input class="mz-select" type="password" data-mz="music-key" aria-label="YouTube Data API key" placeholder="AIza...">
-                <div>
-                    <button class="mz-btn-ghost" type="button" data-mz-action="music-key-save">Save key</button>
-                    <button class="mz-btn-ghost" type="button" data-mz-action="music-key-remove">Remove</button>
-                    <span class="mz-music-keystate" data-mz="music-key-state"></span>
+        <div class="mz-set-group" data-mz-pane="image" data-mz-section="map">
+            <div class="mz-set-title">${svg('map')}<h3>Map</h3><span class="mz-set-sp"></span><button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Map" data-mz-action="map" data-mz-map-master><i></i></button></div>
+            <div class="mz-set-card">
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Minimap</b><button type="button" class="mz-hint" data-tip="Off leaves a small map button." aria-label="Off leaves a small map button.">i</button></span>
+                    <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Minimap" data-mz-action="map-mini"><i></i></button>
                 </div>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Music DJ</b><small>After each new reply a quiet watcher call reads the scene and picks music to match its mood - its own call, pace and prompt, independent of the background watcher. Off leaves Fresh pick on the player as the manual trigger. Needs the API key above.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="false" aria-label="Music DJ" data-mz-action="music-dj"><i></i></button>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>DJ pace</b><small>At most one DJ call every N AI replies. User turns never count.</small></span>
-                <div class="mz-step">
-                    <button type="button" data-mz-step="music-dj-every" data-dir="-1" aria-label="Ask less often">\u2212</button>
-                    <span data-mz="music-dj-every-value">1</span>
-                    <button type="button" data-mz-step="music-dj-every" data-dir="1" aria-label="Ask more often">+</button>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Depth</b><button type="button" class="mz-hint" data-tip="Deeper spots fold into their place." aria-label="Deeper spots fold into their place.">i</button></span>
+                    <div class="mz-step">
+                        <button type="button" data-mz-step="map-depth" data-dir="-1" aria-label="Show fewer levels">\u2212</button>
+                        <span data-mz="map-depth-value">All</span>
+                        <button type="button" data-mz-step="map-depth" data-dir="1" aria-label="Show more levels">+</button>
+                    </div>
                 </div>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Pick style</b><small>What the DJ reaches for: an instrumental score, or one specific real song that fits the case. Either way the story\u2019s own genre and era decide the sound - a Wild West tale and a sci-fi tale never pick alike.</small></span>
-                <div class="mz-seg" role="group" aria-label="Pick style">
-                    <button type="button" data-mz-pick-musicpick="orchestra">Orchestra</button>
-                    <button type="button" data-mz-pick-musicpick="songs">Songs</button>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Land</b><button type="button" class="mz-hint" data-tip="Terrain paints the story's land under the map; Flat is the plain chart." aria-label="Terrain paints the story's land under the map; Flat is the plain chart.">i</button></span>
+                    <div class="mz-seg" role="group" aria-label="Map land">
+                        <button type="button" data-mz-pick-mapland="ink">Terrain</button>
+                        <button type="button" data-mz-pick-mapland="flat">Flat</button>
+                    </div>
                 </div>
-            </div>
-            <div class="mz-set-row mz-set-row--prompt">
-                <span class="mz-set-label"><b>DJ prompt</b><small>What the DJ is asked about each reply. The answer format is appended for you.</small></span>
-                <textarea class="mz-textarea" rows="8" data-mz="music-dj-prompt" aria-label="Music DJ prompt"></textarea>
-                <button class="mz-btn-ghost" type="button" data-mz-action="music-dj-prompt-reset">Restore default</button>
-            </div>
-            <div class="mz-set-row mz-set-row--prompt">
-                <span class="mz-set-label"><b>Last request</b><small>Exactly what the DJ was last asked, footers included.</small></span>
-                <button class="mz-btn-ghost" type="button" data-mz-action="music-dj-show-request">Show last request</button>
-                <pre class="mz-bg-request" data-mz="music-dj-request" hidden></pre>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Terrain quality</b><button type="button" class="mz-hint" data-tip="A slow GPU steps itself down and remembers." aria-label="A slow GPU steps itself down and remembers.">i</button></span>
+                    <div class="mz-seg" role="group" aria-label="Terrain quality">
+                        <button type="button" data-mz-pick-mapq="0">Low</button>
+                        <button type="button" data-mz-pick-mapq="1">Medium</button>
+                        <button type="button" data-mz-pick-mapq="2">High</button>
+                    </div>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Drifting fog and water</b><button type="button" class="mz-hint" data-tip="The fog drifts and the water shimmers while the map is open. Off draws one still frame." aria-label="The fog drifts and the water shimmers while the map is open. Off draws one still frame.">i</button></span>
+                    <button class="mz-switch" type="button" role="switch" aria-checked="false" aria-label="Drifting fog and water" data-mz-action="map-terrain-anim"><i></i></button>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Fog of war</b><button type="button" class="mz-hint" data-tip="Clouds part along the journey trail and around the places the story stood still in." aria-label="Clouds part along the journey trail and around the places the story stood still in.">i</button></span>
+                    <button class="mz-switch" type="button" role="switch" aria-checked="false" aria-label="Fog of war" data-mz-action="map-terrain-fog"><i></i></button>
+                </div>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Sky and weather</b><button type="button" class="mz-hint" data-tip="The land follows the scene's hour and weather - dawn light, night tint, rain or dust." aria-label="The land follows the scene's hour and weather - dawn light, night tint, rain or dust.">i</button></span>
+                    <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Sky and weather" data-mz-action="map-terrain-sky"><i></i></button>
+                </div>
+                <div class="mz-adv-field">
+                    <div class="mz-adv-label"><span>Terrain record</span><button class="mz-btn-ghost mz-btn-mini" type="button" data-mz-action="terrain-reseed">Reseed noise</button><button class="mz-btn-ghost mz-btn-mini" type="button" data-mz-action="terrain-rederive">Re-derive</button></div>
+                    <textarea class="mz-textarea" rows="6" data-mz="terrain-record" aria-label="Terrain record" spellcheck="false"></textarea>
+                    <div class="mz-adv-label"><span data-mz="terrain-record-note"></span></div>
+                </div>
+                <div class="mz-set-foot">
+                    <button class="mz-btn-ghost" type="button" data-mz-action="map-open">Open map</button>
+                </div>
             </div>
         </div>
 
-        <div class="mz-set-group mz-set-group--fold" data-mz-pane="image">
-            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="map">Map ${svg('chevdown')}</button></h3>
-            <div class="mz-set-row" data-mz-map-master>
-                <span class="mz-set-label"><b>Map</b><small>The story's places as a live atlas - the minimap window on screen opens the full map of everywhere the story has been. Built from the scene tags; without tags, from the backgrounds the chat has drawn.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Map" data-mz-action="map"><i></i></button>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Minimap</b><small>The small window in the corner, game-minimap style. Off leaves the compact map button, which still opens the full map.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Minimap" data-mz-action="map-mini"><i></i></button>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Map depth</b><small>How deep the atlas shows places; deeper spots fold into their place until the detail card.</small></span>
-                <div class="mz-step">
-                    <button type="button" data-mz-step="map-depth" data-dir="-1" aria-label="Show fewer levels">\u2212</button>
-                    <span data-mz="map-depth-value">All</span>
-                    <button type="button" data-mz-step="map-depth" data-dir="1" aria-label="Show more levels">+</button>
+        <div class="mz-set-group" data-mz-pane="mode" data-mz-section="mode-main">
+            <div class="mz-set-title">${svg('layers')}<h3>Meziverse mode</h3><span class="mz-set-sp"></span><button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Meziverse mode" data-mz-action="mode"><i></i></button></div>
+            <div class="mz-set-card">
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Ledger, cues, mindscape, thought bubbles</b></span>
+                    <span class="mz-set-note">Set before the chat starts</span>
                 </div>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Open the map</b><small>The full atlas: places, visits and the pictures drawn there.</small></span>
-                <button class="mz-btn-ghost" type="button" data-mz-action="map-open">Open map</button>
             </div>
         </div>
 
-        <div class="mz-set-group mz-set-group--fold" data-mz-pane="mode">
-            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="mode-main">Meziverse mode ${svg('chevdown')}</button></h3>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Mode on/off</b><small>The master switch for the extras - ledger, cues, mindscape, thought bubbles. Off leaves the base extension alone. Best set before the chat starts.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Meziverse mode" data-mz-action="mode"><i></i></button>
+        <div class="mz-set-group" data-mz-pane="mode" data-mz-section="entries">
+            <div class="mz-set-title">${svg('sliders')}<h3>Tracker</h3></div>
+            <div class="mz-set-card">
+                <div class="mz-set-tiles">
+                    <div class="mz-set-tile"><span class="mz-set-label"><b>Standing</b></span><button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Standing" data-mz-entry="standing"><i></i></button></div>
+                    <div class="mz-set-tile"><span class="mz-set-label"><b>Profiles</b></span><button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Profiles" data-mz-entry="profiles"><i></i></button></div>
+                    <div class="mz-set-tile"><span class="mz-set-label"><b>Shifts</b></span><button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Shifts" data-mz-entry="shifts"><i></i></button></div>
+                    <div class="mz-set-tile"><span class="mz-set-label"><b>Threads</b></span><button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Threads" data-mz-entry="threads"><i></i></button></div>
+                    <div class="mz-set-tile"><span class="mz-set-label"><b>Plans</b></span><button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Plans" data-mz-entry="plans"><i></i></button></div>
+                    <div class="mz-set-tile"><span class="mz-set-label"><b>Hooks</b></span><button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Hooks" data-mz-entry="hooks"><i></i></button></div>
+                    <div class="mz-set-tile"><span class="mz-set-label"><b>Lore</b></span><button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Lore" data-mz-entry="lore"><i></i></button></div>
+                    <div class="mz-set-tile"><span class="mz-set-label"><b>Story so far</b></span><button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Story so far" data-mz-entry="recap"><i></i></button></div>
+                </div>
             </div>
         </div>
 
-        <div class="mz-set-group mz-set-group--fold" data-mz-pane="mode">
-            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="entries">Tracker entries ${svg('chevdown')}</button></h3>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Standing</b><small>How the world sees you.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Standing" data-mz-entry="standing"><i></i></button>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Profiles</b><small>Who is here: mini cards and full profiles.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Profiles" data-mz-entry="profiles"><i></i></button>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Shifts</b><small>The pairs that moved this turn.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Shifts" data-mz-entry="shifts"><i></i></button>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Threads</b><small>Live plot threads and their clocks.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Threads" data-mz-entry="threads"><i></i></button>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Plans</b><small>What everyone intends to do.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Plans" data-mz-entry="plans"><i></i></button>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Hooks</b><small>Open questions and their clues.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Hooks" data-mz-entry="hooks"><i></i></button>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Lore</b><small>Seeds of the world's lore.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Lore" data-mz-entry="lore"><i></i></button>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Story So Far</b><small>The moments the story has marked.</small></span>
-                <button class="mz-switch" type="button" role="switch" aria-checked="true" aria-label="Story So Far" data-mz-entry="recap"><i></i></button>
-            </div>
-        </div>
-
-        <div class="mz-set-group mz-set-group--fold" data-mz-pane="mode">
-            <h3><button class="mz-set-head" type="button" aria-expanded="false" data-mz-section="cues">Cues ${svg('chevdown')}</button></h3>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Popovers</b><small>How the truth behind a mark opens.</small></span>
-                <div class="mz-seg" role="group" aria-label="Popovers">
-                    <button type="button" data-mz-pick-cuepop="both">Hover and tap</button>
-                    <button type="button" data-mz-pick-cuepop="tap">Tap only</button>
+        <div class="mz-set-group" data-mz-pane="mode" data-mz-section="cues">
+            <div class="mz-set-title">${svg('bolt')}<h3>Cues</h3></div>
+            <div class="mz-set-card">
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Popovers</b></span>
+                    <div class="mz-seg" role="group" aria-label="Popovers">
+                        <button type="button" data-mz-pick-cuepop="both">Hover &amp; tap</button>
+                        <button type="button" data-mz-pick-cuepop="tap">Tap</button>
+                    </div>
                 </div>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Memories</b><small>How a flashback arrives: as a pill, or opening the memory at once.</small></span>
-                <div class="mz-seg" role="group" aria-label="Memories">
-                    <button type="button" data-mz-pick-cuemem="pill">Pill</button>
-                    <button type="button" data-mz-pick-cuemem="open">Open on arrival</button>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Memories</b></span>
+                    <div class="mz-seg" role="group" aria-label="Memories">
+                        <button type="button" data-mz-pick-cuemem="pill">Pill</button>
+                        <button type="button" data-mz-pick-cuemem="open">Open</button>
+                    </div>
                 </div>
-            </div>
-            <div class="mz-set-row">
-                <span class="mz-set-label"><b>Meanwhile</b><small>How the meanwhile boxes arrive: closed, or the latest one open.</small></span>
-                <div class="mz-seg" role="group" aria-label="Meanwhile">
-                    <button type="button" data-mz-pick-cuemw="closed">Closed</button>
-                    <button type="button" data-mz-pick-cuemw="open">Latest one open</button>
+                <div class="mz-set-row">
+                    <span class="mz-set-label"><b>Meanwhile</b></span>
+                    <div class="mz-seg" role="group" aria-label="Meanwhile">
+                        <button type="button" data-mz-pick-cuemw="closed">Closed</button>
+                        <button type="button" data-mz-pick-cuemw="open">Latest open</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -517,9 +564,6 @@ const FRAME_HTML = `
         <div data-mz="connections-host"></div>
         </div>
 
-        <footer class="mz-sheet-foot">
-            <button class="mz-btn-ghost" type="button" data-mz-action="reset-pane">Reset pane height</button>
-        </footer>
     </section>
 
     <aside class="mz-log" aria-hidden="true" aria-label="Chat log">
@@ -543,6 +587,17 @@ let restoreToastr = null;
 let desiredPane = PANE_DEFAULT;
 let dragStart = null;
 let resizeQueued = false;
+let bgStages = [];
+let bgFront = 0;
+let bgRunning = false;
+let bgQueued = null;
+let bgFadeSeq = 0;
+let bgFadeTimer = 0;
+let bgFadeEndHandler = null;
+let bgFadeStage = null;
+let bgFadeTarget = null;
+let bgShownUrl = '';
+let bgStPainted = false;
 
 /**
  * The log has more than one door now — the left menu and the small-screen
@@ -587,16 +642,20 @@ export function mount() {
     mountConnections(root.querySelector('[data-mz="connections-host"]'));
 
     frame = root.querySelector('.mz-frame');
+    bgStages = [...root.querySelectorAll('.mz-bgstage')];
+    bgFront = 0;
     els = {
         chatName: root.querySelector('[data-mz="chatname"]'),
         chatNameText: root.querySelector('[data-mz="chatname"] b'),
-        bgAutoLabel: root.querySelector('[data-mz="bg-auto-label"]'),
         bgBrushButton: root.querySelector('[data-mz-action="bg-generate"]'),
         bgEveryValue: root.querySelector('[data-mz="bg-every-value"]'),
         bgStyle: root.querySelector('[data-mz="bg-style"]'),
         bgNegative: root.querySelector('[data-mz="bg-negative"]'),
         bgPromptOn: root.querySelector('[data-mz="bg-prompt-on"]'),
         bgPromptOff: root.querySelector('[data-mz="bg-prompt-off"]'),
+        bgPromptTransport: root.querySelector('[data-mz="bg-prompt-transport"]'),
+        terrainRecord: root.querySelector('[data-mz="terrain-record"]'),
+        terrainRecordNote: root.querySelector('[data-mz="terrain-record-note"]'),
         bgRequest: root.querySelector('[data-mz="bg-request"]'),
         musicKey: root.querySelector('[data-mz="music-key"]'),
         musicKeyState: root.querySelector('[data-mz="music-key-state"]'),
@@ -640,6 +699,7 @@ export function mount() {
         branchButton: root.querySelector('[data-mz-action="branch"]'),
         copyButton: root.querySelector('[data-mz-action="copy"]'),
         togglePromptButton: root.querySelector('[data-mz-action="toggle-prompt"]'),
+        reasonButton: root.querySelector('[data-mz-action="toggle-reasoning"]'),
         editButton: root.querySelector('[data-mz-action="edit"]'),
         actionsRow: root.querySelector('.mz-dlg-actions:not(.mz-dlg-editbar)'),
         editBar: root.querySelector('.mz-dlg-editbar'),
@@ -663,6 +723,7 @@ export function mount() {
     mountDock(root);
     mountMusic({ slot: root.querySelector('[data-mz="music-slot"]'), frame });
     mountMap({ frame, goto: index => transcript?.show(index) });
+    mountLibrary({ frame, presentNames: () => lastShown?.scene?.present || [] });
 
     transcript = createTranscript({
         frame,
@@ -680,6 +741,7 @@ export function mount() {
         branchButton: els.branchButton,
         copyButton: els.copyButton,
         togglePromptButton: els.togglePromptButton,
+        reasonButton: els.reasonButton,
         editButton: els.editButton,
         actionsRow: els.actionsRow,
         editBar: els.editBar,
@@ -697,6 +759,7 @@ export function mount() {
             applyLedger(entry);
             applyTells(entry);
         },
+        onBranched: () => pruneBranch(),
     });
 
     desiredPane = Number(settings().paneHeight) || PANE_DEFAULT;
@@ -712,6 +775,8 @@ export function mount() {
     applyWeatherFx();
     applyIndoorFx();
     applySpeechFx();
+    applyDialogueFaces();
+    applySceneHeader();
     applyMusic();
     applyMap();
     applyEntries();
@@ -771,7 +836,7 @@ export function open() {
     els.logButton.setAttribute('aria-expanded', 'false');
 
     refreshChatName();
-    applyBackground();
+    applyBackground(undefined, true);
     applyProseColors();
     applyPaneOpacity();
     applyPaneBlur();
@@ -784,7 +849,7 @@ export function open() {
     // turn's recorded picture re-asserted (swap-only, free). Nothing is
     // asked or drawn on opening: the watcher is for new turns, and an
     // opening that wants a picture presses the brush.
-    uiOpened().finally(() => applyBackground());
+    uiOpened().finally(() => applyBackground(undefined, true));
     musicUiOpened();
     mapUiOpened();
     transcript.refresh({ followLatest: true });
@@ -813,6 +878,7 @@ export function close() {
     musicUiClosed();
     // The map window goes away with the scene as well.
     mapUiClosed();
+    libraryUiClosed();
 
     if (frame.contains(document.activeElement)) document.activeElement.blur();
 
@@ -881,19 +947,21 @@ function applyAvatars() {
     }
 }
 
-/** Syncs the background switch - header pill and settings row - with the setting. */
+/** Syncs the follow-the-story switch - header pill and settings row - with the setting. */
 function applyBgAuto() {
     const on = bgAutoOn();
     for (const button of root.querySelectorAll('[data-mz-action="bg-auto"]')) {
         button.classList.toggle('is-on', on);
         button.setAttribute('aria-checked', String(on));
     }
-    if (els.bgAutoLabel) els.bgAutoLabel.textContent = on ? 'Auto BG: On' : 'Auto BG: Off';
 }
+
+/** "1 reply", "3 replies" - the stepper values wear their unit. */
+const replyCount = n => `${n} ${n === 1 ? 'reply' : 'replies'}`;
 
 /**
  * Syncs the background master switch. Off: the whole generation side steps
- * aside - the pill, the brush and every generation row - and the stage keeps
+ * aside - the pill, the brush and the settings card - and the stage keeps
  * showing what it shows. The weather plays on regardless.
  */
 function applyBgImages() {
@@ -904,10 +972,8 @@ function applyBgImages() {
     }
 
     const group = root.querySelector('[data-mz-section="backgrounds"]')?.closest('.mz-set-group');
-    group?.querySelectorAll('.mz-set-row').forEach(row => {
-        if (row.hasAttribute('data-mz-bg-master')) return;
-        row.hidden = !on;
-    });
+    const card = group?.querySelector('.mz-set-card');
+    if (card) card.hidden = !on;
 
     root.querySelectorAll('[data-mz-action="bg-generate"], .mz-bgauto').forEach(element => {
         element.hidden = !on;
@@ -916,11 +982,12 @@ function applyBgImages() {
 
 /** Syncs the background settings rows with the settings they edit. */
 function applyBgControls() {
-    if (els.bgEveryValue) els.bgEveryValue.textContent = String(Math.max(1, Number(settings().bgEveryN) || 1));
+    if (els.bgEveryValue) els.bgEveryValue.textContent = replyCount(Math.max(1, Number(settings().bgEveryN) || 1));
     if (els.bgStyle) els.bgStyle.value = settings().bgStyle ?? '';
     if (els.bgNegative) els.bgNegative.value = settings().bgNegative ?? '';
     if (els.bgPromptOn) els.bgPromptOn.value = settings().bgPromptOn ?? DEFAULT_BG_PROMPT_ON;
     if (els.bgPromptOff) els.bgPromptOff.value = settings().bgPromptOff ?? DEFAULT_BG_PROMPT_OFF;
+    if (els.bgPromptTransport) els.bgPromptTransport.value = settings().bgPromptTransport ?? DEFAULT_BG_TRANSPORT_PROMPT;
 
     root.querySelectorAll('[data-mz-pick-bgsize]').forEach(button => {
         const isOn = button.dataset.mzPickBgsize === (settings().bgSize === 'st' ? 'st' : 'landscape');
@@ -1143,6 +1210,17 @@ function applySpeechFx() {
     }
 }
 
+/** Marks the dialogue faces segment's pressed button. */
+function applyDialogueFaces() {
+    const mode = dialogueFaceMode();
+
+    root.querySelectorAll('[data-mz-pick-faces]').forEach(button => {
+        const isOn = button.dataset.mzPickFaces === mode;
+        button.classList.toggle('is-on', isOn);
+        button.setAttribute('aria-pressed', String(isOn));
+    });
+}
+
 /**
  * A watcher request as the settings panel shows it: the system prompt, and
  * exactly what rode the question - message turns labelled with their role.
@@ -1159,6 +1237,17 @@ function requestText(request) {
  * settings, and hands the player its own re-read. Off: the widget hides and
  * whatever was playing stops.
  */
+/** Marks the scene header style segment's pressed button. */
+function applySceneHeader() {
+    const style = sceneHeaderStyle();
+
+    root.querySelectorAll('[data-mz-pick-scenehead]').forEach(button => {
+        const isOn = button.dataset.mzPickScenehead === style;
+        button.classList.toggle('is-on', isOn);
+        button.setAttribute('aria-pressed', String(isOn));
+    });
+}
+
 function applyMusic() {
     for (const button of root.querySelectorAll('[data-mz-action="music"]')) {
         button.classList.toggle('is-on', musicOn());
@@ -1173,7 +1262,7 @@ function applyMusic() {
         button.setAttribute('aria-checked', String(musicDjOn()));
     }
     if (els.musicDjValue) {
-        els.musicDjValue.textContent = String(Math.max(1, Number(settings().musicDjEveryN) || 1));
+        els.musicDjValue.textContent = replyCount(Math.max(1, Number(settings().musicDjEveryN) || 1));
     }
     root.querySelectorAll('[data-mz-pick-musicpick]').forEach(button => {
         const isOn = button.dataset.mzPickMusicpick === musicPickMode();
@@ -1184,11 +1273,15 @@ function applyMusic() {
         els.musicDjPrompt.value = settings().musicDjPrompt ?? DEFAULT_DJ_PROMPT;
     }
 
-    // The player's own rows step aside with the master switch.
+    // The player's own card steps aside with the master switch.
     const group = root.querySelector('[data-mz-section="music"]')?.closest('.mz-set-group');
-    group?.querySelectorAll('.mz-set-row').forEach(row => {
-        if (row.hasAttribute('data-mz-music-master')) return;
-        row.hidden = !musicOn();
+    const card = group?.querySelector('.mz-set-card');
+    if (card) card.hidden = !musicOn();
+
+    // Story requests have nothing to govern while the player is off, so the
+    // quick pill steps aside the way the backgrounds pill does.
+    root.querySelectorAll('.mz-musicauto').forEach(element => {
+        element.hidden = !musicOn();
     });
 
     // The key: shown as saved, never clobbered mid-typing.
@@ -1219,12 +1312,46 @@ function applyMap() {
         depthValue.textContent = depth === 99 ? 'All' : String(depth);
     }
 
-    // The map's own rows step aside with the master switch.
+    const land = settings().mapTerrain === 'flat' ? 'flat' : 'ink';
+    for (const button of root.querySelectorAll('[data-mz-pick-mapland]')) {
+        const isOn = button.dataset.mzPickMapland === land;
+        button.classList.toggle('is-on', isOn);
+        button.setAttribute('aria-pressed', String(isOn));
+    }
+    for (const button of root.querySelectorAll('[data-mz-pick-mapq]')) {
+        const isOn = Number(button.dataset.mzPickMapq) === (Number(settings().mapTerrainQ) || 0);
+        button.classList.toggle('is-on', isOn);
+        button.setAttribute('aria-pressed', String(isOn));
+    }
+    for (const button of root.querySelectorAll('[data-mz-action="map-terrain-anim"]')) {
+        const isOn = !!settings().mapTerrainAnim;
+        button.classList.toggle('is-on', isOn);
+        button.setAttribute('aria-checked', String(isOn));
+    }
+    for (const button of root.querySelectorAll('[data-mz-action="map-terrain-fog"]')) {
+        /* there is no fog in Flat - the veil needs the land to ride over */
+        const flat = settings().mapTerrain === 'flat';
+        const isOn = !flat && !!settings().mapTerrainFog;
+        button.classList.toggle('is-on', isOn);
+        button.setAttribute('aria-checked', String(isOn));
+        button.disabled = flat;
+        button.setAttribute('aria-disabled', String(flat));
+    }
+    for (const button of root.querySelectorAll('[data-mz-action="map-terrain-sky"]')) {
+        const isOn = settings().mapTerrainSky !== false;
+        button.classList.toggle('is-on', isOn);
+        button.setAttribute('aria-checked', String(isOn));
+    }
+    const recordEl = root.querySelector('[data-mz="terrain-record"]');
+    if (recordEl && document.activeElement !== recordEl) {
+        const record = terrainRecordView();
+        recordEl.value = record ? JSON.stringify(record, null, 2) : '';
+    }
+
+    // The map's own card steps aside with the master switch.
     const group = root.querySelector('[data-mz-section="map"]')?.closest('.mz-set-group');
-    group?.querySelectorAll('.mz-set-row').forEach(row => {
-        if (row.hasAttribute('data-mz-map-master')) return;
-        row.hidden = !mapOn();
-    });
+    const card = group?.querySelector('.mz-set-card');
+    if (card) card.hidden = !mapOn();
 
     refreshMap();
 }
@@ -1340,7 +1467,9 @@ async function drawBackgroundNow() {
 
     els.bgBrushButton?.classList.add('is-busy');
     try {
-        const result = await forceBackground();
+        // The pane says which turn is on screen AT THE CLICK - the brush
+        // redraws the response it was clicked on, never the chat's end.
+        const result = await forceBackground(transcript?.shownIndex?.() ?? null);
         if (result.status === 'error' || result.status === 'unavailable') {
             globalThis.toastr?.error?.(result.error || 'The background could not be drawn.');
         }
@@ -1534,6 +1663,175 @@ function applyCueMeanwhile() {
     });
 }
 
+/* The crossfade length lives in CSS so the animation and the JS fallback
+   timer cannot disagree. Reduced motion sets the token to 0 on #mz-root. */
+function bgXfadeMs() {
+    const raw = frame ? getComputedStyle(frame).getPropertyValue('--mz-bg-xfade') : '';
+    const ms = Number.parseFloat(raw);
+    return Number.isFinite(ms) ? ms : 800;
+}
+
+/* Decode before fading: an undecoded image can land after the fade has begun
+   and pop into view. A broken or stalled picture must not hold the swap. */
+function decodeCssUrl(css) {
+    const match = /^url\(\s*(['"]?)(.*?)\1\s*\)$/i.exec(css || '');
+    if (!match) return Promise.resolve();
+    const image = new Image();
+    image.src = match[2];
+    const decoded = typeof image.decode === 'function' ? image.decode() : Promise.resolve();
+    return Promise.race([
+        decoded.catch(() => {}),
+        new Promise(resolve => setTimeout(resolve, 4000)),
+    ]);
+}
+
+/* The picture now lives on the stage, so each slot carries its own variable.
+   The frame keeps only its own gradient as the final base. */
+function paintStage(stage, url, useSt) {
+    if (!stage) return;
+    if (useSt && url) {
+        stage.style.setProperty('--mz-st-bg', url);
+        stage.classList.add('is-bg-st');
+    } else {
+        stage.style.removeProperty('--mz-st-bg');
+        stage.classList.remove('is-bg-st');
+    }
+}
+
+/* Retires a running fade (including one still decoding) so an authoritative
+   repaint can paint the front stage directly. */
+function retireBackgroundFade() {
+    bgFadeSeq += 1;
+    if (bgFadeTimer) clearTimeout(bgFadeTimer);
+    bgFadeTimer = 0;
+    if (bgFadeEndHandler && bgFadeStage) bgFadeStage.removeEventListener('transitionend', bgFadeEndHandler);
+    bgFadeEndHandler = null;
+    bgFadeStage = null;
+    bgFadeTarget = null;
+    bgRunning = false;
+    bgQueued = null;
+}
+
+/* First paint, chat switch and setting changes show ST's current background
+   at once - there is no previous picture to crossfade from. */
+function setBackgroundImmediate(url, useSt) {
+    if (!bgStages.length) return;
+
+    const wasRunning = bgRunning;
+    retireBackgroundFade();
+
+    const front = bgStages[bgFront];
+    if (!wasRunning && useSt === bgStPainted && url === bgShownUrl && front.classList.contains('is-top')) return;
+
+    const back = bgStages[1 - bgFront];
+    paintStage(front, url, useSt);
+    front.classList.add('is-top');
+    front.classList.remove('is-in');
+    front.style.opacity = '';
+    back.classList.remove('is-top', 'is-in');
+    back.style.opacity = '0';
+    paintStage(back, '', false);
+
+    bgShownUrl = useSt && url ? url : '';
+    bgStPainted = !!(useSt && url);
+}
+
+/**
+ * Crossfades to a new picture: the incoming stage fades in over the still
+ * fully opaque outgoing stage, so the blend never dips through the frame's
+ * own colour. Rapid swaps queue only the latest, and decode before the fade
+ * starts so the picture cannot pop in late.
+ */
+async function fadeBackgroundTo(url, useSt) {
+    if (!frame || bgStages.length < 2) return;
+
+    if (!bgQueued && !bgRunning && useSt === bgStPainted && url === bgShownUrl) return;
+
+    // A swap during a fade waits its turn; only the newest one is kept, so a
+    // turn shuffle never paints a stale picture or pops mid-fade.
+    if (bgRunning) {
+        // The deferred re-read after a forced event usually resolves to the
+        // same picture this fade already carries; don't queue a second fade.
+        if (bgFadeTarget && bgFadeTarget.url === url && bgFadeTarget.useSt === useSt) return;
+        if (bgQueued && bgQueued.url === url && bgQueued.useSt === useSt) return;
+        bgQueued = { url, useSt };
+        return;
+    }
+
+    bgRunning = true;
+    bgFadeTarget = { url, useSt };
+    const seq = ++bgFadeSeq;
+
+    if (useSt && url) await decodeCssUrl(url);
+    if (seq !== bgFadeSeq) return; // an immediate repaint cancelled us
+
+    const front = bgStages[bgFront];
+    const back = bgStages[1 - bgFront];
+
+    paintStage(back, url, useSt);
+
+    // Hide the incoming slot before it takes the top layer. Forcing layout
+    // commits opacity 0 with no transition; clearing the override then lets
+    // the .is-in transition run from 0 to 1 on the next style recalc.
+    back.classList.remove('is-in');
+    back.style.transition = 'none';
+    back.style.opacity = '0';
+    void back.offsetWidth;
+    back.style.transition = '';
+    back.classList.add('is-top');
+    front.classList.remove('is-top');
+
+    const duration = bgXfadeMs();
+    const finish = () => {
+        if (!bgRunning || seq !== bgFadeSeq) return;
+
+        if (bgFadeEndHandler && bgFadeStage) bgFadeStage.removeEventListener('transitionend', bgFadeEndHandler);
+        bgFadeEndHandler = null;
+        bgFadeStage = null;
+        bgFadeTarget = null;
+        if (bgFadeTimer) clearTimeout(bgFadeTimer);
+        bgFadeTimer = 0;
+
+        back.classList.remove('is-in');
+        back.style.transition = '';
+        back.style.opacity = '';
+        front.classList.remove('is-top', 'is-in');
+        front.style.opacity = '0';
+        paintStage(front, '', false);
+
+        bgFront = 1 - bgFront;
+        bgShownUrl = useSt && url ? url : '';
+        bgStPainted = !!(useSt && url);
+        bgRunning = false;
+
+        const next = bgQueued;
+        bgQueued = null;
+        if (next && !(next.useSt === bgStPainted && next.url === bgShownUrl)) {
+            fadeBackgroundTo(next.url, next.useSt);
+        }
+    };
+    const onEnd = event => {
+        if (event.target === back && event.propertyName === 'opacity') finish();
+    };
+    bgFadeEndHandler = onEnd;
+    bgFadeStage = back;
+    back.addEventListener('transitionend', onEnd);
+    bgFadeTimer = setTimeout(finish, duration + 200); // hidden tabs can skip transitionend
+
+    if (duration === 0) {
+        finish();
+        return;
+    }
+
+    // The transition lives on .is-in, so commit that class while the incoming
+    // slot is still at opacity 0. Changing opacity in the same style pass as
+    // adding the class swaps instantly in Chromium; a layout read here gives
+    // the fade a before-state that already has the transition.
+    back.classList.add('is-in');
+    void back.offsetWidth;
+    back.style.opacity = '1';
+}
+
 /**
  * Mirrors the background SillyTavern has right now into the scene's backdrop.
  *
@@ -1546,7 +1844,7 @@ function applyCueMeanwhile() {
  * read, poison to put back into CSS, where one bad substitution blanks the
  * whole scene. `sceneUrl` vets every candidate.
  */
-function applyBackground(forcedUrl) {
+function applyBackground(forcedUrl, immediate = false) {
     const useSt = settings().background === 'st';
     root.querySelectorAll('[data-mz-pick-bg]').forEach(button => {
         const isOn = button.dataset.mzPickBg === (useSt ? 'st' : 'none');
@@ -1555,8 +1853,8 @@ function applyBackground(forcedUrl) {
     });
 
     if (!useSt) {
-        frame.style.removeProperty('--mz-st-bg');
-        frame.classList.remove('is-bg-st');
+        if (immediate) setBackgroundImmediate('', false);
+        else fadeBackgroundTo('', false);
         return;
     }
 
@@ -1571,14 +1869,8 @@ function applyBackground(forcedUrl) {
     // falls through: SillyTavern's own default first, then the procedural
     // scene. The stage is never a black hole.
     const shown = image || sceneUrl(stDefaultBackground(), document.baseURI);
-    if (shown) {
-        frame.style.setProperty('--mz-st-bg', shown);
-        frame.classList.add('is-bg-st');
-        return;
-    }
-
-    frame.style.removeProperty('--mz-st-bg');
-    frame.classList.remove('is-bg-st');
+    if (immediate) setBackgroundImmediate(shown, true);
+    else fadeBackgroundTo(shown, true);
 }
 
 /* ---------- full screen ---------- */
@@ -1675,9 +1967,24 @@ function applyScene(record) {
     }
 
     measureChatbar();
+
+    // The posters wear the shown reply's latest expressions; faces read
+    // sprites synchronously, so warm the rows for everyone the turn names
+    // and redraw once when they land.
+    const message = record?.index != null ? chatMessages()[record.index] : null;
+    const speeches = message ? describeSpeeches(message) : [];
+    setCastExpressions(speeches);
+
     renderCast(scene);
+    refreshLibrary();
     queueBackgroundSwap();
     applyWeather(record);
+
+    primeSprites([...(scene?.present || []), ...speeches.map(speech => speech.character)]).then(changed => {
+        if (!changed) return;
+        redrawCast();
+        if (transcript) transcript.refresh({ stick: true });
+    });
 }
 
 /**
@@ -1859,7 +2166,7 @@ function setGenerating(on, { force = false } = {}) {
     if (busy === frame.classList.contains('is-generating') && !force) return;
 
     frame.classList.toggle('is-generating', busy);
-    els.sendButton.innerHTML = svg(busy ? 'stop' : 'send');
+    els.sendButton.innerHTML = faHtml(busy ? 'fa-solid fa-circle-stop' : 'fa-solid fa-paper-plane');
 
     const label = busy ? 'Stop generating' : 'Send';
     els.sendButton.title = label;
@@ -2128,7 +2435,15 @@ function openSettings() {
     transcript.closeLog(false);
     frame.classList.add('is-settings-open');
     els.sheet.setAttribute('aria-hidden', 'false');
-    applyBackground();
+    applyBackground(undefined, true);
+    applyMap();
+    // The record may never have been derived (the map has not drawn yet):
+    // ask for it now so the sheet never shows an empty room.
+    if (els.terrainRecord && !els.terrainRecord.value) {
+        Promise.resolve(rederiveTerrainRecord()).then(record => {
+            if (record) applyMap();
+        });
+    }
     root.querySelector('[data-mz-action="close-settings"]')?.focus({ preventScroll: true });
 }
 
@@ -2170,6 +2485,18 @@ function submitLine() {
 
 function wireActions() {
     frame.addEventListener('click', event => {
+        // The hint dots open their bubble on tap as well as hover (a touch
+        // has no hover, and iOS never focuses a tapped button): one dot open
+        // at a time, and any other tap closes it again.
+        const hint = event.target.closest('.mz-hint');
+        root.querySelectorAll('.mz-hint.is-open').forEach(dot => {
+            if (dot !== hint) dot.classList.remove('is-open');
+        });
+        if (hint) {
+            hint.classList.toggle('is-open');
+            return;
+        }
+
         const themePick = event.target.closest('[data-mz-pick-theme]');
         if (themePick) {
             settings().theme = themePick.dataset.mzPickTheme;
@@ -2181,7 +2508,7 @@ function wireActions() {
         const background = event.target.closest('[data-mz-pick-bg]');
         if (background) {
             settings().background = background.dataset.mzPickBg;
-            applyBackground();
+            applyBackground(undefined, true);
             saveSettings();
             return;
         }
@@ -2199,6 +2526,40 @@ function wireActions() {
             settings().musicPick = musicPick.dataset.mzPickMusicpick;
             applyMusic();
             saveSettings();
+            return;
+        }
+
+        const sceneHead = event.target.closest('[data-mz-pick-scenehead]');
+        if (sceneHead) {
+            settings().sceneHeaderStyle = sceneHead.dataset.mzPickScenehead;
+            saveSettings();
+            applySceneHeader();
+            transcript?.refresh();
+            return;
+        }
+
+        const facePick = event.target.closest('[data-mz-pick-faces]');
+        if (facePick) {
+            settings().dialogueFaces = facePick.dataset.mzPickFaces;
+            saveSettings();
+            applyDialogueFaces();
+            transcript?.refresh();
+            return;
+        }
+
+        const landPick = event.target.closest('[data-mz-pick-mapland]');
+        if (landPick) {
+            settings().mapTerrain = landPick.dataset.mzPickMapland;
+            saveSettings();
+            applyMap();
+            return;
+        }
+
+        const qualityPick = event.target.closest('[data-mz-pick-mapq]');
+        if (qualityPick) {
+            settings().mapTerrainQ = Number(qualityPick.dataset.mzPickMapq);
+            saveSettings();
+            applyMap();
             return;
         }
 
@@ -2240,24 +2601,17 @@ function wireActions() {
             return;
         }
 
-        const section = event.target.closest('[data-mz-section]');
-        if (section) {
-            // A foldable group's header opens and closes its rows - and an
-            // opening header closes every other fold, so the sheet never
-            // grows long. The sheet is built once, so the state sticks for
-            // the session.
-            const group = section.closest('.mz-set-group');
-            const open = group ? !group.classList.contains('is-open') : true;
+        const adv = event.target.closest('[data-mz-adv]');
+        if (adv) {
+            // The quiet folds at the cards' feet (prompts, keys, last request)
+            // open and close their own field block. Each fold stands alone, so
+            // two sets of prompts can be compared on screen. The sheet is built
+            // once, so the state sticks for the session.
+            const fold = adv.closest('.mz-adv');
+            const open = fold ? !fold.classList.contains('is-open') : true;
 
-            if (open) {
-                root.querySelectorAll('.mz-set-group--fold.is-open').forEach(other => {
-                    other.classList.remove('is-open');
-                    other.querySelector('.mz-set-head')?.setAttribute('aria-expanded', 'false');
-                });
-            }
-
-            group?.classList.toggle('is-open', open);
-            section.setAttribute('aria-expanded', String(open));
+            fold?.classList.toggle('is-open', open);
+            adv.setAttribute('aria-expanded', String(open));
             return;
         }
 
@@ -2334,6 +2688,11 @@ function wireActions() {
             case 'toggle-prompt':
                 transcript.togglePromptHidden();
                 break;
+            case 'toggle-reasoning':
+                settings().showReasoning = !settings().showReasoning;
+                transcript?.refresh();
+                saveSettings();
+                break;
             case 'edit':
                 transcript.editShownTurn();
                 break;
@@ -2355,6 +2714,7 @@ function wireActions() {
                 break;
             case 'dismiss':
                 if (isMapWinOpen()) closeMapWin();
+                else if (isLibraryOpen()) closeLibrary();
                 else if (isCardOpen()) closeCard();
                 else if (isDockOpen()) closeDock();
                 else if (transcript.isLogOpen()) transcript.closeLog();
@@ -2370,6 +2730,8 @@ function wireActions() {
                 applyAvatars();
                 redrawCast();
                 saveSettings();
+                // Faces ride the same gate: the pane re-draws without them.
+                transcript.refresh({ stick: true });
                 break;
             case 'mode':
                 settings().mode = !settings().mode;
@@ -2452,11 +2814,38 @@ function wireActions() {
                 applyMap();
                 saveSettings();
                 break;
+            case 'library-open':
+                // The pill is a toggle: the window's own press-outside
+                // close leaves the pill to open and shut it.
+                if (isLibraryOpen()) closeLibrary();
+                else openLibrary();
+                break;
             case 'map-open':
                 openMapWin();
                 break;
             case 'map-close':
                 closeMapWin();
+                break;
+            case 'map-terrain-anim':
+                settings().mapTerrainAnim = !settings().mapTerrainAnim;
+                applyMap();
+                saveSettings();
+                break;
+            case 'map-terrain-fog':
+                settings().mapTerrainFog = !settings().mapTerrainFog;
+                applyMap();
+                saveSettings();
+                break;
+            case 'map-terrain-sky':
+                settings().mapTerrainSky = settings().mapTerrainSky === false;
+                applyMap();
+                saveSettings();
+                break;
+            case 'terrain-reseed':
+                Promise.resolve(reseedTerrainRecord()).then(() => applyMap());
+                break;
+            case 'terrain-rederive':
+                rederiveTerrainRecord().then(() => applyMap());
                 break;
             case 'bg-images':
                 settings().bgImages = !settings().bgImages;
@@ -2479,6 +2868,11 @@ function wireActions() {
                 break;
             case 'bg-prompt-off-reset':
                 settings().bgPromptOff = DEFAULT_BG_PROMPT_OFF;
+                applyBgControls();
+                saveSettings();
+                break;
+            case 'bg-prompt-transport-reset':
+                settings().bgPromptTransport = DEFAULT_BG_TRANSPORT_PROMPT;
                 applyBgControls();
                 saveSettings();
                 break;
@@ -2552,6 +2946,24 @@ function wireActions() {
         saveSettings();
     });
 
+    els.bgPromptTransport?.addEventListener('input', () => {
+        settings().bgPromptTransport = els.bgPromptTransport.value;
+        saveSettings();
+    });
+
+    /* The terrain record: valid JSON lands on the map at once, half-typed
+       JSON waits quietly for its author to finish. */
+    let terrainRecordTimer = 0;
+    els.terrainRecord?.addEventListener('input', () => {
+        clearTimeout(terrainRecordTimer);
+        terrainRecordTimer = setTimeout(() => {
+            const result = writeTerrainRecord(els.terrainRecord.value);
+            if (els.terrainRecordNote) {
+                els.terrainRecordNote.textContent = result.ok ? '' : `Not applied: ${result.error}`;
+            }
+        }, 350);
+    });
+
     els.colorInputs.forEach(input => {
         input.addEventListener('input', () => {
             settings()[PROSE_KEYS[input.dataset.mzColor]] = input.value;
@@ -2588,6 +3000,7 @@ function wireKeys() {
             if (closeFloats()) return;
             if (closeMemory()) return;
             if (isMapWinOpen()) closeMapWin();
+            else if (isLibraryOpen()) closeLibrary();
             else if (isCardOpen()) closeCard();
             else if (isDockOpen()) closeDock();
             else if (transcript?.isLogOpen()) transcript.closeLog();
@@ -2615,9 +3028,9 @@ function wireKeys() {
 /* ---------- SillyTavern events ---------- */
 
 function wireEvents() {
-    const refresh = () => {
+    const refresh = (immediate = false) => {
         refreshChatName();
-        applyBackground();
+        applyBackground(undefined, immediate);
     };
 
     // A resize can wrap the place onto two lines, which moves the cast stage.
@@ -2628,14 +3041,14 @@ function wireEvents() {
 
     on('CHAT_CHANGED', () => {
         if (isOpen()) {
-            refresh();
+            refresh(true);
             refreshMenu();
             closeMenu();
         }
     });
     on('CHAT_CREATED', () => {
         if (isOpen()) {
-            refresh();
+            refresh(true);
             refreshMenu();
             closeMenu();
         }

@@ -1,8 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { connectionMessages, customEndpoint, customPayload } from '../src/connections.js';
+import { CONNECTION_AGENTS, connectionMessages, customEndpoint, customPayload } from '../src/connections.js';
 import { normalizeConnection } from '../src/settings.js';
+
+test('the agent roster pins the section order: Background Agent above Music Agent', () => {
+    const ids = CONNECTION_AGENTS.map(agent => agent.id);
+    assert.equal(new Set(ids).size, ids.length, 'agent ids are unique');
+    assert.ok(ids.indexOf('backgroundAgent') < ids.indexOf('musicAgent'), 'the background watcher sits above the Music Agent');
+    for (const agent of CONNECTION_AGENTS) {
+        assert.ok(agent.label, 'every agent names its section');
+    }
+});
 
 test('connectionMessages puts the system prompt on top and a string prompt below', () => {
     const messages = connectionMessages({ systemPrompt: 'You are a watcher.', prompt: 'Where is the story?' });

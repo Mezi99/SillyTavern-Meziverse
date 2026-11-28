@@ -5,8 +5,8 @@
  * own to write and nothing to lose when the browser cache is cleared.
  */
 
-import { ctx } from './st.js';
-import { DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_OFF, LEGACY_DEFAULT_BG_PROMPT_ON, LEGACY_DEFAULT_BG_PROMPT_OFF } from './backgrounds.js';
+import { castKey, ctx } from './st.js';
+import { DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_OFF, DEFAULT_BG_TRANSPORT_PROMPT, LEGACY_DEFAULT_BG_PROMPT_ON, LEGACY_DEFAULT_BG_PROMPT_OFF, PRIOR_DEFAULT_BG_PROMPT_ON, PRIOR_DEFAULT_BG_PROMPT_OFF, PRIOR_DEFAULT_BG_TRANSPORT_PROMPT, PRE_PROSE_DEFAULT_BG_PROMPT_ON, PRE_PROSE_DEFAULT_BG_PROMPT_OFF, PRE_PROSE_DEFAULT_BG_TRANSPORT_PROMPT } from './backgrounds.js';
 import { DEFAULT_DJ_PROMPT, LEGACY_DEFAULT_DJ_PROMPT } from './musicdj.js';
 
 const DEFAULTS = {
@@ -40,8 +40,8 @@ const DEFAULTS = {
     // renders every new place; higher values keep the last picture while new
     // places wait their turn.
     bgEveryN: 1,
-    bgStyle: 'anime style, visual novel background art, detailed environment, cinematic lighting',
-    bgNegative: 'people, characters, crowd, portrait, text, watermark, logo, signature, blurry, low quality',
+    bgStyle: 'Anime visual novel background art, soft cinematic lighting',
+    bgNegative: 'people, characters, crowd, portrait, text, watermark, logo, signature, blurry, low quality, silhouette, figure',
     bgSize: 'landscape',
     // Weather effects on the background stage: the scene tag's weatherTag
     // names the state, locationTag gates it to outdoors, and the free-text
@@ -53,6 +53,22 @@ const DEFAULTS = {
     // Speech bubbles in the reading pane: the speaker's label, the words in
     // a quiet bubble, the tone said in after. Off leaves the prose plain.
     speechFx: true,
+    // How a spoken line wears faces - behind the Avatars master switch and
+    // the speech bubbles' own gate. 'off' is today's bubble with no face,
+    // 'simple' a round face in the bubble's gutter (the default),
+    // 'immersiveA' a dialogue band hugging its words on the speaker's side
+    // and 'immersiveB' one centred measure per band. A later 'cinematic'
+    // fits the same key; a stored 'immersive' migrates to 'immersiveA'.
+    dialogueFaces: 'simple',
+    // The reasoning block in the reading pane: the model's thinking as an
+    // expandable block above the turn's prose. Off leaves the pane exactly
+    // as it was - and the log drawer never shows reasoning either way.
+    showReasoning: true,
+    // The scene header's wardrobe in the reading pane: 'quiet' (the default),
+    // 'rule' (chapter rule), 'date' (date-first, for fast-paced stories) or
+    // 'simple' (the first band Meziverse ever drew). One ribbon, four
+    // wardrobes; the log drawer keeps its own compact band whatever this says.
+    sceneHeaderStyle: 'quiet',
     // The music player: the scene's soundtrack, a compact YouTube player in
     // the header. Off hides it whole and nothing plays.
     music: true,
@@ -74,6 +90,28 @@ const DEFAULTS = {
     // The full map window's remembered spot and size. Null = centred default.
     mapWinPos: null,
     mapWinSize: null,
+    // The Character Library window's remembered spot and size, the same way.
+    // Null = centred default.
+    libWinPos: null,
+    libWinSize: null,
+    // The map's land: 'ink' paints the story's terrain under the chart,
+    // 'flat' is the plain chart. The map window's Land chips edit this.
+    mapTerrain: 'ink',
+    // Terrain quality tier: 0 low, 1 medium, 2 high - a pixel budget and
+    // an octave count. A slow frame steps the tier down and remembers it.
+    mapTerrainQ: 2,
+    // Terrain motion: the fog drifts and the water shimmers while the map
+    // is open - the mockup's living land, on out of the box. Off draws one
+    // still frame; reduced motion is always still.
+    mapTerrainAnim: true,
+    // Fog of war: the clouds part along the journey trail and around the
+    // places the story stood still in. Works on both looks - over Flat it
+    // is a veil on the plain chart.
+    mapTerrainFog: true,
+    // Sky and weather: the land follows the scene's own hour and weather -
+    // dawn light, night tint, rain or dust on the hills. The Ink land only;
+    // the flat chart stays itself.
+    mapTerrainSky: true,
     // Story requests: a `<music>` tag in a reply starts playback when the
     // reply lands. Off leaves playback to the player's own input.
     musicAuto: true,
@@ -110,6 +148,7 @@ const DEFAULTS = {
     // plain-prose hand. The answer format is appended by code.
     bgPromptOn: DEFAULT_BG_PROMPT_ON,
     bgPromptOff: DEFAULT_BG_PROMPT_OFF,
+    bgPromptTransport: DEFAULT_BG_TRANSPORT_PROMPT,
     reducedMotion: false,
     // How the inline cue popovers open: on hover and tap, or tap only.
     cuePopovers: 'both',
@@ -130,6 +169,11 @@ const DEFAULTS = {
     paneBlur: 16,
     logWidth: 720,
     logHeight: null,
+    // The Character Library: the characters the user has SAVED by name,
+    // with a portrait and (through SillyTavern's own sprite folders)
+    // expression sprites - one record per person, available in every chat.
+    // Explicitly created, never auto-added; keyed by `castKey`.
+    library: {},
 };
 
 /**
@@ -140,7 +184,14 @@ const DEFAULTS = {
 const PROMPT_DEFAULT_REFRESH = [
     ['musicDjPrompt', LEGACY_DEFAULT_DJ_PROMPT, DEFAULT_DJ_PROMPT],
     ['bgPromptOn', LEGACY_DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_ON],
+    ['bgPromptOn', PRIOR_DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_ON],
+    ['bgPromptOn', PRE_PROSE_DEFAULT_BG_PROMPT_ON, DEFAULT_BG_PROMPT_ON],
     ['bgPromptOff', LEGACY_DEFAULT_BG_PROMPT_OFF, DEFAULT_BG_PROMPT_OFF],
+    ['bgPromptOff', PRIOR_DEFAULT_BG_PROMPT_OFF, DEFAULT_BG_PROMPT_OFF],
+    ['bgPromptOff', PRE_PROSE_DEFAULT_BG_PROMPT_OFF, DEFAULT_BG_PROMPT_OFF],
+    ['bgPromptTransport', PRIOR_DEFAULT_BG_TRANSPORT_PROMPT, DEFAULT_BG_TRANSPORT_PROMPT],
+    ['bgPromptTransport', PRE_PROSE_DEFAULT_BG_TRANSPORT_PROMPT, DEFAULT_BG_TRANSPORT_PROMPT],
+    ['bgStyle', 'anime style, visual novel background art, detailed environment, cinematic lighting', DEFAULTS.bgStyle],
 ];
 
 /** The live settings object, with defaults filled in on first use. */
@@ -161,6 +212,12 @@ export function settings() {
     // core is the user's own and is never touched.
     for (const [key, legacy, fresh] of PROMPT_DEFAULT_REFRESH) {
         if (store.meziverse[key] === legacy) store.meziverse[key] = fresh;
+    }
+
+    // The old single immersive band became two layouts; the full-width
+    // look is closest to Immersive A (boxes on their speaker's side).
+    if (store.meziverse.dialogueFaces === 'immersive') {
+        store.meziverse.dialogueFaces = 'immersiveA';
     }
 
     return store.meziverse;
@@ -216,6 +273,36 @@ export function indoorFxOn() {
 /** Whether the speech bubbles play in the reading pane. */
 export function speechFxOn() {
     return settings().speechFx !== false;
+}
+
+const DIALOGUE_FACE_MODES = ['off', 'simple', 'immersiveA', 'immersiveB'];
+
+/**
+ * How a spoken line wears faces: 'off', 'simple', 'immersiveA' (the band
+ * hugs its words on the speaker's side) or 'immersiveB' (one centred
+ * measure). The Avatars switch is the master - off reads as 'off' whatever
+ * this says - so "no images" is one flip away in both places. A stored
+ * 'immersive' from before the split reads as 'immersiveA' (the migration
+ * in `settings()` also rewrites it on the store).
+ */
+export function dialogueFaceMode() {
+    if (!avatarsOn()) return 'off';
+    const value = settings().dialogueFaces;
+    const mode = value === 'immersive' ? 'immersiveA' : value;
+    return DIALOGUE_FACE_MODES.includes(mode) ? mode : 'simple';
+}
+
+/** Whether the reasoning block shows above the reading pane's prose. */
+export function reasoningOn() {
+    return settings().showReasoning !== false;
+}
+
+const SCENE_HEADER_STYLES = ['quiet', 'rule', 'date', 'simple'];
+
+/** The scene header's wardrobe: 'quiet', 'rule', 'date' or 'simple'. */
+export function sceneHeaderStyle() {
+    const value = settings().sceneHeaderStyle;
+    return SCENE_HEADER_STYLES.includes(value) ? value : 'quiet';
 }
 
 /** Whether the music player exists at all - the master switch. */
@@ -297,4 +384,48 @@ export function setConnection(id, patch) {
     if (!store.connections || typeof store.connections !== 'object') store.connections = {};
     store.connections[id] = { ...normalizeConnection(store.connections[id]), ...patch };
     saveSettings();
+}
+
+/* ---------- the character library ---------- */
+
+/**
+ * The library record for a name (matched on the `castKey` fold), or null.
+ * The record itself - patches go back through `setLibraryEntry`.
+ */
+export function libraryEntry(name) {
+    const key = castKey(name);
+    const record = key ? settings().library?.[key] : null;
+    return record && typeof record === 'object' ? record : null;
+}
+
+/** Whether a name is saved in the Character Library. */
+export function libraryHas(name) {
+    return !!libraryEntry(name);
+}
+
+/** Every library record, keyed by `castKey`. The live object - readers only. */
+export function libraryEntries() {
+    const store = settings().library;
+    return store && typeof store === 'object' ? store : {};
+}
+
+/** Applies a patch to one library record (creating it when missing). */
+export function setLibraryEntry(name, patch = {}) {
+    const key = castKey(name);
+    if (!key) return null;
+
+    const store = settings();
+    if (!store.library || typeof store.library !== 'object') store.library = {};
+    store.library[key] = { ...(store.library[key] || {}), ...patch };
+    saveSettings();
+    return store.library[key];
+}
+
+/** Removes one library record. True when there was one. */
+export function removeLibraryEntry(name) {
+    const key = castKey(name);
+    if (!key || !settings().library?.[key]) return false;
+    delete settings().library[key];
+    saveSettings();
+    return true;
 }

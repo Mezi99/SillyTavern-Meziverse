@@ -2,6 +2,12 @@
 LocalHelpFiles/
 mockups/
 
+# local only: agent working notes for this machine (dev setup, browser testing)
+AGENTS.md
+
+# local only: the roadmap scratchpad (parked features, discarded ideas)
+roadmapIdeas.md
+
 # editors and OS noise
 .vscode/
 .idea/

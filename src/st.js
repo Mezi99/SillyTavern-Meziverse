@@ -290,6 +290,128 @@ export async function uploadImage({ image, format = 'webp', filename = 'portrait
     }
 }
 
+/* ---------- expression sprites ---------- */
+
+/**
+ * The sprites SillyTavern's own expression system keeps - one folder per
+ * character under its characters directory, labels coming from the file
+ * names. Everything here is a thin mirror of SillyTavern's own sprite
+ * endpoints; the images are SillyTavern's to store, ours to list.
+ */
+
+/** Request headers as SillyTavern sends them, minus any Content-Type. */
+function formHeaders() {
+    let headers = {};
+    try {
+        headers = ctx()?.getRequestHeaders?.() || {};
+    } catch {
+        headers = {};
+    }
+
+    const clean = {};
+    for (const [key, value] of Object.entries(headers)) {
+        if (key.toLowerCase() !== 'content-type') clean[key] = value;
+    }
+    return clean;
+}
+
+/**
+ * One character's sprite folder, as the server lists it:
+ * `[{ label, path }]`, label from the file name. Null when the call fails;
+ * a character with no sprites answers an empty list.
+ *
+ * @param {string} name the sprite folder's name (a library record's display name)
+ */
+export async function spriteList(name) {
+    const folder = String(name ?? '').trim();
+    if (!folder) return [];
+
+    try {
+        const response = await fetch(`/api/sprites/get?name=${encodeURIComponent(folder)}`, {
+            headers: formHeaders(),
+        });
+        if (!response.ok) throw new Error(`list failed (${response.status})`);
+        const data = await response.json();
+        return Array.isArray(data) ? data : [];
+    } catch (error) {
+        console.warn('[Meziverse] could not list the sprites', error);
+        return null;
+    }
+}
+
+/**
+ * Uploads one sprite file into a character's folder. The server keys the
+ * file by `spriteName` (which must start with `label`) and replaces an
+ * existing file of the same name - one label, one sprite.
+ */
+export async function spriteUpload({ name, label, spriteName, file } = {}) {
+    if (!name || !label || !spriteName || !file) {
+        return { ok: false, error: 'The sprite needs a character, a label and an image.' };
+    }
+
+    const form = new FormData();
+    form.append('name', String(name));
+    form.append('label', String(label));
+    form.append('spriteName', String(spriteName));
+    form.append('avatar', file);
+
+    try {
+        const response = await fetch('/api/sprites/upload', {
+            method: 'POST',
+            headers: formHeaders(),
+            body: form,
+        });
+        if (!response.ok) throw new Error(`upload failed (${response.status})`);
+        return { ok: true, error: '' };
+    } catch (error) {
+        console.warn('[Meziverse] could not upload the sprite', error);
+        return { ok: false, error: errorText(error) };
+    }
+}
+
+/** Uploads a zip of sprites - the whole pack at once. Answers the count. */
+export async function spriteUploadZip({ name, file } = {}) {
+    if (!name || !file) return { ok: false, count: 0, error: 'The pack needs a character and a file.' };
+
+    const form = new FormData();
+    form.append('name', String(name));
+    form.append('avatar', file);
+
+    try {
+        const response = await fetch('/api/sprites/upload-zip', {
+            method: 'POST',
+            headers: formHeaders(),
+            body: form,
+        });
+        if (!response.ok) throw new Error(`upload failed (${response.status})`);
+        const data = await response.json();
+        return { ok: true, count: Number(data?.count) || 0, error: '' };
+    } catch (error) {
+        console.warn('[Meziverse] could not upload the sprite pack', error);
+        return { ok: false, count: 0, error: errorText(error) };
+    }
+}
+
+/** Deletes one sprite file from a character's folder. */
+export async function spriteDelete({ name, label, spriteName } = {}) {
+    if (!name || !(spriteName || label)) {
+        return { ok: false, error: 'The sprite needs a character and a name.' };
+    }
+
+    try {
+        const response = await fetch('/api/sprites/delete', {
+            method: 'POST',
+            headers: { ...(formHeaders()), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: String(name), label: String(label || ''), spriteName: String(spriteName || label) }),
+        });
+        if (!response.ok) throw new Error(`delete failed (${response.status})`);
+        return { ok: true, error: '' };
+    } catch (error) {
+        console.warn('[Meziverse] could not delete the sprite', error);
+        return { ok: false, error: errorText(error) };
+    }
+}
+
 /**
  * A message rendered the way SillyTavern renders it.
  *
@@ -660,6 +782,86 @@ export function bgStore() {
     if (!metadata.meziverse.bg || typeof metadata.meziverse.bg !== 'object') metadata.meziverse.bg = {};
 
     return normalizeStore(metadata.meziverse.bg);
+}
+
+/**
+ * The open chat's library bindings: which library character a one-word
+ * tag name means in THIS story (`chatMetadata.meziverse.libBind`), so two
+ * characters answering to "Mike" can split across chats. tagKey → entryKey.
+ */
+export function libBindStore() {
+    const metadata = ctx()?.chatMetadata;
+    if (!metadata || typeof metadata !== 'object') return {};
+    const store = metadata.meziverse?.libBind;
+    return store && typeof store === 'object' && !Array.isArray(store) ? store : {};
+}
+
+/** Binds a tag name to a library character in this chat; null clears it. */
+export function setLibBind(tagName, entryKey) {
+    const metadata = ctx()?.chatMetadata;
+    const key = castKey(tagName);
+    if (!metadata || typeof metadata !== 'object' || !key) return;
+
+    if (!metadata.meziverse || typeof metadata.meziverse !== 'object') metadata.meziverse = {};
+    if (!metadata.meziverse.libBind || typeof metadata.meziverse.libBind !== 'object') metadata.meziverse.libBind = {};
+
+    if (entryKey) metadata.meziverse.libBind[key] = castKey(entryKey);
+    else delete metadata.meziverse.libBind[key];
+
+    saveChatMetadata();
+}
+
+/**
+ * The open chat's library-offs: which names the library must ignore in
+ * THIS story (`chatMetadata.meziverse.libOff`) - a temporary character
+ * that shares a name with a saved one. tagKey → true.
+ */
+export function libOffStore() {
+    const metadata = ctx()?.chatMetadata;
+    if (!metadata || typeof metadata !== 'object') return {};
+    const store = metadata.meziverse?.libOff;
+    return store && typeof store === 'object' && !Array.isArray(store) ? store : {};
+}
+
+/** Disengages (or re-engages) the library for a tag name in this chat. */
+export function setLibOff(tagName, off) {
+    const metadata = ctx()?.chatMetadata;
+    const key = castKey(tagName);
+    if (!metadata || typeof metadata !== 'object' || !key) return;
+
+    if (!metadata.meziverse || typeof metadata.meziverse !== 'object') metadata.meziverse = {};
+    if (!metadata.meziverse.libOff || typeof metadata.meziverse.libOff !== 'object') metadata.meziverse.libOff = {};
+
+    if (off) metadata.meziverse.libOff[key] = true;
+    else delete metadata.meziverse.libOff[key];
+
+    saveChatMetadata();
+}
+
+/**
+ * The open chat's terrain record - the map's land as one small JSON
+ * (`chatMetadata.meziverse.terrain`). Null with no chat open or before
+ * anything has been derived. The record is read-only here; writing goes
+ * through `saveTerrainRecord` so the chat file is asked to persist.
+ */
+export function terrainStore() {
+    const record = ctx()?.chatMetadata?.meziverse?.terrain;
+    return record && typeof record === 'object' && !Array.isArray(record) ? record : null;
+}
+
+/**
+ * Writes (or clears) the open chat's terrain record and persists it.
+ *
+ * @param {object|null} record the record to keep, or null to clear it
+ * @returns {'saved'|'memory-only'|'failed'}
+ */
+export function saveTerrainRecord(record) {
+    const metadata = ctx()?.chatMetadata;
+    if (!metadata || typeof metadata !== 'object') return 'failed';
+    if (!metadata.meziverse || typeof metadata.meziverse !== 'object') metadata.meziverse = {};
+    if (record) metadata.meziverse.terrain = record;
+    else delete metadata.meziverse.terrain;
+    return saveChatMetadata() ? 'saved' : 'memory-only';
 }
 
 /**
