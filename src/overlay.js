@@ -35,7 +35,7 @@ import { closeLibrary, isLibraryOpen, libraryUiClosed, mountLibrary, openLibrary
 import { closeCard, closeDock, isCardOpen, isDockOpen, mountDock, renderDock } from './dock.js';
 import { interceptToastr, notify } from './notify.js';
 
-const VERSION = '2.11.5';
+const VERSION = '2.11.6';
 
 const PANE_DEFAULT = 300;
 const LOG_W_DEFAULT = 720;
@@ -76,7 +76,7 @@ const FRAME_HTML = `
     <div class="mz-scrim" aria-hidden="true"></div>
 
     <header class="mz-header">
-        <div class="mz-brand"><b>Meziverse</b><small class="mz-version">v${VERSION}</small><span class="mz-hair mz-quick-hair" aria-hidden="true"></span><div class="mz-autoquick" role="group" aria-label="Quick toggles"><button class="mz-qpill mz-bgauto" type="button" role="switch" aria-checked="false" title="Backgrounds follow the story" aria-label="Backgrounds follow the story" data-mz-action="bg-auto">${svg('image')}</button><button class="mz-qpill mz-musicauto" type="button" role="switch" aria-checked="true" title="Music from story requests" aria-label="Music from story requests" data-mz-action="music-auto">${svg('music')}</button><button class="mz-qpill" type="button" role="switch" aria-checked="true" title="Map on or off" aria-label="Map" data-mz-action="map">${svg('map')}</button><button class="mz-qpill" type="button" title="Character Library" aria-label="Character Library" data-mz-action="library-open">${svg('library')}</button></div></div>
+        <div class="mz-brand"><b>Meziverse</b><small class="mz-version">v${VERSION}</small><span class="mz-hair mz-quick-hair" aria-hidden="true"></span><div class="mz-autoquick" role="group" aria-label="Quick toggles"><button class="mz-qpill mz-bgauto" type="button" role="switch" aria-checked="false" title="Backgrounds follow the story" aria-label="Backgrounds follow the story" data-mz-action="bg-auto">${svg('image')}</button><button class="mz-qpill mz-musicdj" type="button" role="switch" aria-checked="false" title="Music DJ on/off" aria-label="Music DJ on/off" data-mz-action="music-dj">${svg('music')}</button><button class="mz-qpill" type="button" role="switch" aria-checked="true" title="Map on or off" aria-label="Map" data-mz-action="map">${svg('map')}</button><button class="mz-qpill" type="button" title="Character Library" aria-label="Character Library" data-mz-action="library-open">${svg('library')}</button></div></div>
         <div class="mz-chatname" data-mz="chatname"><b class="is-empty">No chat open</b></div>
         <div class="mz-header-tools">
             <div class="mz-music-slot" data-mz="music-slot"></div>
@@ -1278,9 +1278,9 @@ export function applyMusic() {
     const card = group?.querySelector('.mz-set-card');
     if (card) card.hidden = !musicOn();
 
-    // Story requests have nothing to govern while the player is off, so the
-    // quick pill steps aside the way the backgrounds pill does.
-    root.querySelectorAll('.mz-musicauto').forEach(element => {
+    // The DJ has nothing to govern while the player is off, so the quick
+    // pill steps aside the way the backgrounds pill does.
+    root.querySelectorAll('.mz-musicdj').forEach(element => {
         element.hidden = !musicOn();
     });
 

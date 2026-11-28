@@ -1,5 +1,19 @@
 # Meziverse — version log
 
+## 2.11.6 - 2026-11-28
+
+The music player takes up less room, and the header's music pill now drives the Music DJ.
+
+### Compact player
+- The card is 264 x 224 px (was 320 x 291): `70-music.css` takes the designer's measurements in place - 12px padding, 8px gaps, a 26px grip, 46px art, smaller title and artist tokens, a 32px play button, a 28px search field, and tighter pick-style, seek and transport rows. One `--mz-music-w` variable sizes the undocked card, the docked drop-down and the phone-width cap; the one-row mini card is unchanged at 296px.
+- The mood chip is gone from the widget and `render()`; `state.mood` still reaches the DJ through the controller, so picks are unaffected.
+
+### Header switch
+- The top bar's music pill now flips `musicDj` instead of `musicAuto`: it shares `data-mz-action="music-dj"` with the settings switch, so both stay in step, and its label reads "Music DJ on/off". Story requests stay a settings-row switch only. The pill still hides when the player master is off.
+
+### Notes
+- `manifest.json` matches; the synthetic suite stands at 380 tests. Landed on `main` from `Music_Module`.
+
 ## 2.11.5 - 2026-11-28
 
 Music picks now rest on the designer's supervisor prompts, and a named song has real backups when the first videos cannot play.
